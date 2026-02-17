@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { getBoardChannel, getAblyClient } from '../lib/ably';
+import { getBoardChannel } from '../lib/ably';
 import type { PresenceMember } from '../types';
 
 /**

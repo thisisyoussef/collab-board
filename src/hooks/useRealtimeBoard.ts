@@ -3,7 +3,7 @@ import Konva from 'konva';
 import { getBoardChannel, getAblyClient } from '../lib/ably';
 import { createKonvaShape } from '../lib/shapes';
 import type { BoardObject } from '../types';
-import type { Types } from 'ably';
+import type { Message } from 'ably';
 
 /**
  * Object sync hook — subscribe to create/update/delete via Ably, imperatively update Konva.
@@ -30,7 +30,7 @@ export function useRealtimeBoard(
     const clientId = getAblyClient().auth.clientId;
 
     // Object created remotely
-    const onObjectCreate = (msg: Types.Message) => {
+    const onObjectCreate = (msg: Message) => {
       const data = msg.data as BoardObject & { _ts?: number };
       if (msg.clientId === clientId) return;
       const obj = data;
@@ -56,7 +56,7 @@ export function useRealtimeBoard(
     };
 
     // Object updated remotely
-    const onObjectUpdate = (msg: Types.Message) => {
+    const onObjectUpdate = (msg: Message) => {
       const data = msg.data as { id: string; attrs: Partial<BoardObject>; _ts?: number };
       if (msg.clientId === clientId) return;
       const { id, attrs, _ts } = data;
@@ -94,7 +94,7 @@ export function useRealtimeBoard(
     };
 
     // Object deleted remotely
-    const onObjectDelete = (msg: Types.Message) => {
+    const onObjectDelete = (msg: Message) => {
       const data = msg.data as { id: string; _ts?: number };
       if (msg.clientId === clientId) return;
       const { id } = data;

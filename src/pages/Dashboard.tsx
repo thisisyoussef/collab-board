@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { collection, query, where, getDocs, doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../hooks/useAuth';
-import { useFirestoreBoard } from '../hooks/useFirestoreBoard';
 import { generateBoardId } from '../lib/utils';
 
 interface BoardSummary {

@@ -28,7 +28,7 @@ export function useCursors(
     channelRef.current = channel;
     const clientId = getAblyClient().auth.clientId;
 
-    const onCursorMove = (msg: Types.Message) => {
+    const onCursorMove = (msg: Message) => {
       const data = msg.data as CursorData;
       // Skip own messages
       if (msg.clientId === clientId) return;
