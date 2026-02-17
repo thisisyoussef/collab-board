@@ -7,6 +7,7 @@ interface TextEditorProps {
   height: number;
   text: string;
   fontSize: number;
+  color?: string;
   onSubmit: (text: string) => void;
   onCancel: () => void;
 }
@@ -14,6 +15,7 @@ interface TextEditorProps {
 /**
  * HTML textarea overlay for inline text editing on double-click.
  * Positioned via worldToScreen coordinates from the caller.
+ * Uses the object's background color to avoid visual jarring (fix #2).
  */
 export function TextEditor({
   x,
@@ -22,6 +24,7 @@ export function TextEditor({
   height,
   text,
   fontSize,
+  color,
   onSubmit,
   onCancel,
 }: TextEditorProps) {
@@ -69,13 +72,14 @@ export function TextEditor({
         padding: 8,
         border: '2px solid #4ECDC4',
         borderRadius: 4,
-        background: 'rgba(255, 255, 255, 0.95)',
+        background: color || 'rgba(255, 255, 255, 0.95)',
         resize: 'none',
         fontFamily: 'inherit',
         lineHeight: 1.4,
         outline: 'none',
         zIndex: 2000,
         boxSizing: 'border-box',
+        color: '#333',
       }}
     />
   );

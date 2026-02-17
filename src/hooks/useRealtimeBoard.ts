@@ -177,8 +177,13 @@ export function useRealtimeBoard(
       const layer = objectLayerRef.current;
       if (!layer) return;
 
-      // Clear existing
-      layer.destroyChildren();
+      // Clear existing objects but preserve non-Group children (Transformer, selection rect)
+      const children = layer.children?.slice() || [];
+      for (const child of children) {
+        if (child instanceof Konva.Group && child.id()) {
+          child.destroy();
+        }
+      }
       objectsRef.current.clear();
 
       // Add all objects
