@@ -11,11 +11,23 @@ import type { BoardObject, BoardDocument } from '../types';
  * Per realtime-sync-patterns rule: Firestore = source of truth on join.
  */
 export function useFirestoreBoard(boardId: string) {
-  // Rebuild the debounced save whenever boardId changes
-  const debouncedSaveRef = useRef<(objects: Record<string, BoardObject>) => void>(() => {});
+  // Track whether the board has been loaded at least once.
+  // Prevents saving an empty objects map before the initial load completes.
+  const boardLoadedRef = useRef(false);
+
+  // Debounced save with .flush() support for save-on-unmount.
+  const debouncedSaveRef = useRef<ReturnType<typeof debounce>>(null!);
 
   useEffect(() => {
-    debouncedSaveRef.current = debounce((objects: Record<string, BoardObject>) => {
+    // Reset loaded flag when boardId changes
+    boardLoadedRef.current = false;
+
+    const debouncedFn = debounce((objects: Record<string, BoardObject>) => {
+      // Guard: never overwrite a board with empty data before initial load
+      if (!boardLoadedRef.current) {
+        return;
+      }
+
       const boardRef = doc(db, 'boards', boardId);
       setDoc(boardRef, {
         objects,
@@ -24,6 +36,13 @@ export function useFirestoreBoard(boardId: string) {
         console.warn('[Firestore] Save failed:', err);
       });
     }, FIRESTORE_DEBOUNCE_MS);
+
+    debouncedSaveRef.current = debouncedFn;
+
+    // Flush any pending save when boardId changes or component unmounts
+    return () => {
+      debouncedFn.flush();
+    };
   }, [boardId]);
 
   // Load board from Firestore (source of truth on join)
@@ -31,12 +50,16 @@ export function useFirestoreBoard(boardId: string) {
     try {
       const boardRef = doc(db, 'boards', boardId);
       const snapshot = await getDoc(boardRef);
+      // Mark as loaded so saves are now allowed
+      boardLoadedRef.current = true;
       if (snapshot.exists()) {
         return snapshot.data() as BoardDocument;
       }
       return null;
     } catch (err) {
       console.error('[Firestore] Failed to load board:', err);
+      // Still mark as loaded on error — user may create objects on an empty canvas
+      boardLoadedRef.current = true;
       return null;
     }
   }, [boardId]);
@@ -55,6 +78,7 @@ export function useFirestoreBoard(boardId: string) {
         createdAt: ReturnType<typeof serverTimestamp>;
         updatedAt: ReturnType<typeof serverTimestamp>;
       });
+      boardLoadedRef.current = true;
     },
     [boardId],
   );
@@ -62,7 +86,7 @@ export function useFirestoreBoard(boardId: string) {
   // Trigger a debounced save of the full objects map
   const triggerSave = useCallback(
     (objects: Record<string, BoardObject>) => {
-      debouncedSaveRef.current(objects);
+      debouncedSaveRef.current?.(objects);
     },
     [],
   );

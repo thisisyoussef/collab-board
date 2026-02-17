@@ -27,18 +27,34 @@ export function screenToWorld(
 }
 
 /**
- * Debounce a function by delay ms
+ * Debounce a function by delay ms.
+ * Returned function has a .flush() method to execute immediately if pending.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function debounce<T extends (...args: any[]) => void>(
   fn: T,
   delay: number,
-): (...args: Parameters<T>) => void {
-  let timer: ReturnType<typeof setTimeout>;
-  return (...args: Parameters<T>) => {
-    clearTimeout(timer);
-    timer = setTimeout(() => fn(...args), delay);
+): ((...args: Parameters<T>) => void) & { flush: () => void } {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let latestArgs: Parameters<T> | null = null;
+  const debounced = (...args: Parameters<T>) => {
+    latestArgs = args;
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      fn(...args);
+      timer = null;
+      latestArgs = null;
+    }, delay);
   };
+  debounced.flush = () => {
+    if (timer && latestArgs) {
+      clearTimeout(timer);
+      fn(...latestArgs);
+      timer = null;
+      latestArgs = null;
+    }
+  };
+  return debounced;
 }
 
 /**

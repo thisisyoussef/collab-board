@@ -18,8 +18,6 @@ export function Board() {
   const [ablyReady, setAblyReady] = useState(false);
 
   // Initialize Ably with auth'd clientId BEFORE Canvas mounts.
-  // Canvas hooks depend on a live Ably connection — rendering Canvas
-  // before this completes causes subscriptions on a dead client.
   useEffect(() => {
     if (user) {
       initAblyClient(user.uid);
@@ -59,6 +57,32 @@ export function Board() {
 
   return (
     <>
+      {/* Back to dashboard button */}
+      <button
+        onClick={() => navigate('/dashboard')}
+        title="Back to Dashboard"
+        style={{
+          position: 'fixed',
+          top: 16,
+          left: 16,
+          zIndex: 1000,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '8px 14px',
+          background: '#fff',
+          border: 'none',
+          borderRadius: 8,
+          boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+          cursor: 'pointer',
+          fontSize: 14,
+          fontWeight: 500,
+          color: '#333',
+        }}
+      >
+        ← Boards
+      </button>
+
       <Canvas
         boardId={boardId}
         userId={user.uid}
