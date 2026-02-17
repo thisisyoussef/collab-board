@@ -94,15 +94,15 @@ export function Canvas({ boardId, userId, userName, userColor }: CanvasProps) {
   pushActionRef.current = pushAction;
   const wireShapeEventsRef = useRef<(shape: Konva.Group, objId: string) => void>(undefined);
 
-  // Board join sequence
+  // Board join sequence — load from Firestore, render, then subscribe.
+  // No retry loop: if doc doesn't exist yet (new board), show empty canvas immediately.
   useEffect(() => {
     let cancelled = false;
-    let retries = 0;
     const joinBoard = async () => {
       setLoading(true);
       const boardDoc = await loadFromFirestore();
       if (cancelled) return;
-      if (boardDoc?.objects) {
+      if (boardDoc?.objects && Object.keys(boardDoc.objects).length > 0) {
         loadBoard(boardDoc.objects);
         // Wire events on loaded shapes
         const layer = objectLayerRef.current;
@@ -113,15 +113,9 @@ export function Canvas({ boardId, userId, userName, userColor }: CanvasProps) {
             }
           });
         }
-        setLoading(false);
-      } else {
-        if (retries < 3) {
-          retries++;
-          setTimeout(() => { if (!cancelled) joinBoard(); }, 500);
-          return;
-        }
-        setLoading(false);
       }
+      // Always show canvas — empty or populated
+      setLoading(false);
     };
     joinBoard();
     return () => { cancelled = true; };
