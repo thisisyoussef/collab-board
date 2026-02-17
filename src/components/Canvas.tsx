@@ -304,7 +304,7 @@ export function Canvas({ boardId, userId, userName, userColor }: CanvasProps) {
         // Update Konva text node
         const stage = stageRef.current;
         if (stage) {
-          const node = stage.findOne(`#${objectId}`);
+          const node = stage.findOne(`#${objectId}`) as Konva.Group | null;
           const textNode = node?.findOne?.('Text') as Konva.Text | null;
           if (textNode) {
             textNode.text(text);

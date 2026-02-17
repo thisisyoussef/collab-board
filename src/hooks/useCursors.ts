@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { getBoardChannel, getAblyClient } from '../lib/ably';
 import { throttleRAF } from '../lib/utils';
 import type { CursorData } from '../types';
+import type { Types } from 'ably';
 
 /**
  * Cursor sync hook — RAF-throttled (16ms) broadcast, latency measurement.
@@ -27,13 +28,14 @@ export function useCursors(
     channelRef.current = channel;
     const clientId = getAblyClient().auth.clientId;
 
-    const onCursorMove = (msg: { clientId?: string | null; data: CursorData }) => {
+    const onCursorMove = (msg: Types.Message) => {
+      const data = msg.data as CursorData;
       // Skip own messages
       if (msg.clientId === clientId) return;
-      if (!msg.data || !msg.data.userId) return;
+      if (!data || !data.userId) return;
 
       // Measure latency: Date.now() - sentAt
-      const latency = Date.now() - msg.data.sentAt;
+      const latency = Date.now() - data.sentAt;
       latenciesRef.current.push(latency);
       // Keep rolling window of 100
       if (latenciesRef.current.length > 100) {
@@ -42,7 +44,7 @@ export function useCursors(
 
       setRemoteCursors((prev) => {
         const next = new Map(prev);
-        next.set(msg.data.userId, msg.data);
+        next.set(data.userId, data);
         return next;
       });
     };

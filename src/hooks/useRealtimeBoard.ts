@@ -3,6 +3,7 @@ import Konva from 'konva';
 import { getBoardChannel, getAblyClient } from '../lib/ably';
 import { createKonvaShape } from '../lib/shapes';
 import type { BoardObject } from '../types';
+import type { Types } from 'ably';
 
 /**
  * Object sync hook — subscribe to create/update/delete via Ably, imperatively update Konva.
@@ -29,14 +30,15 @@ export function useRealtimeBoard(
     const clientId = getAblyClient().auth.clientId;
 
     // Object created remotely
-    const onObjectCreate = (msg: { clientId?: string | null; data: BoardObject & { _ts?: number } }) => {
+    const onObjectCreate = (msg: Types.Message) => {
+      const data = msg.data as BoardObject & { _ts?: number };
       if (msg.clientId === clientId) return;
-      const obj = msg.data;
+      const obj = data;
       if (!obj || !obj.id) return;
 
       // Measure latency
-      if (msg.data._ts) {
-        const latency = Date.now() - msg.data._ts;
+      if (data._ts) {
+        const latency = Date.now() - data._ts;
         latenciesRef.current.push(latency);
         if (latenciesRef.current.length > 100) latenciesRef.current.shift();
       }
@@ -54,12 +56,10 @@ export function useRealtimeBoard(
     };
 
     // Object updated remotely
-    const onObjectUpdate = (msg: {
-      clientId?: string | null;
-      data: { id: string; attrs: Partial<BoardObject>; _ts?: number };
-    }) => {
+    const onObjectUpdate = (msg: Types.Message) => {
+      const data = msg.data as { id: string; attrs: Partial<BoardObject>; _ts?: number };
       if (msg.clientId === clientId) return;
-      const { id, attrs, _ts } = msg.data;
+      const { id, attrs, _ts } = data;
       if (!id) return;
 
       // Measure latency
@@ -94,12 +94,10 @@ export function useRealtimeBoard(
     };
 
     // Object deleted remotely
-    const onObjectDelete = (msg: {
-      clientId?: string | null;
-      data: { id: string; _ts?: number };
-    }) => {
+    const onObjectDelete = (msg: Types.Message) => {
+      const data = msg.data as { id: string; _ts?: number };
       if (msg.clientId === clientId) return;
-      const { id } = msg.data;
+      const { id } = data;
       if (!id) return;
 
       // Remove from objectsRef
