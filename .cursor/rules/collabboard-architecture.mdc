@@ -1,0 +1,80 @@
+---
+description: CollabBoard architecture, tech stack, folder structure, and coding conventions
+alwaysApply: true
+---
+
+# CollabBoard Architecture
+
+## Tech Stack
+
+- **Real-time sync:** Ably (managed WebSocket, <50ms cursors, <100ms objects)
+- **Database:** Firebase Firestore (one document per board, embedded objects)
+- **Auth:** Firebase Auth (Google Sign-In only)
+- **Frontend:** Vite + React + react-konva (canvas rendering)
+- **AI:** Anthropic Claude with function calling via Vercel serverless `/api`
+- **Deployment:** Vercel (frontend static + serverless functions, $0 cost)
+- **Metrics:** Custom overlay + stats.js (FPS) + timestamp-based latency
+
+## Architecture (no traditional backend)
+
+```
+Client-side: React + Konva (canvas), Ably SDK (sync), Firestore SDK (persistence), Firebase Auth
+Serverless:  /api/ai/generate.js only (protects Anthropic API key)
+```
+
+## Critical Performance Pattern
+
+Separate Konva state from React state. Use refs for canvas, React for UI only.
+
+```jsx
+// BAD — React re-renders kill performance with 500 objects
+const [objects, setObjects] = useState({});
+
+// GOOD — Konva manages its own state via refs
+const stageRef = useRef(null);
+const updateObject = (id, newData) => {
+  const shape = stageRef.current.findOne(`#${id}`);
+  shape.setAttrs(newData);
+  shape.getLayer().batchDraw();
+};
+```
+
+## Folder Structure (flat, simple)
+
+```
+collab-board/
+├── src/
+│   ├── components/   # Canvas.jsx, Toolbar.jsx, ShareButton.jsx, MetricsOverlay.jsx
+│   ├── hooks/        # useAbly.js, useFirestore.js, useCanvas.js
+│   ├── lib/          # ably.js, firebase.js, utils.js
+│   ├── pages/        # Dashboard.jsx, Board.jsx, Landing.jsx
+│   └── main.jsx
+├── api/              # Vercel serverless functions
+│   └── ai/
+│       └── generate.js
+├── public/
+├── docs/             # PRD, pre-search, AI dev log, cost analysis
+└── vercel.json
+```
+
+## Naming Conventions
+
+- **Components:** PascalCase (`Canvas.jsx`, `ShareButton.jsx`)
+- **Hooks:** camelCase with `use` prefix (`useAbly.js`, `useRealTimeSync.js`)
+- **Utilities:** camelCase (`generateBoardId.js`, `debounce.js`)
+- **Constants:** UPPER_SNAKE_CASE (`MAX_OBJECTS = 500`, `CURSOR_UPDATE_THROTTLE = 50`)
+
+## Routes
+
+```
+/           → Landing/login page
+/dashboard  → Board list (user's boards)
+/board/:id  → Canvas editor (UUID-based, shareable link)
+```
+
+## Key Principles
+
+- Keep it flat — no deeply nested folders for a 1-week project.
+- Use Prettier defaults, don't bikeshed formatting.
+- No barrel files — import directly from source.
+- Managed services over custom infrastructure (Ably, Firebase, Vercel).

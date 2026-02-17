@@ -1,0 +1,88 @@
+---
+description: Testing strategy — metrics validation, latency benchmarks, FPS monitoring, load testing
+globs: "**/*.test.*,**/*.spec.*,**/tests/**"
+alwaysApply: false
+---
+
+# Testing CollabBoard
+
+## Philosophy: Metrics Validation Over Unit Tests
+
+For a 1-week sprint, **performance benchmarks that prove requirements** are more
+valuable than Jest mocks. Focus testing time on:
+
+1. Latency validation (proves <100ms objects, <50ms cursors)
+2. FPS monitoring (proves 60 FPS)
+3. Concurrent user load tests (proves 5+ users)
+4. Object capacity stress tests (proves 500+ objects)
+
+## 1. Latency Validation (Priority)
+
+Build this FIRST (hours 1-4) to validate Ably architecture before building features.
+
+```javascript
+// Run 100 round-trip messages, measure actual latency
+const latencies = [];
+for (let i = 0; i < 100; i++) {
+  const start = Date.now();
+  channel.publish("test", { data: i, sentAt: start });
+  channel.once("test", () => {
+    latencies.push(Date.now() - start);
+  });
+}
+// Assert: avg(latencies) < 100ms for objects, < 50ms for cursors
+```
+
+## 2. FPS Monitoring
+
+stats.js overlay in development, custom metrics overlay for demos:
+
+```javascript
+import Stats from "stats.js";
+const stats = new Stats();
+document.body.appendChild(stats.dom);
+```
+
+Target: sustained >55 FPS (buffer below 60 FPS target) with 500 objects during pan/zoom.
+
+## 3. Concurrent User Load Test
+
+- Open 5 browser tabs connected to same board.
+- All create/move objects and broadcast cursors.
+- Verify: all cursor updates reach all clients within 100ms.
+- Verify: all object changes sync correctly.
+- Use Puppeteer or Playwright for automated multi-tab testing.
+
+## 4. Object Capacity Stress Test
+
+- Programmatically add 500 objects to board.
+- Measure Konva render time <16ms per frame (60 FPS = 16.67ms budget).
+- Pan/zoom with all 500 objects, verify no degradation.
+
+## 5. PRD Testing Scenarios (will be graded)
+
+1. **Two-user simultaneous editing** in different browsers → both see all changes.
+2. **One user refreshing mid-edit** → all objects reload from Firestore.
+3. **Rapid creation/movement** → sync performance stays under targets.
+4. **Network throttling** → graceful disconnect, reconnect, convergence.
+5. **5+ concurrent users** → no degradation.
+
+## Metrics Dashboard
+
+Build a toggleable `MetricsOverlay` component showing live:
+
+- Average cursor latency (target <50ms)
+- Average object sync latency (target <100ms)
+- Current FPS
+- Connected users count
+- Object count
+
+Show this during demos to prove performance to graders.
+
+## When to Add Unit Tests
+
+Add targeted tests only for complex pure functions:
+
+- Coordinate transforms (worldToScreen, screenToWorld)
+- Conflict resolution logic (timestamp comparison)
+- AI tool call parsing

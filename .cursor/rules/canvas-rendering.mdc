@@ -1,0 +1,83 @@
+---
+description: Canvas rendering with React-Konva — refs pattern, pan/zoom, selection, performance
+globs: "**/components/**,**/hooks/**,**/canvas/**"
+alwaysApply: false
+---
+
+# Canvas Rendering (React-Konva)
+
+## Golden Rule: Konva Refs, Not React State
+
+Canvas objects live in Konva's scene graph, NOT in React state. Use `stageRef` to
+find and update shapes directly. React only manages UI (toolbar, panels, dialogs).
+
+```jsx
+// Update shape position without React re-render
+const shape = stageRef.current.findOne(`#${objectId}`);
+shape.setAttrs({ x: newX, y: newY });
+shape.getLayer().batchDraw(); // Single efficient redraw
+```
+
+## Konva Layers (separate for performance)
+
+1. **Background** — grid/dots pattern. `listening={false}` (no hit detection).
+2. **Objects** — sticky notes, shapes, frames, text, connectors.
+3. **Selection** — rubber-band rect, bounding box, transform handles.
+4. **Cursors** — remote user cursors with name labels (always on top).
+
+## Board Object Schema
+
+```javascript
+{
+  id: 'uuid',                    // crypto.randomUUID()
+  type: 'sticky' | 'rect' | 'circle' | 'line' | 'text' | 'frame' | 'connector',
+  x: 100, y: 200,               // world coordinates
+  width: 150, height: 100,
+  rotation: 0,                   // degrees
+  text: 'Hello',                 // for sticky/text
+  color: '#FFEB3B',              // hex fill color
+  fontSize: 14,
+  zIndex: 1,
+  createdBy: 'userId',
+  updatedAt: '2026-02-17T...',   // ISO string, used for last-write-wins
+}
+```
+
+## Pan & Zoom
+
+- Pan: `Stage.draggable={true}`, drag on empty canvas area.
+- Zoom: wheel event → scale toward cursor position. Clamp scale 0.1–5.
+- All object positions stored in **world coordinates**.
+- Viewport = Stage position + scale. Convert with `worldToScreen` / `screenToWorld`.
+
+## Selection
+
+- Single click on object → select, show `Transformer` handles (resize/rotate).
+- Shift+click → toggle in multi-selection.
+- Drag on empty canvas → rubber-band selection rectangle.
+- `Transformer` attached to selected node(s) for resize/rotate.
+
+## Performance Targets
+
+- **60 FPS** during pan, zoom, drag operations.
+- **500+ objects** rendered without drops.
+- Techniques:
+  - `listening={false}` on background layer.
+  - Virtual rendering: only render objects within viewport bounds.
+  - `batchDraw()` instead of individual redraws.
+  - Debounce Ably messages that trigger React state (cursor list, presence).
+  - `React.memo` on toolbar/panel components.
+
+## FPS Monitoring
+
+Use stats.js overlay in development:
+
+```javascript
+import Stats from "stats.js";
+const stats = new Stats();
+document.body.appendChild(stats.dom);
+requestAnimationFrame(function loop() {
+  stats.update();
+  requestAnimationFrame(loop);
+});
+```

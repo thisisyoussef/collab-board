@@ -1,0 +1,85 @@
+---
+description: AI board agent — Anthropic Claude, Vercel serverless, tool definitions
+globs: "**/ai/**,**/api/**"
+alwaysApply: false
+---
+
+# AI Board Agent (Anthropic Claude)
+
+## Architecture
+
+```
+User chat input → POST /api/ai/generate → Claude function calling → JSON tool calls
+→ Client parses tool calls → Executes on Konva stage → Broadcasts via Ably
+```
+
+AI calls go through **Vercel serverless function** (`/api/ai/generate.js`) to protect the
+Anthropic API key. Never expose `ANTHROPIC_API_KEY` to the client.
+
+## Tool Schema (9 tools minimum)
+
+```
+createStickyNote(text, x, y, color)
+createShape(type, x, y, width, height, color)    // rect, circle, line
+createFrame(title, x, y, width, height)
+createConnector(fromId, toId, style)
+moveObject(objectId, x, y)
+resizeObject(objectId, width, height)
+updateText(objectId, newText)
+changeColor(objectId, color)
+getBoardState()    // returns current objects for AI context
+```
+
+## Command Categories (6+ required)
+
+1. **Creation** — "Add a yellow sticky note that says 'User Research'"
+2. **Manipulation** — "Change the sticky note color to green"
+3. **Layout** — "Arrange these sticky notes in a grid"
+4. **Complex/Template** — "Create a SWOT analysis template with four quadrants"
+
+## Serverless Function Pattern
+
+```javascript
+// /api/ai/generate.js
+import Anthropic from "@anthropic-ai/sdk";
+
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+export default async function handler(req, res) {
+  if (req.method !== "POST")
+    return res.status(405).json({ error: "Method not allowed" });
+
+  const { prompt, boardState } = req.body;
+  if (!prompt || prompt.length > 500)
+    return res.status(400).json({ error: "Invalid prompt" });
+
+  const message = await anthropic.messages.create({
+    model: "claude-sonnet-4-20250514",
+    max_tokens: 2000,
+    tools: toolDefinitions, // Array of tool schemas
+    messages: [{ role: "user", content: prompt }],
+    system: `You are a whiteboard AI assistant. Current board state: ${JSON.stringify(boardState)}`,
+  });
+
+  res.json({ toolCalls: message.content.filter((c) => c.type === "tool_use") });
+}
+```
+
+## Multi-Step Commands
+
+- Complex commands (SWOT, retro board) may return multiple tool calls.
+- Execute sequentially, accumulating created IDs for positioning.
+- Pass intermediate state back to Claude if needed.
+
+## Performance & Safety
+
+- Target: **<2 seconds** for single-step commands.
+- Rate limit: 5 requests/min per user.
+- Input sanitization: strip HTML, limit to 500 chars.
+- DOMPurify on any AI-generated SVG content before rendering.
+
+## Shared AI State
+
+- AI-generated objects are regular board objects — they sync via Ably to all users.
+- Multiple users can issue AI commands simultaneously (independent operations).
+- Tag AI objects with `createdBy: 'ai-agent'` in metadata.

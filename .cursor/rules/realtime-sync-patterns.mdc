@@ -1,0 +1,67 @@
+---
+description: Real-time collaboration patterns with Ably + Firebase Firestore
+globs: "**/*.js,**/*.jsx,**/*.ts,**/*.tsx"
+alwaysApply: false
+---
+
+# Real-Time Sync Patterns (Ably + Firestore)
+
+## Two-Layer Architecture
+
+- **Ably** = fast broadcast layer (cursors + object events, in-memory, <50ms).
+- **Firestore** = persistence layer (board state, debounced writes every 2-5s).
+
+Ably handles real-time; Firestore handles durability. Never block UI on Firestore writes.
+
+## Ably Channels
+
+- **Board channel** (`board:{boardId}`) — object CRUD events + cursor positions.
+- Ably **Presence** on the same channel — who's online, join/leave.
+
+## Cursor Sync
+
+- Throttle cursor broadcasts to **16ms** (60fps) using `requestAnimationFrame`.
+- Payload: `{ userId, x, y, color, name, sentAt: Date.now() }` in world coordinates.
+- Remote cursors: interpolate/tween position for smoothness.
+- Measure latency: `Date.now() - msg.data.sentAt` must be **<50ms**.
+
+## Object Sync
+
+- Events: `object:create`, `object:update`, `object:delete`.
+- Payload: full object state (not diffs). Simplicity > bandwidth.
+- Flow: local Konva update (optimistic) → Ably publish → other clients receive → update their Konva stage via refs.
+- Debounced Firestore write every 2-5 seconds (not per-event).
+
+## Persistence Strategy
+
+```
+User action → Update Konva via ref → Publish to Ably → Debounced write to Firestore
+On join     → Load full board from Firestore doc → Render on Konva → Subscribe to Ably
+On reconnect→ Re-subscribe to Ably → Fetch latest from Firestore → Merge
+```
+
+## Conflict Resolution
+
+- **Last-write-wins** using `updatedAt` timestamps on each object.
+- If received event has older `updatedAt` than local, discard.
+- Document this approach in README.
+
+## Disconnect/Reconnect
+
+- Ably auto-reconnects with exponential backoff.
+- Show "Reconnecting..." banner on disconnect.
+- On reconnect: Ably presence auto-restores; fetch full board from Firestore to reconcile.
+- Ably presence cleans up stale users after 15s timeout.
+
+## Cost Optimization
+
+- Without debouncing: 6,000 Firestore writes/min = expensive.
+- With debouncing: ~20 writes/min = free tier.
+- Ably free tier: 6M messages/month (plenty for showcase).
+
+## Anti-Patterns
+
+- Do NOT write every object change directly to Firestore — always debounce.
+- Do NOT use React state for canvas objects — use Konva refs (`stageRef.current.findOne`).
+- Do NOT block UI on Firestore acknowledgment — optimistic updates only.
+- Do NOT send diffs/patches — send full object state for simplicity.
