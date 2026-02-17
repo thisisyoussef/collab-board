@@ -29,7 +29,8 @@ export function screenToWorld(
 /**
  * Debounce a function by delay ms
  */
-export function debounce<T extends (...args: unknown[]) => void>(
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function debounce<T extends (...args: any[]) => void>(
   fn: T,
   delay: number,
 ): (...args: Parameters<T>) => void {
@@ -51,7 +52,8 @@ export function generateBoardId(): string {
  * Throttle a function to fire at most once per animation frame (16ms / 60fps).
  * Uses requestAnimationFrame for smooth cursor broadcasting.
  */
-export function throttleRAF<T extends (...args: unknown[]) => void>(
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function throttleRAF<T extends (...args: any[]) => void>(
   fn: T,
 ): (...args: Parameters<T>) => void {
   let rafId: number | null = null;

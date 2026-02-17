@@ -12,7 +12,7 @@ import type { BoardObject, BoardDocument } from '../types';
  */
 export function useFirestoreBoard(boardId: string) {
   // Debounced save — 3 second interval per FIRESTORE_DEBOUNCE_MS
-  const debouncedSaveRef = useRef<(objects: Record<string, BoardObject>) => void>(
+  const debouncedSaveRef = useRef(
     debounce((objects: Record<string, BoardObject>) => {
       const boardRef = doc(db, 'boards', boardId);
       updateDoc(boardRef, {

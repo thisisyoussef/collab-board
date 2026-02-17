@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { getBoardChannel, getAblyClient } from '../lib/ably';
 import { throttleRAF } from '../lib/utils';
 import type { CursorData } from '../types';
-import type { Types } from 'ably';
+import type { Message } from 'ably';
 
 /**
  * Cursor sync hook — RAF-throttled (16ms) broadcast, latency measurement.
@@ -82,7 +82,7 @@ export function useCursors(
   // RAF-throttled publish (16ms / 60fps)
   const publishCursor = useMemo(
     () =>
-      throttleRAF(((pos: { x: number; y: number }) => {
+      throttleRAF((pos: { x: number; y: number }) => {
         channelRef.current?.publish('cursor:move', {
           userId,
           x: pos.x,
@@ -91,7 +91,7 @@ export function useCursors(
           name: userName,
           sentAt: Date.now(),
         } satisfies CursorData);
-      }) as (...args: unknown[]) => void),
+      }),
     [userId, userColor, userName],
   );
 
