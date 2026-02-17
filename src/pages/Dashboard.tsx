@@ -43,17 +43,19 @@ export function Dashboard() {
     loadBoards();
   }, [user]);
 
-  const handleCreateBoard = useCallback(async () => {
+  const handleCreateBoard = useCallback(() => {
     if (!user) return;
     const boardId = generateBoardId();
-    await setDoc(doc(db, 'boards', boardId), {
+    // Navigate immediately for snappy UX — board page will create doc if missing
+    navigate(`/board/${boardId}`);
+    // Fire-and-forget Firestore write
+    setDoc(doc(db, 'boards', boardId), {
       ownerId: user.uid,
       title: 'Untitled Board',
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
       objects: {},
-    });
-    navigate(`/board/${boardId}`);
+    }).catch((err) => console.warn('Board creation write failed:', err));
   }, [user, navigate]);
 
   if (authLoading || !user) {

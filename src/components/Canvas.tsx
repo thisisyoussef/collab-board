@@ -78,14 +78,25 @@ export function Canvas({ boardId, userId, userName, userColor }: CanvasProps) {
   // Steps 3-5 happen automatically via hooks. We just need to load + render here.
   useEffect(() => {
     let cancelled = false;
+    let retries = 0;
     const joinBoard = async () => {
       setLoading(true);
       const boardDoc = await loadFromFirestore();
       if (cancelled) return;
       if (boardDoc?.objects) {
         loadBoard(boardDoc.objects);
+        setLoading(false);
+      } else {
+        // Board doc may not exist yet (optimistic navigation).
+        // Retry a few times with short delays before giving up.
+        if (retries < 3) {
+          retries++;
+          setTimeout(() => { if (!cancelled) joinBoard(); }, 500);
+          return;
+        }
+        // After retries, just show empty canvas — board will be created soon
+        setLoading(false);
       }
-      setLoading(false);
     };
     joinBoard();
     return () => { cancelled = true; };

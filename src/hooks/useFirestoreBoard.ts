@@ -1,5 +1,5 @@
 import { useCallback, useRef } from 'react';
-import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { debounce } from '../lib/utils';
 import { FIRESTORE_DEBOUNCE_MS } from '../constants';
@@ -11,14 +11,14 @@ import type { BoardObject, BoardDocument } from '../types';
  * Per realtime-sync-patterns rule: Firestore = source of truth on join.
  */
 export function useFirestoreBoard(boardId: string) {
-  // Debounced save — 3 second interval per FIRESTORE_DEBOUNCE_MS
-  const debouncedSaveRef = useRef(
+  // Debounced save — uses setDoc with merge to handle docs that may not exist yet
+  const debouncedSaveRef = useRef<(objects: Record<string, BoardObject>) => void>(
     debounce((objects: Record<string, BoardObject>) => {
       const boardRef = doc(db, 'boards', boardId);
-      updateDoc(boardRef, {
+      setDoc(boardRef, {
         objects,
         updatedAt: serverTimestamp(),
-      }).catch((err) => {
+      }, { merge: true }).catch((err) => {
         console.warn('Firestore save failed:', err);
       });
     }, FIRESTORE_DEBOUNCE_MS),

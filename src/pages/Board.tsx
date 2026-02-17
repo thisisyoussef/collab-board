@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Canvas } from '../components/Canvas';
 import { ShareButton } from '../components/ShareButton';
@@ -8,17 +8,22 @@ import { USER_COLORS } from '../constants';
 
 /**
  * Board page — wraps Canvas with auth guard and boardId from route.
- * Per collabboard-architecture rule: /board/:id route.
+ * Initializes Ably BEFORE rendering Canvas to prevent race conditions
+ * where hooks subscribe on a stale connection.
  */
 export function Board() {
   const { id: boardId } = useParams<{ id: string }>();
   const { user, loading } = useAuth();
   const navigate = useNavigate();
+  const [ablyReady, setAblyReady] = useState(false);
 
-  // Initialize Ably with auth'd clientId
+  // Initialize Ably with auth'd clientId BEFORE Canvas mounts.
+  // Canvas hooks depend on a live Ably connection — rendering Canvas
+  // before this completes causes subscriptions on a dead client.
   useEffect(() => {
     if (user) {
       initAblyClient(user.uid);
+      setAblyReady(true);
     }
   }, [user]);
 
@@ -40,7 +45,7 @@ export function Board() {
     }
   }, [user, loading, navigate]);
 
-  if (loading) {
+  if (loading || !ablyReady) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
         Loading...
