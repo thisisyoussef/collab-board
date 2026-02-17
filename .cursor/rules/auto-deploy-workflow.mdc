@@ -1,0 +1,88 @@
+---
+description: Commit and push frequently for auto-deployment to Vercel
+alwaysApply: true
+---
+
+# Auto-Deploy Workflow
+
+## Commit Frequency
+
+**After completing ANY meaningful work unit, immediately commit and push:**
+
+- After implementing a feature (even if partially working)
+- After fixing a bug or error
+- After adding a new component, hook, or utility
+- After updating configuration or documentation
+- After each TDD cycle (test passes)
+- Before switching context or taking a break
+
+**DO NOT wait for:**
+- Perfect polish
+- Complete features
+- Multiple changes to batch together
+
+## Commit Message Format
+
+```
+<type>: <short summary>
+
+<optional body with details>
+```
+
+**Types:**
+- `feat:` — New feature or capability
+- `fix:` — Bug fix
+- `perf:` — Performance improvement
+- `refactor:` — Code restructure without behavior change
+- `test:` — Adding or updating tests
+- `docs:` — Documentation only
+- `chore:` — Build, config, dependencies
+
+**Examples:**
+```
+feat: implement cursor sync with Ably
+
+Added throttled cursor broadcast (50ms) and remote cursor rendering.
+Tested with 2 browsers, latency <50ms target met.
+
+---
+
+fix: prevent Firebase re-initialization on hot reload
+
+Moved Firebase init to singleton pattern to avoid duplicate app errors.
+
+---
+
+perf: add viewport culling for 500+ objects
+
+Only render objects within canvas viewport. FPS improved from 30 to 60.
+```
+
+## Git Commands
+
+After making changes:
+
+```bash
+git add -A
+git commit -m "your message here"
+git push origin main
+```
+
+Or in one line:
+```bash
+git add -A && git commit -m "feat: your change" && git push origin main
+```
+
+## Why This Matters
+
+- **Vercel auto-deploys** on every push → see changes live immediately
+- **Continuous integration** — catch deployment issues early
+- **Progress visibility** — GitHub shows commit history for AI Development Log
+- **Safe checkpoints** — easy to revert if something breaks
+- **Showcase** — commit history demonstrates your build process for grading
+
+## When NOT to Commit
+
+- Code doesn't compile (fix TypeScript errors first)
+- Introduces breaking changes without a plan to fix immediately
+- Contains sensitive data (check .gitignore covers .env)
