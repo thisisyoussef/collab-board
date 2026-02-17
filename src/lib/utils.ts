@@ -46,3 +46,23 @@ export function debounce<T extends (...args: unknown[]) => void>(
 export function generateBoardId(): string {
   return crypto.randomUUID();
 }
+
+/**
+ * Throttle a function to fire at most once per animation frame (16ms / 60fps).
+ * Uses requestAnimationFrame for smooth cursor broadcasting.
+ */
+export function throttleRAF<T extends (...args: unknown[]) => void>(
+  fn: T,
+): (...args: Parameters<T>) => void {
+  let rafId: number | null = null;
+  let latestArgs: Parameters<T> | null = null;
+  return (...args: Parameters<T>) => {
+    latestArgs = args;
+    if (rafId === null) {
+      rafId = requestAnimationFrame(() => {
+        if (latestArgs) fn(...latestArgs);
+        rafId = null;
+      });
+    }
+  };
+}
