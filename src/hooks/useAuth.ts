@@ -1,7 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  signInWithRedirect,
-  getRedirectResult,
+  signInWithPopup,
   signOut as fbSignOut,
   onAuthStateChanged,
   type User,
@@ -10,8 +9,12 @@ import { auth, googleProvider } from '../lib/firebase';
 
 /**
  * Firebase Google Auth hook.
- * Uses signInWithRedirect (not popup) to avoid Cross-Origin-Opener-Policy
- * issues on Vercel deployments.
+ * Uses signInWithPopup with fallback error handling.
+ *
+ * signInWithRedirect has a known race condition on Firebase v9+ where
+ * onAuthStateChanged fires with null before getRedirectResult resolves,
+ * causing the user to see the sign-in page briefly after redirect.
+ * signInWithPopup is more reliable — the COOP warning is non-fatal.
  */
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
@@ -25,18 +28,19 @@ export function useAuth() {
     return unsubscribe;
   }, []);
 
-  // Handle redirect result on page load (after Google redirects back)
-  useEffect(() => {
-    getRedirectResult(auth).catch((err) => {
-      console.error('Redirect sign-in failed:', err);
-    });
-  }, []);
-
   const signIn = useCallback(async () => {
     try {
-      await signInWithRedirect(auth, googleProvider);
-    } catch (err) {
-      console.error('Sign-in failed:', err);
+      await signInWithPopup(auth, googleProvider);
+    } catch (err: unknown) {
+      const error = err as { code?: string };
+      // If popup blocked, log but don't crash — user can try again
+      if (error.code === 'auth/popup-blocked') {
+        console.warn('Popup was blocked. Please allow popups for this site.');
+      } else if (error.code === 'auth/popup-closed-by-user') {
+        // User closed the popup — not an error
+      } else {
+        console.error('Sign-in failed:', err);
+      }
     }
   }, []);
 
