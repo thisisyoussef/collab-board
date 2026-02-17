@@ -31,7 +31,7 @@ export function Canvas({ boardId, userId, userName, userColor }: CanvasProps) {
   // Refs — canvas objects live here, NEVER in React state
   const stageRef = useRef<Konva.Stage>(null);
   const objectLayerRef = useRef<Konva.Layer>(null);
-  const selectionLayerRef = useRef<Konva.Layer>(null);
+
   const cursorLayerRef = useRef<Konva.Layer>(null);
   const objectsRef = useRef(new Map<string, BoardObject>());
 
@@ -418,9 +418,7 @@ export function Canvas({ boardId, userId, userName, userColor }: CanvasProps) {
           />
         </Layer>
 
-        <Layer ref={objectLayerRef} />
-
-        <Layer ref={selectionLayerRef}>
+        <Layer ref={objectLayerRef}>
           <SelectionManager stageRef={stageRef} selectedIds={selectedIds} />
         </Layer>
 
