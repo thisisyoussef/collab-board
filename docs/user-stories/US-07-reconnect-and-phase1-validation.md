@@ -2,7 +2,7 @@
 
 ## Status
 
-- State: Not Started
+- State: In Progress (Implemented + Deployed, Awaiting User Validation)
 - Owner: Codex
 - Depends on: US-06 Approved
 
@@ -428,17 +428,17 @@ function stressTest(stage, layer, count = 500) {
 
 ## Acceptance Criteria
 
-- [ ] Disconnection shows yellow "Connection lost. Reconnecting..." banner immediately above the topbar.
-- [ ] Presence pill in topbar switches to 🔴 Offline on disconnect.
-- [ ] Reconnection shows green "Reconnected" flash for 1.5 seconds.
-- [ ] After >5s disconnect, banner text changes to "Offline — edits will sync when reconnected".
-- [ ] On reconnect: client re-emits `join-board` to rejoin the room.
-- [ ] On reconnect: client fetches fresh board state from Firestore and re-renders all objects.
-- [ ] On reconnect: presence list updates (user reappears in other clients' topbar avatars).
-- [ ] On reconnect: cursor broadcasting resumes on the canvas.
-- [ ] Socket.IO reconnection uses exponential backoff (1s → 2s → 4s... up to 10s cap).
-- [ ] No infinite reconnection loops or memory leaks during rapid disconnect/reconnect.
-- [ ] Metrics overlay shows reconnect count and connection uptime.
+- [x] Disconnection shows yellow "Connection lost. Reconnecting..." banner immediately above the topbar.
+- [x] Presence pill in topbar switches to 🔴 Offline on disconnect.
+- [x] Reconnection shows green "Reconnected" flash for 1.5 seconds.
+- [x] After >5s disconnect, banner text changes to "Offline — edits will sync when reconnected".
+- [x] On reconnect: client re-emits `join-board` to rejoin the room.
+- [x] On reconnect: client fetches fresh board state from Firestore and re-renders all objects.
+- [x] On reconnect: presence list updates (user reappears in other clients' topbar avatars).
+- [x] On reconnect: cursor broadcasting resumes on the canvas.
+- [x] Socket.IO reconnection uses exponential backoff (1s → 2s → 4s... up to 10s cap).
+- [x] No infinite reconnection loops or memory leaks during rapid disconnect/reconnect.
+- [x] Metrics overlay shows reconnect count and connection uptime.
 - [ ] **Validation: Scenario 1** — Two-user editing: all CRUD syncs within <100ms.
 - [ ] **Validation: Scenario 2** — Refresh mid-edit: all objects reload from Firestore.
 - [ ] **Validation: Scenario 3** — Rapid creation: FPS >=55, latency <100ms.
@@ -467,8 +467,8 @@ function stressTest(stage, layer, count = 500) {
 
 ## Checkpoint Result
 
-- Production Frontend URL:
-- Production Socket URL:
+- Production Frontend URL: https://collab-board-iota.vercel.app
+- Production Socket URL: https://collab-board-0948.onrender.com
 - User Validation: Pending
 - Phase I Validation Results:
   - Scenario 1 (Two-user editing): ___ / PASS
@@ -478,3 +478,7 @@ function stressTest(stage, layer, count = 500) {
   - Scenario 5 (5+ concurrent users): ___ / PASS — Users: ___ Cursor: ___ms Object: ___ms
   - Stress test (500+ objects): ___ / PASS — Objects: ___ FPS: ___
 - Notes:
+  Reconnect resilience implemented in code and deployed on February 18, 2026.
+  Added sticky reconnect banner states (warning/success), reconnect counters, uptime metrics, and reconnect resync from Firestore.
+  Local validation completed: `npm run lint`, `npm test -- --run`, and `npm run build` passing.
+  Manual production scenario matrix is pending user-run validation and measurement capture.
