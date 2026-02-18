@@ -2,7 +2,7 @@
 
 ## Status
 
-- State: In Progress (Implemented, Awaiting Deployment + User Validation)
+- State: In Progress (Deployed, Awaiting User Validation)
 - Owner: Codex
 - Depends on: US-03 Approved
 
@@ -223,4 +223,5 @@ function worldToScreen(stage: Konva.Stage, worldPos: { x: number; y: number }) {
   Implemented `cursor:move` on the Socket.IO server with `socket.volatile.to(room)` broadcasting, plus client-side throttle and latency instrumentation.  
   Added Konva stage wiring in board canvas, dedicated remote cursor layer (`listening={false}`), and a metrics overlay for FPS + cursor latency.  
   Added/updated tests for cursor hook, metrics overlay, board integration, realtime payload helpers, and coordinate utilities.  
-  Local validation on February 18, 2026: `npm run lint`, `npm run test`, and `npm run build` all passing.
+  Local validation on February 18, 2026: `npm run lint`, `npm run test`, and `npm run build` all passing.  
+  Vercel production deploy completed and aliased to `https://collab-board-iota.vercel.app` on February 18, 2026.
