@@ -2,7 +2,7 @@
 
 ## Status
 
-- State: In Progress (Implemented, Awaiting Deployment + User Validation)
+- State: In Progress (Deployed, Awaiting User Validation)
 - Owner: Codex
 - Depends on: US-02 Approved
 
@@ -247,4 +247,5 @@ Replace the static `avatar-badge` in the topbar right cluster with the dynamic `
 - Notes:
   US-03 presence awareness implemented with Socket.IO room join flow (`join-board`, `presence:snapshot`, `user:joined`, `user:left`) and a new topbar presence UI (deterministic avatar colors, initials, self ring, overflow, and people count).  
   Added client/server helper and hook tests plus UI tests.  
-  Local validation on February 18, 2026: `npm run lint`, `npm run test`, `npm run build` all passing.
+  Local validation on February 18, 2026: `npm run lint`, `npm run test`, `npm run build` all passing.  
+  Vercel production deploy completed and aliased to `https://collab-board-iota.vercel.app` on February 18, 2026.
