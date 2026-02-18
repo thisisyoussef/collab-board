@@ -8,9 +8,11 @@ type SocketHandler = (...args: unknown[]) => void;
 function createMockSocket() {
   const handlers = new Map<string, Set<SocketHandler>>();
   const volatileEmit = vi.fn();
+  const emit = vi.fn();
 
   return {
     volatile: { emit: volatileEmit },
+    emit,
     on: vi.fn((event: string, handler: SocketHandler) => {
       const set = handlers.get(event) ?? new Set<SocketHandler>();
       set.add(handler);
@@ -23,6 +25,7 @@ function createMockSocket() {
       handlers.get(event)?.forEach((handler) => handler(...args));
     },
     volatileEmit,
+    emitMock: emit,
   };
 }
 
@@ -62,7 +65,7 @@ describe('useCursors', () => {
     expect(socket.volatileEmit).toHaveBeenCalledTimes(1);
 
     act(() => {
-      vi.advanceTimersByTime(60);
+      vi.advanceTimersByTime(45);
       result.current.publishCursor({ x: 14, y: 30 });
     });
 
@@ -138,6 +141,104 @@ describe('useCursors', () => {
 
     act(() => {
       socket.trigger('user:left', { socketId: 'socket-1', userId: 'user-456' });
+    });
+
+    expect(result.current.remoteCursors).toHaveLength(0);
+  });
+
+  it('publishes cursor hide events with throttle', () => {
+    const socket = createMockSocket();
+    const socketRef = { current: socket as never };
+    const { result } = renderHook(() =>
+      useCursors({
+        boardId: 'board-1',
+        user: mockUser,
+        socketRef,
+        socketStatus: 'connected',
+      }),
+    );
+
+    act(() => {
+      result.current.publishCursorHide();
+      result.current.publishCursorHide();
+    });
+
+    expect(socket.emitMock).toHaveBeenCalledTimes(1);
+    expect(socket.emitMock).toHaveBeenCalledWith('cursor:hide', expect.objectContaining({ _ts: expect.any(Number) }));
+
+    act(() => {
+      vi.advanceTimersByTime(200);
+      result.current.publishCursorHide();
+    });
+
+    expect(socket.emitMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('removes remote cursor on cursor:hide', () => {
+    const socket = createMockSocket();
+    const socketRef = { current: socket as never };
+    const { result } = renderHook(() =>
+      useCursors({
+        boardId: 'board-1',
+        user: mockUser,
+        socketRef,
+        socketStatus: 'connected',
+      }),
+    );
+
+    act(() => {
+      socket.trigger('cursor:move', {
+        socketId: 'socket-1',
+        userId: 'user-456',
+        displayName: 'Sam Doe',
+        color: 'hsl(20, 65%, 55%)',
+        x: 200,
+        y: 300,
+        _ts: Date.now(),
+      });
+    });
+
+    expect(result.current.remoteCursors).toHaveLength(1);
+
+    act(() => {
+      socket.trigger('cursor:hide', {
+        socketId: 'socket-1',
+        userId: 'user-456',
+        _ts: Date.now(),
+      });
+    });
+
+    expect(result.current.remoteCursors).toHaveLength(0);
+  });
+
+  it('expires stale remote cursors after inactivity timeout', () => {
+    const socket = createMockSocket();
+    const socketRef = { current: socket as never };
+    const { result } = renderHook(() =>
+      useCursors({
+        boardId: 'board-1',
+        user: mockUser,
+        socketRef,
+        socketStatus: 'connected',
+      }),
+    );
+
+    act(() => {
+      socket.trigger('cursor:move', {
+        socketId: 'socket-1',
+        userId: 'user-456',
+        displayName: 'Sam Doe',
+        color: 'hsl(20, 65%, 55%)',
+        x: 200,
+        y: 300,
+        _ts: Date.now(),
+      });
+    });
+
+    expect(result.current.remoteCursors).toHaveLength(1);
+
+    act(() => {
+      vi.advanceTimersByTime(5100);
     });
 
     expect(result.current.remoteCursors).toHaveLength(0);

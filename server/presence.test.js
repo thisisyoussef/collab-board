@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   boardRoom,
+  buildCursorHidePayload,
   buildCursorPayload,
   buildPresenceMember,
   generateColor,
@@ -61,6 +62,24 @@ describe('presence helpers', () => {
       color: 'hsl(10, 65%, 55%)',
       x: 120,
       y: 240,
+      _ts: 1_700_000_000_000,
+    });
+  });
+
+  it('builds cursor hide payloads from socket data', () => {
+    const payload = buildCursorHidePayload(
+      { _ts: 1_700_000_000_000 },
+      {
+        id: 'socket-1',
+        data: {
+          userId: 'user-1',
+        },
+      },
+    );
+
+    expect(payload).toEqual({
+      socketId: 'socket-1',
+      userId: 'user-1',
       _ts: 1_700_000_000_000,
     });
   });

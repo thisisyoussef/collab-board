@@ -225,4 +225,4 @@ function worldToScreen(stage: Konva.Stage, worldPos: { x: number; y: number }) {
   Added/updated tests for cursor hook, metrics overlay, board integration, realtime payload helpers, and coordinate utilities.  
   Local validation on February 18, 2026: `npm run lint`, `npm run test`, and `npm run build` all passing.  
   Vercel production deploy completed and aliased to `https://collab-board-iota.vercel.app` on February 18, 2026.  
-  Follow-ups captured in `docs/user-stories/post-story-followups.md`: stale remote cursor when tab loses focus without disconnect, and occasional cursor-latency spikes slightly above 50ms.
+  Follow-ups in `docs/user-stories/post-story-followups.md` have been addressed on February 18, 2026: cursor hide on blur/tab leave + stale-timeout cleanup, and cursor cadence tuned from 50ms to 40ms to mitigate latency spikes.

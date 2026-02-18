@@ -59,3 +59,14 @@ export function buildCursorPayload(rawPayload, socketLike) {
     _ts: Number.isFinite(ts) ? ts : Date.now(),
   };
 }
+
+export function buildCursorHidePayload(rawPayload, socketLike) {
+  const userId = socketLike?.data?.userId || 'unknown';
+  const ts = Number(rawPayload?._ts);
+
+  return {
+    socketId: socketLike.id,
+    userId,
+    _ts: Number.isFinite(ts) ? ts : Date.now(),
+  };
+}

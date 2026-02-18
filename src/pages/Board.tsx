@@ -137,7 +137,7 @@ export function Board() {
   const { user, signOut } = useAuth();
   const { socketRef, status: socketStatus } = useSocket(boardId);
   const { members } = usePresence({ boardId, user, socketRef, socketStatus });
-  const { remoteCursors, averageLatencyMs, publishCursor } = useCursors({
+  const { remoteCursors, averageLatencyMs, publishCursor, publishCursorHide } = useCursors({
     boardId,
     user,
     socketRef,
@@ -992,6 +992,18 @@ export function Board() {
     }
   }
 
+  function handleStageMouseLeave() {
+    publishCursorHide();
+
+    if (rectDraftRef.current) {
+      finalizeRectDraft();
+    }
+
+    if (selectionDraftRef.current) {
+      finalizeSelection();
+    }
+  }
+
   function handleStageClick(
     event: Konva.KonvaEventObject<MouseEvent | TouchEvent>,
   ) {
@@ -1239,6 +1251,8 @@ export function Board() {
               onTouchMove={handleStageMouseMove}
               onMouseUp={handleStageMouseUp}
               onTouchEnd={handleStageMouseUp}
+              onMouseLeave={handleStageMouseLeave}
+              onTouchCancel={handleStageMouseLeave}
               onClick={handleStageClick}
               onTap={handleStageClick}
               onWheel={handleStageWheel}
