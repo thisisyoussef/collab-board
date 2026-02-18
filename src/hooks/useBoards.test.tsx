@@ -192,6 +192,12 @@ describe('useBoards', () => {
         createdBy: 'user-1',
         title: 'Sprint Planning',
         objects: {},
+        schemaVersion: 2,
+        sharing: {
+          visibility: 'private',
+          authLinkRole: 'editor',
+          publicLinkRole: 'viewer',
+        },
       }),
     );
   });

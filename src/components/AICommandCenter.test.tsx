@@ -14,7 +14,7 @@ const baseState: AIPanelState = {
 };
 
 describe('AICommandCenter', () => {
-const handlers = {
+  const handlers = {
     onPromptChange: vi.fn(),
     onSubmit: vi.fn(),
     onModeChange: vi.fn(),
@@ -140,5 +140,34 @@ const handlers = {
     render(<AICommandCenter state={baseState} {...handlers} />);
 
     expect(screen.getByText('No executable actions in this plan yet.')).toBeInTheDocument();
+  });
+
+  it('disables controls and renders reason when AI access is blocked', () => {
+    render(
+      <AICommandCenter
+        state={{
+          ...baseState,
+          canUndo: true,
+          applyDisabled: false,
+          actions: [
+            {
+              id: 'a-1',
+              name: 'createStickyNote',
+              summary: 'text=Kickoff',
+              input: { text: 'Kickoff' },
+            },
+          ],
+        }}
+        disabled
+        disabledReason="AI requires signed-in editor access."
+        {...handlers}
+      />,
+    );
+
+    expect(screen.getByLabelText('AI prompt')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Generate Plan' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Apply changes' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Undo last AI apply' })).toBeDisabled();
+    expect(screen.getByText('AI requires signed-in editor access.')).toBeInTheDocument();
   });
 });

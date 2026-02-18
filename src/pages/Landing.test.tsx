@@ -19,10 +19,14 @@ const baseAuth: AuthContextValue = {
 };
 
 function renderLanding(authOverrides: Partial<AuthContextValue> = {}) {
+  return renderLandingAt('/', authOverrides);
+}
+
+function renderLandingAt(path: string, authOverrides: Partial<AuthContextValue> = {}) {
   const authValue = { ...baseAuth, ...authOverrides };
   return render(
     <AuthContext.Provider value={authValue}>
-      <MemoryRouter initialEntries={['/']}>
+      <MemoryRouter initialEntries={[path]}>
         <Landing />
       </MemoryRouter>
     </AuthContext.Provider>,
@@ -52,6 +56,20 @@ describe('Landing', () => {
   it('redirects to /dashboard when user is already signed in', () => {
     const mockUser = { uid: 'u1', displayName: 'Test' } as AuthContextValue['user'];
     renderLanding({ user: mockUser });
+
+    expect(mockNavigate).toHaveBeenCalledWith('/dashboard', { replace: true });
+  });
+
+  it('redirects to returnTo path when signed in and returnTo is valid', () => {
+    const mockUser = { uid: 'u1', displayName: 'Test' } as AuthContextValue['user'];
+    renderLandingAt('/?returnTo=%2Fboard%2Fabc123', { user: mockUser });
+
+    expect(mockNavigate).toHaveBeenCalledWith('/board/abc123', { replace: true });
+  });
+
+  it('ignores unsafe returnTo and falls back to dashboard', () => {
+    const mockUser = { uid: 'u1', displayName: 'Test' } as AuthContextValue['user'];
+    renderLandingAt('/?returnTo=https%3A%2F%2Fevil.example.com', { user: mockUser });
 
     expect(mockNavigate).toHaveBeenCalledWith('/dashboard', { replace: true });
   });

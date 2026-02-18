@@ -8,11 +8,36 @@ vi.mock('@anthropic-ai/sdk', () => ({
   })),
 }));
 
+const mockVerifyIdToken = vi.fn();
+const mockGetApps = vi.fn();
+const mockBoardGet = vi.fn();
+const mockMemberGet = vi.fn();
+const mockFirestoreCollection = vi.fn();
+
+vi.mock('firebase-admin/app', () => ({
+  cert: vi.fn((value) => value),
+  getApps: () => mockGetApps(),
+  initializeApp: vi.fn(),
+}));
+
+vi.mock('firebase-admin/auth', () => ({
+  getAuth: () => ({
+    verifyIdToken: mockVerifyIdToken,
+  }),
+}));
+
+vi.mock('firebase-admin/firestore', () => ({
+  getFirestore: () => ({
+    collection: mockFirestoreCollection,
+  }),
+}));
+
 // Create mock req/res objects for Vercel handler testing
 function createMockReq(overrides: Record<string, unknown> = {}) {
   return {
     method: 'POST',
-    body: { prompt: 'Add a yellow sticky note', boardState: {} },
+    headers: { authorization: 'Bearer test-token' },
+    body: { prompt: 'Add a yellow sticky note', boardId: 'board-1', boardState: {} },
     ...overrides,
   };
 }
@@ -30,6 +55,39 @@ describe('AI Generate API Endpoint', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.ANTHROPIC_API_KEY = 'test-key';
+    mockGetApps.mockReturnValue([{}]);
+    mockVerifyIdToken.mockResolvedValue({ uid: 'user-123' });
+    mockBoardGet.mockResolvedValue({
+      exists: true,
+      data: () => ({ ownerId: 'user-123', sharing: { visibility: 'private' } }),
+    });
+    mockMemberGet.mockResolvedValue({
+      exists: false,
+      data: () => ({}),
+    });
+    mockFirestoreCollection.mockImplementation((name: string) => {
+      if (name === 'boards') {
+        return {
+          doc: () => ({
+            get: mockBoardGet,
+          }),
+        };
+      }
+
+      if (name === 'boardMembers') {
+        return {
+          doc: () => ({
+            get: mockMemberGet,
+          }),
+        };
+      }
+
+      return {
+        doc: () => ({
+          get: vi.fn(),
+        }),
+      };
+    });
   });
 
   describe('HTTP Method Handling', () => {
@@ -81,7 +139,7 @@ describe('AI Generate API Endpoint', () => {
     it('returns 400 when prompt exceeds max length', async () => {
       const handler = (await import('../../api/ai/generate')).default;
       const longPrompt = 'a'.repeat(501);
-      const req = createMockReq({ body: { prompt: longPrompt } });
+      const req = createMockReq({ body: { prompt: longPrompt, boardId: 'board-1' } });
       const res = createMockRes();
 
       await handler(req as never, res as never);
@@ -89,6 +147,62 @@ describe('AI Generate API Endpoint', () => {
       expect(res.status).toHaveBeenCalledWith(400);
       expect(res.json).toHaveBeenCalledWith({
         error: 'Prompt too long (max 500 characters)',
+      });
+    });
+
+    it('returns 400 when boardId is missing', async () => {
+      const handler = (await import('../../api/ai/generate')).default;
+      const req = createMockReq({ body: { prompt: 'Create one note' } });
+      const res = createMockRes();
+
+      await handler(req as never, res as never);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({ error: 'Missing or invalid boardId' });
+    });
+
+    it('returns 401 when Authorization header is missing', async () => {
+      const handler = (await import('../../api/ai/generate')).default;
+      const req = createMockReq({ headers: {} });
+      const res = createMockRes();
+
+      await handler(req as never, res as never);
+
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith({ error: 'Missing Authorization bearer token' });
+    });
+
+    it('returns 401 when ID token is invalid', async () => {
+      mockVerifyIdToken.mockRejectedValueOnce(new Error('invalid token'));
+      const handler = (await import('../../api/ai/generate')).default;
+      const req = createMockReq();
+      const res = createMockRes();
+
+      await handler(req as never, res as never);
+
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith({ error: 'Invalid or expired auth token' });
+    });
+
+    it('returns 403 when user does not have editor access', async () => {
+      mockBoardGet.mockResolvedValueOnce({
+        exists: true,
+        data: () => ({ ownerId: 'owner-1', sharing: { visibility: 'private' } }),
+      });
+      mockMemberGet.mockResolvedValueOnce({
+        exists: true,
+        data: () => ({ role: 'viewer' }),
+      });
+
+      const handler = (await import('../../api/ai/generate')).default;
+      const req = createMockReq();
+      const res = createMockRes();
+
+      await handler(req as never, res as never);
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith({
+        error: 'You do not have editor access for AI on this board.',
       });
     });
 
@@ -232,7 +346,7 @@ describe('AI Generate API Endpoint', () => {
 
       const handler = (await import('../../api/ai/generate')).default;
       const req = createMockReq({
-        body: { prompt: 'Create a SWOT analysis template with 4 quadrants', boardState: {} },
+        body: { prompt: 'Create a SWOT analysis template with 4 quadrants', boardId: 'board-1', boardState: {} },
       });
       const res = createMockRes();
 
@@ -263,7 +377,7 @@ describe('AI Generate API Endpoint', () => {
 
       const handler = (await import('../../api/ai/generate')).default;
       const req = createMockReq({
-        body: { prompt: 'Create one sticky note saying hello', boardState: {} },
+        body: { prompt: 'Create one sticky note saying hello', boardId: 'board-1', boardState: {} },
       });
       const res = createMockRes();
 
@@ -300,7 +414,7 @@ describe('AI Generate API Endpoint', () => {
 
       const handler = (await import('../../api/ai/generate')).default;
       const req = createMockReq({
-        body: { prompt: 'Draw one line for me', boardState: {} },
+        body: { prompt: 'Draw one line for me', boardId: 'board-1', boardState: {} },
       });
       const res = createMockRes();
 
@@ -392,7 +506,9 @@ describe('AI Generate API Endpoint', () => {
       });
 
       const handler = (await import('../../api/ai/generate')).default;
-      const req = createMockReq({ body: { prompt: 'Summarize the board', boardState: largeBoardState } });
+      const req = createMockReq({
+        body: { prompt: 'Summarize the board', boardId: 'board-1', boardState: largeBoardState },
+      });
       const res = createMockRes();
 
       await handler(req as never, res as never);

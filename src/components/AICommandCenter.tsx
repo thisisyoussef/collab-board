@@ -3,6 +3,8 @@ import type { AIApplyMode, AIPanelState } from '../types/ai';
 
 interface AICommandCenterProps {
   state: AIPanelState;
+  disabled?: boolean;
+  disabledReason?: string;
   onPromptChange: (nextValue: string) => void;
   onSubmit: () => void;
   onModeChange: (nextMode: AIApplyMode) => void;
@@ -14,6 +16,8 @@ interface AICommandCenterProps {
 
 export function AICommandCenter({
   state,
+  disabled = false,
+  disabledReason,
   onPromptChange,
   onSubmit,
   onModeChange,
@@ -54,6 +58,7 @@ export function AICommandCenter({
           className={`ai-mode-btn ${state.mode === 'preview' ? 'active' : ''}`}
           aria-label="Preview mode"
           aria-pressed={state.mode === 'preview'}
+          disabled={disabled}
           onClick={() => onModeChange('preview')}
         >
           Preview
@@ -63,6 +68,7 @@ export function AICommandCenter({
           className={`ai-mode-btn ${state.mode === 'auto' ? 'active' : ''}`}
           aria-label="Auto mode"
           aria-pressed={state.mode === 'auto'}
+          disabled={disabled}
           onClick={() => onModeChange('auto')}
         >
           Auto
@@ -79,17 +85,28 @@ export function AICommandCenter({
           onKeyDown={handlePromptKeyDown}
           placeholder="Create a SWOT template with four quadrants."
           rows={4}
-          disabled={state.loading}
+          disabled={state.loading || disabled}
         />
         <div className="ai-form-actions">
-          <button className="primary-btn" type="submit" disabled={state.loading}>
+          <button className="primary-btn" type="submit" disabled={state.loading || disabled}>
             {state.loading ? 'Thinking...' : 'Generate Plan'}
           </button>
-          <button className="secondary-btn" type="button" onClick={onClear} disabled={state.loading}>
+          <button
+            className="secondary-btn"
+            type="button"
+            onClick={onClear}
+            disabled={state.loading || disabled}
+          >
             Clear
           </button>
         </div>
       </form>
+
+      {disabled && disabledReason ? (
+        <div className="ai-feedback error" role="note">
+          <p>{disabledReason}</p>
+        </div>
+      ) : null}
 
       {state.error ? (
         <div className="ai-feedback error" role="alert">
@@ -133,7 +150,7 @@ export function AICommandCenter({
           className="secondary-btn"
           type="button"
           onClick={onApply}
-          disabled={Boolean(state.applyDisabled) || state.applying}
+          disabled={disabled || Boolean(state.applyDisabled) || state.applying}
           aria-label="Apply changes"
         >
           {state.applying ? 'Applying...' : 'Apply changes'}
@@ -142,7 +159,7 @@ export function AICommandCenter({
           className="secondary-btn"
           type="button"
           onClick={onUndo}
-          disabled={state.applying || !state.canUndo}
+          disabled={disabled || state.applying || !state.canUndo}
           aria-label="Undo last AI apply"
         >
           Undo last AI apply

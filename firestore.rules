@@ -1,10 +1,145 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function boardMemberDocPath(boardId, userId) {
+      return /databases/$(database)/documents/boardMembers/$(boardId + "_" + userId);
+    }
+
+    function boardDocPath(boardId) {
+      return /databases/$(database)/documents/boards/$(boardId);
+    }
+
+    function normalizeVisibility(data) {
+      return data.sharing is map &&
+        (data.sharing.visibility == 'private' ||
+          data.sharing.visibility == 'auth_link' ||
+          data.sharing.visibility == 'public_link')
+        ? data.sharing.visibility
+        : 'auth_link';
+    }
+
+    function normalizeAuthLinkRole(data) {
+      return data.sharing is map &&
+        (data.sharing.authLinkRole == 'editor' || data.sharing.authLinkRole == 'viewer')
+        ? data.sharing.authLinkRole
+        : 'editor';
+    }
+
+    function normalizePublicLinkRole(data) {
+      return data.sharing is map &&
+        (data.sharing.publicLinkRole == 'editor' || data.sharing.publicLinkRole == 'viewer')
+        ? data.sharing.publicLinkRole
+        : 'viewer';
+    }
+
+    function explicitMemberRole(boardId) {
+      let memberDoc = isSignedIn()
+        ? get(boardMemberDocPath(boardId, request.auth.uid))
+        : null;
+      return memberDoc != null &&
+        memberDoc.data != null &&
+        (memberDoc.data.role == 'owner' ||
+          memberDoc.data.role == 'editor' ||
+          memberDoc.data.role == 'viewer')
+        ? memberDoc.data.role
+        : null;
+    }
+
+    function isOwner(data) {
+      return isSignedIn() &&
+        data.ownerId is string &&
+        data.ownerId == request.auth.uid;
+    }
+
+    function effectiveBoardRole(boardId, data) {
+      let explicitRole = explicitMemberRole(boardId);
+      let visibility = normalizeVisibility(data);
+      return isOwner(data)
+        ? 'owner'
+        : explicitRole != null
+          ? explicitRole
+          : visibility == 'private'
+            ? 'none'
+            : visibility == 'auth_link'
+              ? (isSignedIn() ? normalizeAuthLinkRole(data) : 'none')
+              : normalizePublicLinkRole(data);
+    }
+
+    function canReadBoard(boardId, data) {
+      return effectiveBoardRole(boardId, data) != 'none';
+    }
+
+    function canEditBoard(boardId, data) {
+      let role = effectiveBoardRole(boardId, data);
+      return role == 'owner' || role == 'editor';
+    }
+
+    function hasValidSharingShape(data) {
+      return !(data.sharing is map) ||
+        (
+          (data.sharing.visibility == 'private' ||
+            data.sharing.visibility == 'auth_link' ||
+            data.sharing.visibility == 'public_link') &&
+          (data.sharing.authLinkRole == 'editor' || data.sharing.authLinkRole == 'viewer') &&
+          (data.sharing.publicLinkRole == 'editor' || data.sharing.publicLinkRole == 'viewer')
+        );
+    }
+
+    function isBoardOwner(boardId) {
+      let boardDoc = get(boardDocPath(boardId));
+      return isSignedIn() &&
+        boardDoc.data != null &&
+        boardDoc.data.ownerId is string &&
+        boardDoc.data.ownerId == request.auth.uid;
+    }
+
     match /boards/{boardId} {
-      // Public link mode: anyone with board URL can read/write without auth.
-      // WARNING: this exposes board data to public internet access.
-      allow read, write: if true;
+      allow read: if canReadBoard(boardId, resource.data);
+
+      allow create: if isSignedIn() &&
+        request.resource.data.ownerId is string &&
+        request.resource.data.ownerId == request.auth.uid &&
+        hasValidSharingShape(request.resource.data);
+
+      allow update: if canEditBoard(boardId, resource.data) &&
+        hasValidSharingShape(request.resource.data);
+
+      allow delete: if isOwner(resource.data);
+    }
+
+    match /boardMembers/{membershipId} {
+      allow read: if isSignedIn() &&
+        resource.data.boardId is string &&
+        resource.data.userId is string &&
+        (
+          resource.data.userId == request.auth.uid ||
+          isBoardOwner(resource.data.boardId)
+        );
+
+      allow create: if isSignedIn() &&
+        request.resource.data.boardId is string &&
+        request.resource.data.userId is string &&
+        (request.resource.data.role == 'owner' ||
+          request.resource.data.role == 'editor' ||
+          request.resource.data.role == 'viewer') &&
+        isBoardOwner(request.resource.data.boardId);
+
+      allow update: if isSignedIn() &&
+        resource.data.boardId is string &&
+        request.resource.data.boardId == resource.data.boardId &&
+        request.resource.data.userId == resource.data.userId &&
+        (request.resource.data.role == 'owner' ||
+          request.resource.data.role == 'editor' ||
+          request.resource.data.role == 'viewer') &&
+        isBoardOwner(resource.data.boardId);
+
+      allow delete: if isSignedIn() &&
+        resource.data.boardId is string &&
+        isBoardOwner(resource.data.boardId);
     }
   }
 }

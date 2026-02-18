@@ -174,6 +174,12 @@ export function useBoards(userId: string | undefined) {
         createdBy: userId,
         title: cleanedTitle,
         objects: {},
+        schemaVersion: 2,
+        sharing: {
+          visibility: 'private',
+          authLinkRole: 'editor',
+          publicLinkRole: 'viewer',
+        },
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });

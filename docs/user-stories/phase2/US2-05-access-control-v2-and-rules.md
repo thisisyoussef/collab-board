@@ -2,7 +2,7 @@
 
 ## Status
 
-- State: Pending
+- State: Ready for User Checkpoint
 - Owner: Codex
 - Depends on: US2-04 approved
 
@@ -61,6 +61,15 @@ Local sources:
 - role resolution precedence
 - compatibility assumptions
 - rules test matrix
+
+### Preparation Notes (February 18, 2026)
+
+1. Firebase Auth ID token verification flow validated against Admin docs:
+   [Verify ID tokens](https://firebase.google.com/docs/auth/admin/verify-id-tokens)
+2. Firestore rules role/condition patterns and `get()` based access checks validated against:
+   [Conditions in Security Rules](https://firebase.google.com/docs/firestore/security/rules-conditions)
+3. Firestore role-based access model shape cross-checked with:
+   [Role-based access solution](https://firebase.google.com/docs/firestore/solutions/role-based-access)
 
 ## Permission Matrix
 
@@ -146,11 +155,11 @@ Red -> Green -> Refactor:
 
 ## Acceptance Criteria
 
-- [ ] Effective permission behavior matches matrix.
-- [ ] Signed-out non-public access redirects and returns correctly.
-- [ ] Viewer cannot mutate board or apply AI.
-- [ ] AI endpoint rejects unauthorized actors.
-- [ ] Legacy boards continue functioning with compatibility defaults.
+- [x] Effective permission behavior matches matrix.
+- [x] Signed-out non-public access redirects and returns correctly.
+- [x] Viewer cannot mutate board or apply AI.
+- [x] AI endpoint rejects unauthorized actors.
+- [x] Legacy boards continue functioning with compatibility defaults.
 
 ## Local Validation
 
@@ -160,6 +169,20 @@ Red -> Green -> Refactor:
 4. `npm run build`
 5. Firestore rules validation (emulator or deploy dry run)
 
+Result:
+
+1. `npm run lint` passed.
+2. Story-targeted suites passed:
+   - `src/lib/access.test.ts`
+   - `src/components/AICommandCenter.test.tsx`
+   - `src/pages/Landing.test.tsx`
+   - `src/pages/Board.test.tsx`
+   - `src/hooks/useBoards.test.tsx`
+   - `src/api/ai-generate.test.ts`
+3. Full test run passed: 31 files / 207 tests.
+4. `npm run build` passed (local Node 18 warning from Vite requirement; build output generated).
+5. Firestore rules deploy attempt failed due Firebase CLI auth 401 (not a rules syntax error).
+
 ## User Checkpoint Test
 
 1. Run visibility matrix with owner/editor/viewer/anonymous actors.
@@ -168,7 +191,10 @@ Red -> Green -> Refactor:
 
 ## Checkpoint Result
 
-- Production Frontend URL: Pending
-- Production Socket URL: Pending
+- Production Frontend URL: https://collab-board-iota.vercel.app
+- Production Socket URL: https://collab-board-0948.onrender.com
 - User Validation: Pending
-- Notes: Pending implementation.
+- Notes:
+1. Vercel production alias updated with US2-05 build.
+2. `/api/ai/generate` now returns `401` without bearer token (verified).
+3. Firestore rules file updated locally for v2 access model, but Firebase deploy is blocked by account auth (`HTTP 401`) and must be retried from your authenticated CLI session.

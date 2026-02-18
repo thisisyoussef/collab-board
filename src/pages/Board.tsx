@@ -15,6 +15,12 @@ import { useCursors } from '../hooks/useCursors';
 import { usePresence } from '../hooks/usePresence';
 import { useSocket, type SocketStatus } from '../hooks/useSocket';
 import {
+  normalizeBoardRole,
+  resolveBoardAccess,
+  shouldRedirectToSignIn,
+  type ResolveBoardAccessResult,
+} from '../lib/access';
+import {
   applyIncomingObjectUpsert,
   createDefaultObject,
   FRAME_DEFAULT_STROKE,
@@ -119,6 +125,18 @@ interface ConnectorAnchorIgnore {
   anchorY: number;
 }
 
+interface BoardDocData {
+  ownerId?: string;
+  createdBy?: string;
+  title?: string;
+  objects?: BoardObjectsRecord;
+  sharing?: {
+    visibility?: string;
+    authLinkRole?: string;
+    publicLinkRole?: string;
+  };
+}
+
 const STICKY_PLACEHOLDER_TEXT = 'New note';
 const RECT_CLICK_DEFAULT_WIDTH = 180;
 const RECT_CLICK_DEFAULT_HEIGHT = 120;
@@ -205,24 +223,40 @@ function sanitizeBoardObjectForFirestore(entry: BoardObject): BoardObject {
   return sanitizeBoardObject(entry);
 }
 
+function buildBoardReturnToPath(boardId: string): string {
+  if (typeof window !== 'undefined') {
+    const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (currentPath.startsWith('/board/')) {
+      return currentPath;
+    }
+  }
+  return `/board/${boardId}`;
+}
+
 export function Board() {
   const { id: boardId } = useParams<{ id: string }>();
   const { user, signOut } = useAuth();
+  const navigate = useNavigate();
+  const [boardAccess, setBoardAccess] = useState<ResolveBoardAccessResult | null>(null);
+  const [isResolvingAccess, setIsResolvingAccess] = useState(Boolean(boardId));
+  const canReadBoard = Boolean(boardAccess?.canRead);
+  const canEditBoard = Boolean(boardAccess?.canEdit);
+  const canApplyAI = Boolean(boardAccess?.canApplyAI);
+  const activeBoardId = canReadBoard ? boardId : undefined;
   const {
     socketRef,
     status: socketStatus,
     reconnectCount,
     connectedSinceMs,
     disconnectedSinceMs,
-  } = useSocket(boardId);
-  const { members } = usePresence({ boardId, user, socketRef, socketStatus });
+  } = useSocket(activeBoardId);
+  const { members } = usePresence({ boardId: activeBoardId, user, socketRef, socketStatus });
   const { remoteCursors, averageLatencyMs, publishCursor, publishCursorHide } = useCursors({
-    boardId,
+    boardId: activeBoardId,
     user,
     socketRef,
     socketStatus,
   });
-  const navigate = useNavigate();
 
   const displayName = user?.displayName || user?.email || 'Guest';
   const canvasContainerRef = useRef<HTMLDivElement | null>(null);
@@ -291,7 +325,8 @@ export function Board() {
     selectedObject.type !== 'connector'
       ? selectedObject.id
       : null;
-  const canStartConnectorFromAnchor = activeTool === 'connector' || Boolean(selectedShapeQuickConnectId);
+  const canStartConnectorFromAnchor =
+    canEditBoard && (activeTool === 'connector' || Boolean(selectedShapeQuickConnectId));
   const connectorShapeAnchors = (() => {
     const showConnectorToolAnchors = activeTool === 'connector';
     const showSelectedConnectorAnchors = activeTool === 'select' && Boolean(selectedConnector);
@@ -360,6 +395,10 @@ export function Board() {
   });
 
   const handleApplyAIPlan = async (actions: AIActionPreview[] = aiCommandCenter.actions) => {
+    if (!canApplyAI) {
+      setCanvasNotice('AI apply requires signed-in editor access.');
+      return;
+    }
     const startedAt = performance.now();
     const applied = await aiExecutor.applyPreviewActions(actions, aiCommandCenter.message);
     if (applied) {
@@ -369,6 +408,10 @@ export function Board() {
   };
 
   const handleSubmitAI = async () => {
+    if (!canApplyAI) {
+      setCanvasNotice('AI planning is available only to signed-in editors.');
+      return;
+    }
     const result = await aiCommandCenter.submitPrompt();
     if (!result || aiCommandCenter.mode !== 'auto' || result.actions.length === 0) {
       return;
@@ -377,6 +420,10 @@ export function Board() {
   };
 
   const handleRetryAI = async () => {
+    if (!canApplyAI) {
+      setCanvasNotice('AI planning is available only to signed-in editors.');
+      return;
+    }
     const result = await aiCommandCenter.retryLast();
     if (!result || aiCommandCenter.mode !== 'auto' || result.actions.length === 0) {
       return;
@@ -385,6 +432,10 @@ export function Board() {
   };
 
   const handleUndoAI = async () => {
+    if (!canApplyAI) {
+      setCanvasNotice('AI undo requires signed-in editor access.');
+      return;
+    }
     const undone = await aiExecutor.undoLast();
     if (undone) {
       setCanvasNotice('Undid last AI apply.');
@@ -438,7 +489,14 @@ export function Board() {
       viewportSaveTimeoutRef.current = null;
     }
     viewportRestoredRef.current = false;
+    setBoardTitle('Untitled board');
+    setTitleDraft('Untitled board');
+    setEditingTitle(false);
+    setIsSavingTitle(false);
+    setTitleError(null);
     setShareState('idle');
+    setBoardAccess(null);
+    setIsResolvingAccess(Boolean(boardId));
   }, [boardId]);
 
   useEffect(
@@ -460,6 +518,116 @@ export function Board() {
 
   useEffect(() => {
     if (!boardId) {
+      setBoardAccess(null);
+      setIsResolvingAccess(false);
+      return;
+    }
+
+    let cancelled = false;
+    setIsResolvingAccess(true);
+
+    const resolveAccess = async () => {
+      try {
+        const boardSnapshot = await withFirestoreTimeout(
+          'Loading board access',
+          getDoc(doc(db, 'boards', boardId)),
+        );
+        if (cancelled) {
+          return;
+        }
+
+        if (!boardSnapshot.exists()) {
+          setBoardAccess(null);
+          setCanvasNotice('Board not found.');
+          setIsResolvingAccess(false);
+          return;
+        }
+
+        const boardData = boardSnapshot.data() as BoardDocData;
+        const ownerId = boardData.ownerId || boardData.createdBy || null;
+        const currentUserId = user?.uid || null;
+        let explicitMemberRole: 'owner' | 'editor' | 'viewer' | null = null;
+
+        if (currentUserId && ownerId !== currentUserId) {
+          try {
+            const memberSnapshot = await withFirestoreTimeout(
+              'Loading board membership',
+              getDoc(doc(db, 'boardMembers', `${boardId}_${currentUserId}`)),
+            );
+            if (!cancelled && memberSnapshot.exists()) {
+              const roleValue = (memberSnapshot.data() as { role?: unknown }).role;
+              const normalizedRole = normalizeBoardRole(roleValue);
+              explicitMemberRole = normalizedRole === 'none' ? null : normalizedRole;
+            }
+          } catch {
+            // Membership lookups are best-effort; access still resolves from board sharing.
+          }
+        }
+
+        if (cancelled) {
+          return;
+        }
+
+        const access = resolveBoardAccess({
+          ownerId,
+          userId: currentUserId,
+          isAuthenticated: Boolean(user),
+          explicitMemberRole,
+          sharing: boardData.sharing ?? null,
+        });
+
+        setBoardAccess(access);
+        if (!access.canRead && shouldRedirectToSignIn(access, Boolean(user))) {
+          navigate(`/?returnTo=${encodeURIComponent(buildBoardReturnToPath(boardId))}`, {
+            replace: true,
+          });
+        }
+      } catch (err) {
+        if (cancelled) {
+          return;
+        }
+
+        const errorCode =
+          err && typeof err === 'object' && 'code' in err && typeof err.code === 'string'
+            ? err.code
+            : '';
+        const permissionDenied = errorCode === 'permission-denied';
+
+        if (!user && permissionDenied) {
+          navigate(`/?returnTo=${encodeURIComponent(buildBoardReturnToPath(boardId))}`, {
+            replace: true,
+          });
+          return;
+        }
+
+        if (permissionDenied) {
+          setBoardAccess(
+            resolveBoardAccess({
+              ownerId: null,
+              userId: user?.uid ?? null,
+              isAuthenticated: Boolean(user),
+              sharing: { visibility: 'private' },
+            }),
+          );
+          setCanvasNotice('You do not have access to this board.');
+        } else {
+          setCanvasNotice(toFirestoreUserMessage('Unable to load board access.', err));
+        }
+      } finally {
+        if (!cancelled) {
+          setIsResolvingAccess(false);
+        }
+      }
+    };
+
+    void resolveAccess();
+    return () => {
+      cancelled = true;
+    };
+  }, [boardId, navigate, user]);
+
+  useEffect(() => {
+    if (!boardId || !canReadBoard) {
       return;
     }
 
@@ -496,10 +664,10 @@ export function Board() {
     return () => {
       cancelled = true;
     };
-  }, [boardId]);
+  }, [boardId, canReadBoard]);
 
   useEffect(() => {
-    if (!boardId) {
+    if (!boardId || !canReadBoard) {
       return;
     }
 
@@ -539,7 +707,15 @@ export function Board() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [boardId, user]);
+  }, [boardId, canReadBoard, user]);
+
+  useEffect(() => {
+    if (!boardId || isResolvingAccess || canReadBoard) {
+      return;
+    }
+
+    clearBoardObjects();
+  }, [boardId, canReadBoard, isResolvingAccess]);
 
   useEffect(() => {
     const measure = () => {
@@ -613,6 +789,12 @@ export function Board() {
       return;
     }
 
+    if (!canEditBoard) {
+      transformer.nodes([]);
+      transformer.getLayer()?.batchDraw();
+      return;
+    }
+
     const nodes = selectedIds
       .filter((id) => objectsRef.current.get(id)?.type !== 'connector')
       .map((id) => stage.findOne(`#${id}`))
@@ -639,13 +821,23 @@ export function Board() {
 
     transformer.nodes(nodes);
     transformer.getLayer()?.batchDraw();
-  }, [selectedIds, boardRevision]);
+  }, [selectedIds, boardRevision, canEditBoard]);
 
   useEffect(() => {
     if (!selectedConnector) {
       setIsDraggingConnectorHandle(false);
     }
   }, [selectedConnector]);
+
+  useEffect(() => {
+    if (canEditBoard) {
+      return;
+    }
+
+    setActiveTool('select');
+    setEditingText(null);
+    setEditingTitle(false);
+  }, [canEditBoard]);
 
   useEffect(() => {
     objectsRef.current.forEach((_, id) => {
@@ -656,9 +848,15 @@ export function Board() {
 
       const object = objectsRef.current.get(id);
       const isConnector = object?.type === 'connector';
-      node.draggable(activeTool === 'select' && !editingText && !isConnector && !isDraggingConnectorHandle);
+      node.draggable(
+        canEditBoard &&
+          activeTool === 'select' &&
+          !editingText &&
+          !isConnector &&
+          !isDraggingConnectorHandle,
+      );
     });
-  }, [activeTool, editingText, isDraggingConnectorHandle, boardRevision]);
+  }, [activeTool, editingText, isDraggingConnectorHandle, boardRevision, canEditBoard]);
 
   useEffect(() => {
     if (!boardId) {
@@ -1080,7 +1278,7 @@ export function Board() {
 
   async function persistBoardSave() {
     const liveBoardId = boardIdRef.current;
-    if (!liveBoardId || !hasUnsavedChangesRef.current) {
+    if (!liveBoardId || !hasUnsavedChangesRef.current || !canEditBoard) {
       return;
     }
 
@@ -1124,6 +1322,11 @@ export function Board() {
   }
 
   function scheduleBoardSave() {
+    if (!canEditBoard) {
+      hasUnsavedChangesRef.current = false;
+      clearPersistenceTimer();
+      return;
+    }
     hasUnsavedChangesRef.current = true;
     clearPersistenceTimer();
     saveTimeoutRef.current = window.setTimeout(() => {
@@ -1933,6 +2136,10 @@ export function Board() {
   }
 
   function openTextEditor(objectId: string) {
+    if (!canEditBoard) {
+      return;
+    }
+
     const object = objectsRef.current.get(objectId);
     if (!object || (object.type !== 'sticky' && object.type !== 'text')) {
       return;
@@ -2350,6 +2557,10 @@ export function Board() {
   }
 
   function insertObject(object: BoardObject, persist: boolean) {
+    if (persist && !canEditBoard) {
+      return;
+    }
+
     objectsRef.current.set(object.id, object);
     const node = createNodeForObject(object);
     objectsLayerRef.current?.add(node);
@@ -2367,6 +2578,10 @@ export function Board() {
 
   function removeObjects(objectIds: string[], persist: boolean) {
     if (objectIds.length === 0) {
+      return;
+    }
+
+    if (persist && !canEditBoard) {
       return;
     }
 
@@ -2395,6 +2610,11 @@ export function Board() {
 
   function commitTextEdit(saveChanges: boolean) {
     if (!editingText) {
+      return;
+    }
+
+    if (saveChanges && !canEditBoard) {
+      setEditingText(null);
       return;
     }
 
@@ -2438,6 +2658,10 @@ export function Board() {
   }
 
   function createStickyAt(worldPosition: { x: number; y: number }) {
+    if (!canEditBoard) {
+      return;
+    }
+
     const object = createDefaultObject('sticky', {
       x: worldPosition.x,
       y: worldPosition.y,
@@ -2455,6 +2679,10 @@ export function Board() {
   }
 
   function createTextAt(worldPosition: { x: number; y: number }) {
+    if (!canEditBoard) {
+      return;
+    }
+
     const object = createDefaultObject('text', {
       x: worldPosition.x,
       y: worldPosition.y,
@@ -2470,6 +2698,10 @@ export function Board() {
   }
 
   function createFrameAt(worldPosition: { x: number; y: number }) {
+    if (!canEditBoard) {
+      return;
+    }
+
     const object = createDefaultObject('frame', {
       x: worldPosition.x,
       y: worldPosition.y,
@@ -2487,6 +2719,10 @@ export function Board() {
     worldPosition: { x: number; y: number },
     startAttachment?: ConnectorAttachmentResult,
   ) {
+    if (!canEditBoard) {
+      return;
+    }
+
     if (connectorDraftRef.current) {
       return;
     }
@@ -2613,6 +2849,10 @@ export function Board() {
   }
 
   function beginShapeDraft(worldPosition: { x: number; y: number }, type: 'rect' | 'circle' | 'line') {
+    if (!canEditBoard) {
+      return;
+    }
+
     const object =
       type === 'line'
         ? createDefaultObject('line', {
@@ -2854,6 +3094,10 @@ export function Board() {
       return;
     }
 
+    if (!canEditBoard) {
+      return;
+    }
+
     if (activeTool === 'connector') {
       beginConnectorDraft(worldPosition);
       return;
@@ -2962,6 +3206,9 @@ export function Board() {
 
   function handleConnectorHandleDragStart(event: Konva.KonvaEventObject<MouseEvent | TouchEvent>) {
     event.cancelBubble = true;
+    if (!canEditBoard) {
+      return;
+    }
     setIsDraggingConnectorHandle(true);
   }
 
@@ -2970,6 +3217,9 @@ export function Board() {
     event: Konva.KonvaEventObject<MouseEvent | TouchEvent>,
   ) {
     event.cancelBubble = true;
+    if (!canEditBoard) {
+      return;
+    }
     if (!selectedConnector) {
       return;
     }
@@ -2997,6 +3247,10 @@ export function Board() {
     event: Konva.KonvaEventObject<MouseEvent | TouchEvent>,
   ) {
     event.cancelBubble = true;
+    if (!canEditBoard) {
+      setIsDraggingConnectorHandle(false);
+      return;
+    }
     const connector = selectedConnector;
     setIsDraggingConnectorHandle(false);
     if (!connector) {
@@ -3085,6 +3339,12 @@ export function Board() {
       return;
     }
 
+    if (!canEditBoard) {
+      setTitleError('Only editors can rename this board.');
+      setEditingTitle(false);
+      return;
+    }
+
     const cleaned = titleDraft.trim();
     if (!cleaned) {
       setTitleError('Board name cannot be empty.');
@@ -3162,6 +3422,41 @@ export function Board() {
     return <div className="centered-screen">Board unavailable.</div>;
   }
 
+  if (isResolvingAccess) {
+    return <div className="centered-screen">Checking board access...</div>;
+  }
+
+  if (!canReadBoard) {
+    return (
+      <main className="centered-screen">
+        <div>
+          <p>You do not have access to this board.</p>
+          <p className="landing-muted">
+            {user
+              ? 'Ask the board owner to grant access, or use a permitted share link.'
+              : 'Sign in first, then retry this board link.'}
+          </p>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 12 }}>
+            {user ? (
+              <button className="secondary-btn" onClick={() => navigate('/dashboard')}>
+                Back to dashboard
+              </button>
+            ) : (
+              <button
+                className="primary-btn"
+                onClick={() =>
+                  navigate(`/?returnTo=${encodeURIComponent(buildBoardReturnToPath(boardId))}`)
+                }
+              >
+                Sign in
+              </button>
+            )}
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   const socketStatusLabel =
     socketStatus === 'connected'
       ? '🟢 Live'
@@ -3179,7 +3474,9 @@ export function Board() {
   const detailsMessage =
     canvasNotice ||
     titleError ||
-    'Select a tool from the left rail to start adding objects.';
+    (canEditBoard
+      ? 'Select a tool from the left rail to start adding objects.'
+      : 'Read-only mode. You can pan, zoom, and inspect this board.');
   const gridCellSize = Math.max(8, Math.min(72, 24 * (zoomPercent / 100)));
   const connectorFromHandle = getSelectedConnectorHandle('from');
   const connectorToHandle = getSelectedConnectorHandle('to');
@@ -3234,15 +3531,21 @@ export function Board() {
           ) : (
             <div className="board-title-display">
               <span className="doc-chip">{boardTitle}</span>
-              <button
-                className="chip-btn"
-                onClick={() => {
-                  setEditingTitle(true);
-                  setTitleDraft(boardTitle);
-                }}
-              >
-                Rename
-              </button>
+              {canEditBoard ? (
+                <button
+                  className="chip-btn"
+                  onClick={() => {
+                    setEditingTitle(true);
+                    setTitleDraft(boardTitle);
+                  }}
+                >
+                  Rename
+                </button>
+              ) : (
+                <span className="chip-btn" aria-label="Board access role">
+                  Viewer
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -3289,6 +3592,7 @@ export function Board() {
           <button
             className={`rail-btn ${activeTool === 'sticky' ? 'active' : ''}`}
             aria-label="Sticky note tool"
+            disabled={!canEditBoard}
             onClick={() => setActiveTool('sticky')}
           >
             □
@@ -3296,6 +3600,7 @@ export function Board() {
           <button
             className={`rail-btn ${activeTool === 'rect' ? 'active' : ''}`}
             aria-label="Rectangle tool"
+            disabled={!canEditBoard}
             onClick={() => setActiveTool('rect')}
           >
             ○
@@ -3303,6 +3608,7 @@ export function Board() {
           <button
             className={`rail-btn ${activeTool === 'circle' ? 'active' : ''}`}
             aria-label="Circle tool"
+            disabled={!canEditBoard}
             onClick={() => setActiveTool('circle')}
           >
             ◯
@@ -3310,6 +3616,7 @@ export function Board() {
           <button
             className={`rail-btn ${activeTool === 'line' ? 'active' : ''}`}
             aria-label="Line tool"
+            disabled={!canEditBoard}
             onClick={() => setActiveTool('line')}
           >
             ／
@@ -3317,6 +3624,7 @@ export function Board() {
           <button
             className={`rail-btn ${activeTool === 'text' ? 'active' : ''}`}
             aria-label="Text tool"
+            disabled={!canEditBoard}
             onClick={() => setActiveTool('text')}
           >
             T
@@ -3324,6 +3632,7 @@ export function Board() {
           <button
             className={`rail-btn ${activeTool === 'frame' ? 'active' : ''}`}
             aria-label="Frame tool"
+            disabled={!canEditBoard}
             onClick={() => setActiveTool('frame')}
           >
             ⌗
@@ -3331,6 +3640,7 @@ export function Board() {
           <button
             className={`rail-btn ${activeTool === 'connector' ? 'active' : ''}`}
             aria-label="Connector tool"
+            disabled={!canEditBoard}
             onClick={() => setActiveTool('connector')}
           >
             ↔
@@ -3443,7 +3753,7 @@ export function Board() {
                     fill={selectedConnector.fromId ? CONNECTOR_HANDLE_STROKE : '#ffffff'}
                     stroke={CONNECTOR_HANDLE_STROKE}
                     strokeWidth={2}
-                    draggable={activeTool === 'select'}
+                    draggable={activeTool === 'select' && canEditBoard}
                     onMouseDown={(event) => {
                       event.cancelBubble = true;
                     }}
@@ -3463,7 +3773,7 @@ export function Board() {
                     fill={selectedConnector.toId ? CONNECTOR_HANDLE_STROKE : '#ffffff'}
                     stroke={CONNECTOR_HANDLE_STROKE}
                     strokeWidth={2}
-                    draggable={activeTool === 'select'}
+                    draggable={activeTool === 'select' && canEditBoard}
                     onMouseDown={(event) => {
                       event.cancelBubble = true;
                     }}
@@ -3554,13 +3864,16 @@ export function Board() {
               actions: aiCommandCenter.actions,
               applying: aiExecutor.applying,
               applyDisabled:
+                !canApplyAI ||
                 aiExecutor.applying ||
                 aiCommandCenter.loading ||
                 aiCommandCenter.actions.length === 0,
-              canUndo: aiExecutor.canUndo,
+              canUndo: canApplyAI && aiExecutor.canUndo,
               executionError: aiExecutor.error,
               executionMessage: aiExecutor.message,
             }}
+            disabled={!canApplyAI}
+            disabledReason="AI requires signed-in editor access on this board."
             onPromptChange={aiCommandCenter.setPrompt}
             onModeChange={aiCommandCenter.setMode}
             onSubmit={() => {
@@ -3603,6 +3916,7 @@ export function Board() {
                 </div>
                 <button
                   className="danger-btn property-delete-btn"
+                  disabled={!canEditBoard}
                   onClick={() => removeObjects(selectedIds, true)}
                 >
                   Delete Selected
@@ -3657,6 +3971,7 @@ export function Board() {
                 </div>
                 <button
                   className="danger-btn property-delete-btn"
+                  disabled={!canEditBoard}
                   onClick={() => removeObjects([selectedObject.id], true)}
                 >
                   Delete

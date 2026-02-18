@@ -1,16 +1,26 @@
 import { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+
+function resolveReturnTo(search: string): string | null {
+  const value = new URLSearchParams(search).get('returnTo');
+  if (!value || !value.startsWith('/') || value.startsWith('//')) {
+    return null;
+  }
+  return value;
+}
 
 export function Landing() {
   const { user, loading, error, signInWithGoogle } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const returnTo = resolveReturnTo(location.search);
 
   useEffect(() => {
     if (!loading && user) {
-      navigate('/dashboard', { replace: true });
+      navigate(returnTo || '/dashboard', { replace: true });
     }
-  }, [loading, user, navigate]);
+  }, [loading, user, navigate, returnTo]);
 
   if (loading) {
     return <div className="centered-screen">Loading auth...</div>;

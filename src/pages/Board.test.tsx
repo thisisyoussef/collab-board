@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { getDoc } from 'firebase/firestore/lite';
 import type { ReactNode } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
@@ -304,5 +305,51 @@ describe('Board', () => {
     expect(screen.getByText(/Preview mode requires manual Apply./i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Apply changes' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Undo last AI apply' })).toBeDisabled();
+  });
+
+  it('redirects signed-out users to landing with returnTo when board access is denied', async () => {
+    const deniedError = Object.assign(new Error('permission denied'), { code: 'permission-denied' });
+    vi.mocked(getDoc).mockRejectedValueOnce(deniedError);
+
+    renderBoard('board-private', { user: null });
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/?returnTo=%2Fboard%2Fboard-private', {
+        replace: true,
+      });
+    });
+  });
+
+  it('renders viewer sessions in read-only mode', async () => {
+    const boardSnapshot = {
+      exists: () => true,
+      data: () => ({
+        title: 'Viewer Board',
+        ownerId: 'owner-xyz',
+        sharing: { visibility: 'private' },
+      }),
+    };
+    const memberSnapshot = {
+      exists: () => true,
+      data: () => ({ role: 'viewer' }),
+    };
+    const defaultSnapshot = {
+      exists: () => true,
+      data: () => ({ title: 'Viewer Board', objects: {} }),
+    };
+
+    vi.mocked(getDoc)
+      .mockResolvedValue(defaultSnapshot as never)
+      .mockResolvedValueOnce(boardSnapshot as never)
+      .mockResolvedValueOnce(memberSnapshot as never)
+      .mockResolvedValueOnce(defaultSnapshot as never)
+      .mockResolvedValueOnce(defaultSnapshot as never);
+
+    renderBoard('board-viewer');
+    await screen.findByText('Viewer Board');
+
+    expect(screen.getByLabelText('Sticky note tool')).toBeDisabled();
+    expect(screen.getByLabelText('AI prompt')).toBeDisabled();
+    expect(screen.getByText(/Read-only mode/i)).toBeInTheDocument();
   });
 });

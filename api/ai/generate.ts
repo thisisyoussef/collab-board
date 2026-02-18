@@ -1,5 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import Anthropic from '@anthropic-ai/sdk';
+import { cert, getApps, initializeApp } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
+import { getFirestore } from 'firebase-admin/firestore';
+import { normalizeBoardRole, resolveBoardAccess } from '../../src/lib/access.js';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -188,6 +192,60 @@ const MAX_BOARD_STATE_OBJECTS = 100;
 const MAX_PLANNING_ATTEMPTS = 2;
 const TOOL_BY_NAME = new Map(toolDefinitions.map((tool) => [tool.name, tool] as const));
 
+interface BoardDocData {
+  ownerId?: string;
+  createdBy?: string;
+  sharing?: {
+    visibility?: string;
+    authLinkRole?: string;
+    publicLinkRole?: string;
+  };
+}
+
+function getFirebasePrivateKey(): string | null {
+  const value = process.env.FIREBASE_PRIVATE_KEY;
+  if (!value || typeof value !== 'string') {
+    return null;
+  }
+  return value.replace(/\\n/g, '\n');
+}
+
+function ensureFirebaseAdmin() {
+  if (getApps().length > 0) {
+    return;
+  }
+
+  const projectId = process.env.FIREBASE_PROJECT_ID;
+  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+  const privateKey = getFirebasePrivateKey();
+
+  if (!projectId || !clientEmail || !privateKey) {
+    throw new Error('Firebase Admin is not configured');
+  }
+
+  initializeApp({
+    credential: cert({
+      projectId,
+      clientEmail,
+      privateKey,
+    }),
+  });
+}
+
+function extractBearerToken(req: VercelRequest): string | null {
+  const value = req.headers.authorization;
+  if (!value || typeof value !== 'string') {
+    return null;
+  }
+
+  const match = value.match(/^Bearer\s+(.+)$/i);
+  if (!match || !match[1]) {
+    return null;
+  }
+
+  return match[1].trim() || null;
+}
+
 function ensureRecord(value: unknown): Record<string, unknown> {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
     return value as Record<string, unknown>;
@@ -340,16 +398,70 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ error: 'AI service not configured' });
   }
 
-  const { prompt, boardState } = req.body ?? {};
+  const { prompt, boardState, boardId } = req.body ?? {};
 
   if (!prompt || typeof prompt !== 'string') {
     return res.status(400).json({ error: 'Missing or invalid prompt' });
+  }
+
+  if (!boardId || typeof boardId !== 'string' || !boardId.trim()) {
+    return res.status(400).json({ error: 'Missing or invalid boardId' });
   }
 
   if (prompt.length > MAX_PROMPT_LENGTH) {
     return res
       .status(400)
       .json({ error: `Prompt too long (max ${MAX_PROMPT_LENGTH} characters)` });
+  }
+
+  const trimmedBoardId = boardId.trim();
+  const token = extractBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ error: 'Missing Authorization bearer token' });
+  }
+
+  let actorUserId = '';
+  try {
+    ensureFirebaseAdmin();
+    const decoded = await getAuth().verifyIdToken(token);
+    actorUserId = decoded.uid;
+  } catch (err) {
+    if (err instanceof Error && err.message.includes('Firebase Admin is not configured')) {
+      return res.status(500).json({ error: 'Auth service not configured' });
+    }
+    return res.status(401).json({ error: 'Invalid or expired auth token' });
+  }
+
+  try {
+    const firestore = getFirestore();
+    const boardSnapshot = await firestore.collection('boards').doc(trimmedBoardId).get();
+    if (!boardSnapshot.exists) {
+      return res.status(404).json({ error: 'Board not found' });
+    }
+
+    const boardData = (boardSnapshot.data() || {}) as BoardDocData;
+    const membershipSnapshot = await firestore
+      .collection('boardMembers')
+      .doc(`${trimmedBoardId}_${actorUserId}`)
+      .get();
+    const memberRole = membershipSnapshot.exists
+      ? normalizeBoardRole(membershipSnapshot.data()?.role)
+      : null;
+
+    const access = resolveBoardAccess({
+      ownerId: boardData.ownerId || boardData.createdBy || null,
+      userId: actorUserId,
+      isAuthenticated: true,
+      explicitMemberRole: memberRole,
+      sharing: boardData.sharing ?? null,
+    });
+
+    if (!access.canApplyAI) {
+      return res.status(403).json({ error: 'You do not have editor access for AI on this board.' });
+    }
+  } catch (err) {
+    console.error('[ai/generate] Access check failed:', err);
+    return res.status(500).json({ error: 'Unable to validate board access' });
   }
 
   // Truncate board state to avoid blowing up the context window
