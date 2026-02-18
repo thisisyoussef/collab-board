@@ -9,6 +9,9 @@ vi.mock('../hooks/useSocket', () => ({
   useSocket: () => ({
     socketRef: { current: null },
     status: 'connected' as const,
+    reconnectCount: 0,
+    connectedSinceMs: Date.now(),
+    disconnectedSinceMs: null,
   }),
 }));
 

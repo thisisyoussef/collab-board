@@ -5,11 +5,12 @@ import { Layer, Rect as KonvaRectShape, Stage, Transformer } from 'react-konva';
 import { useNavigate, useParams } from 'react-router-dom';
 import { MetricsOverlay } from '../components/MetricsOverlay';
 import { PresenceAvatars } from '../components/PresenceAvatars';
+import { ReconnectBanner } from '../components/ReconnectBanner';
 import { RemoteCursors } from '../components/RemoteCursors';
 import { useAuth } from '../hooks/useAuth';
 import { useCursors } from '../hooks/useCursors';
 import { usePresence } from '../hooks/usePresence';
-import { useSocket } from '../hooks/useSocket';
+import { useSocket, type SocketStatus } from '../hooks/useSocket';
 import { toFirestoreUserMessage, withFirestoreTimeout } from '../lib/firestore-client';
 import { db } from '../lib/firebase';
 import { screenToWorld, worldToScreen } from '../lib/utils';
@@ -204,7 +205,13 @@ function sanitizeBoardObjectForFirestore(entry: BoardObject): BoardObject {
 export function Board() {
   const { id: boardId } = useParams<{ id: string }>();
   const { user, signOut } = useAuth();
-  const { socketRef, status: socketStatus } = useSocket(boardId);
+  const {
+    socketRef,
+    status: socketStatus,
+    reconnectCount,
+    connectedSinceMs,
+    disconnectedSinceMs,
+  } = useSocket(boardId);
   const { members } = usePresence({ boardId, user, socketRef, socketStatus });
   const { remoteCursors, averageLatencyMs, publishCursor, publishCursorHide } = useCursors({
     boardId,
@@ -229,6 +236,7 @@ export function Board() {
   const rectDraftRef = useRef<RectDraftState | null>(null);
   const selectionDraftRef = useRef<SelectionDraftState | null>(null);
   const boardIdRef = useRef<string | undefined>(boardId);
+  const previousSocketStatusRef = useRef<SocketStatus>(socketStatus);
   const realtimeObjectEmitAtRef = useRef<Record<string, number>>({});
   const hasInitialBoardLoadRef = useRef(false);
   const pendingRemoteObjectEventsRef = useRef<PendingRemoteObjectEvent[]>([]);
@@ -362,28 +370,8 @@ export function Board() {
           return;
         }
 
-        clearBoardObjects();
-
         const rawObjects = (snapshot.data() as { objects?: BoardObjectsRecord }).objects || {};
-        const normalizedObjects = Object.values(rawObjects)
-          .map((entry) => normalizeLoadedObject(entry, user?.uid || 'guest'))
-          .filter((entry): entry is BoardObject => Boolean(entry))
-          .sort((a, b) => a.zIndex - b.zIndex);
-
-        normalizedObjects.forEach((entry) => {
-          objectsRef.current.set(entry.id, entry);
-          const node = createNodeForObject(entry);
-          objectsLayerRef.current?.add(node);
-          node.zIndex(entry.zIndex);
-        });
-
-        objectsLayerRef.current?.batchDraw();
-        setObjectCount(objectsRef.current.size);
-        hasUnsavedChangesRef.current = false;
-        setCanvasNotice(null);
-        setBoardRevision((value) => value + 1);
-        hasInitialBoardLoadRef.current = true;
-        flushPendingRemoteObjectEvents();
+        hydrateBoardObjects(rawObjects, user?.uid || 'guest');
       } catch (err) {
         if (cancelled) {
           return;
@@ -643,24 +631,7 @@ export function Board() {
           }
 
           const rawObjects = (snapshot.data() as { objects?: BoardObjectsRecord }).objects || {};
-          clearBoardObjects();
-
-          const normalizedObjects = Object.values(rawObjects)
-            .map((entry) => normalizeLoadedObject(entry, user?.uid || 'guest'))
-            .filter((entry): entry is BoardObject => Boolean(entry))
-            .sort((a, b) => a.zIndex - b.zIndex);
-
-          normalizedObjects.forEach((entry) => {
-            objectsRef.current.set(entry.id, entry);
-            const node = createNodeForObject(entry);
-            objectsLayerRef.current?.add(node);
-            node.zIndex(entry.zIndex);
-          });
-
-          objectsLayerRef.current?.batchDraw();
-          setObjectCount(objectsRef.current.size);
-          hasUnsavedChangesRef.current = false;
-          setBoardRevision((value) => value + 1);
+          hydrateBoardObjects(rawObjects, user?.uid || 'guest');
         } catch {
           // keep local state if background sync fetch fails
         }
@@ -673,6 +644,52 @@ export function Board() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boardId, editingText, socketRef, socketStatus, user]);
+
+  useEffect(() => {
+    const previousStatus = previousSocketStatusRef.current;
+    previousSocketStatusRef.current = socketStatus;
+
+    if (!boardId) {
+      return;
+    }
+
+    if (previousStatus !== 'disconnected' || socketStatus !== 'connected') {
+      return;
+    }
+
+    if (!hasInitialBoardLoadRef.current) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const resyncFromFirestore = async () => {
+      try {
+        const snapshot = await withFirestoreTimeout(
+          'Resyncing board after reconnect',
+          getDoc(doc(db, 'boards', boardId)),
+        );
+
+        if (cancelled || !snapshot.exists()) {
+          return;
+        }
+
+        const rawObjects = (snapshot.data() as { objects?: BoardObjectsRecord }).objects || {};
+        hydrateBoardObjects(rawObjects, user?.uid || 'guest');
+      } catch (err) {
+        if (cancelled) {
+          return;
+        }
+        setCanvasNotice(toFirestoreUserMessage('Unable to resync board after reconnect.', err));
+      }
+    };
+
+    void resyncFromFirestore();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [boardId, socketStatus, user]);
 
   function isBackgroundTarget(target: Konva.Node | null, stage: Konva.Stage): boolean {
     return target === stage || Boolean(target?.hasName('board-background'));
@@ -831,6 +848,30 @@ export function Board() {
     setObjectCount(0);
     setSelectedIds([]);
     setEditingText(null);
+  }
+
+  function hydrateBoardObjects(rawObjects: BoardObjectsRecord, fallbackUserId: string) {
+    clearBoardObjects();
+
+    const normalizedObjects = Object.values(rawObjects)
+      .map((entry) => normalizeLoadedObject(entry, fallbackUserId))
+      .filter((entry): entry is BoardObject => Boolean(entry))
+      .sort((a, b) => a.zIndex - b.zIndex);
+
+    normalizedObjects.forEach((entry) => {
+      objectsRef.current.set(entry.id, entry);
+      const node = createNodeForObject(entry);
+      objectsLayerRef.current?.add(node);
+      node.zIndex(entry.zIndex);
+    });
+
+    objectsLayerRef.current?.batchDraw();
+    setObjectCount(objectsRef.current.size);
+    hasUnsavedChangesRef.current = false;
+    setCanvasNotice(null);
+    setBoardRevision((value) => value + 1);
+    hasInitialBoardLoadRef.current = true;
+    flushPendingRemoteObjectEvents();
   }
 
   function parseUpdatedAtMs(value: string | undefined): number {
@@ -1679,6 +1720,7 @@ export function Board() {
 
   return (
     <main className="figma-board-root">
+      <ReconnectBanner status={socketStatus} disconnectedSinceMs={disconnectedSinceMs} />
       <header className="figma-board-topbar">
         <div className="topbar-cluster left">
           <button className="icon-chip" aria-label="Menu">
@@ -1895,6 +1937,9 @@ export function Board() {
             averageObjectLatencyMs={averageObjectLatencyMs}
             userCount={members.length}
             objectCount={objectCount}
+            reconnectCount={reconnectCount}
+            connectionStatus={socketStatus}
+            connectedSinceMs={connectedSinceMs}
           />
         </section>
 

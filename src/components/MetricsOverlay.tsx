@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
+import type { SocketStatus } from '../hooks/useSocket';
 
 interface MetricsOverlayProps {
   averageCursorLatencyMs: number;
   averageObjectLatencyMs: number;
   userCount: number;
   objectCount: number;
+  reconnectCount: number;
+  connectionStatus: SocketStatus;
+  connectedSinceMs: number | null;
 }
 
 const enableMetricsFromEnv =
@@ -16,8 +20,12 @@ export function MetricsOverlay({
   averageObjectLatencyMs,
   userCount,
   objectCount,
+  reconnectCount,
+  connectionStatus,
+  connectedSinceMs,
 }: MetricsOverlayProps) {
   const [fps, setFps] = useState(60);
+  const [uptimeTickMs, setUptimeTickMs] = useState(0);
 
   useEffect(() => {
     if (!shouldShowMetrics) {
@@ -46,6 +54,19 @@ export function MetricsOverlay({
     };
   }, []);
 
+  useEffect(() => {
+    if (connectionStatus !== 'connected' || !connectedSinceMs) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setUptimeTickMs(Date.now());
+    }, 1000);
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [connectedSinceMs, connectionStatus]);
+
   const cursorStatus = useMemo(
     () => (averageCursorLatencyMs < 50 ? '✅' : '⚠️'),
     [averageCursorLatencyMs],
@@ -54,6 +75,23 @@ export function MetricsOverlay({
     () => (averageObjectLatencyMs < 100 ? '✅' : '⚠️'),
     [averageObjectLatencyMs],
   );
+
+  const statusLabel = useMemo(() => {
+    if (connectionStatus !== 'connected') {
+      return 'Status: Offline';
+    }
+
+    if (!connectedSinceMs) {
+      return 'Status: Connected (0m 00s)';
+    }
+
+    const uptimeMs = Math.max(0, uptimeTickMs - connectedSinceMs);
+    const totalSeconds = Math.floor(uptimeMs / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    const formatted = `${minutes}m ${String(seconds).padStart(2, '0')}s`;
+    return `Status: Connected (${formatted})`;
+  }, [connectedSinceMs, connectionStatus, uptimeTickMs]);
 
   if (!shouldShowMetrics) {
     return null;
@@ -68,9 +106,11 @@ export function MetricsOverlay({
       <p>
         Object avg: {averageObjectLatencyMs}ms {objectStatus}
       </p>
+      <p>Reconnects: {reconnectCount}</p>
       <p>
         Users: {userCount} | Objects: {objectCount}
       </p>
+      <p>{statusLabel}</p>
     </aside>
   );
 }

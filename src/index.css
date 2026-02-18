@@ -687,6 +687,48 @@ button {
   padding: 0.8rem;
 }
 
+.reconnect-banner {
+  position: sticky;
+  top: 0;
+  z-index: 10000;
+  width: 100%;
+  text-align: center;
+  font-size: 0.86rem;
+  font-weight: 600;
+  padding: 0.5rem 0.9rem;
+  border-bottom: 1px solid transparent;
+}
+
+.reconnect-banner.warning {
+  color: #92400e;
+  background:
+    linear-gradient(
+      110deg,
+      rgba(255, 251, 235, 0.95) 0%,
+      rgba(254, 243, 199, 0.96) 40%,
+      rgba(255, 251, 235, 0.95) 60%,
+      rgba(254, 243, 199, 0.96) 100%
+    );
+  border-bottom-color: #f59e0b;
+  background-size: 250% 100%;
+  animation: reconnectShimmer 2.1s linear infinite;
+}
+
+.reconnect-banner.success {
+  color: #065f46;
+  background: rgba(209, 250, 229, 0.98);
+  border-bottom-color: #10b981;
+}
+
+@keyframes reconnectShimmer {
+  0% {
+    background-position: 0% 0%;
+  }
+  100% {
+    background-position: 100% 0%;
+  }
+}
+
 .figma-left-rail,
 .figma-right-panel,
 .figma-canvas-shell {

@@ -13,6 +13,10 @@ export function useSocket(boardId: string | undefined) {
   const guestIdentity = useMemo(() => getOrCreateGuestIdentity(), []);
   const socketRef = useRef<Socket<ServerToClientEvents, ClientToServerEvents> | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<SocketStatus>('connecting');
+  const [reconnectCount, setReconnectCount] = useState(0);
+  const [connectedSinceMs, setConnectedSinceMs] = useState<number | null>(null);
+  const [disconnectedSinceMs, setDisconnectedSinceMs] = useState<number | null>(null);
+  const hasEverConnectedRef = useRef(false);
   const canConnect = Boolean(boardId && SOCKET_URL);
 
   useEffect(() => {
@@ -22,6 +26,7 @@ export function useSocket(boardId: string | undefined) {
     if (!canConnect) {
       socketRef.current?.disconnect();
       socketRef.current = null;
+      hasEverConnectedRef.current = false;
       return;
     }
 
@@ -52,14 +57,23 @@ export function useSocket(boardId: string | undefined) {
 
         socket.on('connect', () => {
           refreshAttempted = false;
+          if (hasEverConnectedRef.current) {
+            setReconnectCount((value) => value + 1);
+          } else {
+            hasEverConnectedRef.current = true;
+          }
+          setConnectedSinceMs(Date.now());
+          setDisconnectedSinceMs(null);
           setConnectionStatus('connected');
         });
 
         socket.on('disconnect', () => {
+          setDisconnectedSinceMs((previous) => previous ?? Date.now());
           setConnectionStatus('disconnected');
         });
 
         socket.on('connect_error', async (err) => {
+          setDisconnectedSinceMs((previous) => previous ?? Date.now());
           setConnectionStatus('disconnected');
 
           if (!user || refreshAttempted || err.message !== 'Authentication failed') {
@@ -75,6 +89,7 @@ export function useSocket(boardId: string | undefined) {
             setConnectionStatus('connecting');
             socket.connect();
           } catch {
+            setDisconnectedSinceMs((previous) => previous ?? Date.now());
             setConnectionStatus('disconnected');
           }
         });
@@ -98,8 +113,15 @@ export function useSocket(boardId: string | undefined) {
         socket.disconnect();
       }
       socketRef.current = null;
+      hasEverConnectedRef.current = false;
     };
   }, [boardId, canConnect, guestIdentity.displayName, guestIdentity.userId, user]);
 
-  return { socketRef, status: canConnect ? connectionStatus : 'disconnected' };
+  return {
+    socketRef,
+    status: canConnect ? connectionStatus : 'disconnected',
+    reconnectCount,
+    connectedSinceMs,
+    disconnectedSinceMs,
+  };
 }
