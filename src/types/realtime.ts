@@ -1,3 +1,5 @@
+import type { BoardObject } from './board';
+
 export interface PresenceMember {
   socketId: string;
   userId: string;
@@ -29,6 +31,24 @@ export interface BoardChangedPayload {
   _ts: number;
 }
 
+export interface ObjectCreatePayload {
+  boardId: string;
+  object: BoardObject;
+  _ts: number;
+}
+
+export interface ObjectUpdatePayload {
+  boardId: string;
+  object: BoardObject;
+  _ts: number;
+}
+
+export interface ObjectDeletePayload {
+  boardId: string;
+  objectId: string;
+  _ts: number;
+}
+
 export interface JoinBoardPayload {
   boardId: string;
   user: {
@@ -53,6 +73,9 @@ export interface ClientToServerEvents {
   'cursor:move': (payload: CursorData) => void;
   'cursor:hide': (payload?: { _ts?: number }) => void;
   'board:changed': (payload: BoardChangedPayload) => void;
+  'object:create': (payload: ObjectCreatePayload) => void;
+  'object:update': (payload: ObjectUpdatePayload) => void;
+  'object:delete': (payload: ObjectDeletePayload) => void;
 }
 
 export interface ServerToClientEvents {
@@ -62,5 +85,8 @@ export interface ServerToClientEvents {
   'cursor:move': (payload: CursorMovePayload) => void;
   'cursor:hide': (payload: CursorHidePayload) => void;
   'board:changed': (payload: BoardChangedPayload) => void;
+  'object:create': (payload: ObjectCreatePayload) => void;
+  'object:update': (payload: ObjectUpdatePayload) => void;
+  'object:delete': (payload: ObjectDeletePayload) => void;
   'server:error': (payload: ServerErrorPayload) => void;
 }

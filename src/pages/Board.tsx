@@ -56,6 +56,7 @@ const RECT_CLICK_DRAG_THRESHOLD = 8;
 const STICKY_MIN_WIDTH = 80;
 const STICKY_MIN_HEIGHT = 60;
 const BOARD_SAVE_DEBOUNCE_MS = 300;
+const OBJECT_UPDATE_EMIT_THROTTLE_MS = 45;
 
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) {
@@ -216,6 +217,7 @@ export function Board() {
   const rectDraftRef = useRef<RectDraftState | null>(null);
   const selectionDraftRef = useRef<SelectionDraftState | null>(null);
   const boardIdRef = useRef<string | undefined>(boardId);
+  const realtimeObjectEmitAtRef = useRef<Record<string, number>>({});
 
   const [canvasSize, setCanvasSize] = useState({ width: 960, height: 560 });
   const [boardTitle, setBoardTitle] = useState('Untitled board');
@@ -506,6 +508,69 @@ export function Board() {
       return;
     }
 
+    const handleRemoteCreate = (payload: { boardId: string; object: BoardObject }) => {
+      const changedBoardId =
+        typeof payload?.boardId === 'string' ? payload.boardId.trim() : '';
+      if (!changedBoardId || changedBoardId !== boardId) {
+        return;
+      }
+
+      const normalized = normalizeLoadedObject(payload.object, 'guest');
+      if (!normalized) {
+        return;
+      }
+
+      applyRemoteObjectUpsert(normalized);
+    };
+
+    const handleRemoteUpdate = (payload: { boardId: string; object: BoardObject }) => {
+      const changedBoardId =
+        typeof payload?.boardId === 'string' ? payload.boardId.trim() : '';
+      if (!changedBoardId || changedBoardId !== boardId) {
+        return;
+      }
+
+      const normalized = normalizeLoadedObject(payload.object, 'guest');
+      if (!normalized) {
+        return;
+      }
+
+      applyRemoteObjectUpsert(normalized);
+    };
+
+    const handleRemoteDelete = (payload: { boardId: string; objectId: string }) => {
+      const changedBoardId =
+        typeof payload?.boardId === 'string' ? payload.boardId.trim() : '';
+      if (!changedBoardId || changedBoardId !== boardId) {
+        return;
+      }
+
+      const objectId = typeof payload?.objectId === 'string' ? payload.objectId.trim() : '';
+      if (!objectId) {
+        return;
+      }
+
+      applyRemoteObjectDelete(objectId);
+    };
+
+    socket.on('object:create', handleRemoteCreate);
+    socket.on('object:update', handleRemoteUpdate);
+    socket.on('object:delete', handleRemoteDelete);
+
+    return () => {
+      socket.off('object:create', handleRemoteCreate);
+      socket.off('object:update', handleRemoteUpdate);
+      socket.off('object:delete', handleRemoteDelete);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [boardId, socketRef, socketStatus]);
+
+  useEffect(() => {
+    const socket = socketRef.current;
+    if (!socket || !boardId || socketStatus !== 'connected') {
+      return;
+    }
+
     const handleBoardChanged = (payload: { boardId: string }) => {
       const changedBoardId =
         typeof payload?.boardId === 'string' ? payload.boardId.trim() : '';
@@ -590,6 +655,68 @@ export function Board() {
     }
   }
 
+  function emitObjectCreate(object: BoardObject) {
+    const liveBoardId = boardIdRef.current;
+    const socket = socketRef.current;
+    if (!liveBoardId || !socket?.connected) {
+      return;
+    }
+
+    const now = Date.now();
+    const payloadObject = sanitizeBoardObjectForFirestore(object);
+    realtimeObjectEmitAtRef.current[payloadObject.id] = now;
+    socket.emit('object:create', {
+      boardId: liveBoardId,
+      object: payloadObject,
+      _ts: now,
+    });
+  }
+
+  function emitObjectUpdate(object: BoardObject, force = false) {
+    const liveBoardId = boardIdRef.current;
+    const socket = socketRef.current;
+    if (!liveBoardId || !socket?.connected) {
+      return;
+    }
+
+    const now = Date.now();
+    const lastEmitted = realtimeObjectEmitAtRef.current[object.id] || 0;
+    if (!force && now - lastEmitted < OBJECT_UPDATE_EMIT_THROTTLE_MS) {
+      return;
+    }
+
+    const payloadObject = sanitizeBoardObjectForFirestore(object);
+    realtimeObjectEmitAtRef.current[payloadObject.id] = now;
+
+    const payload = {
+      boardId: liveBoardId,
+      object: payloadObject,
+      _ts: now,
+    };
+
+    if (force) {
+      socket.emit('object:update', payload);
+      return;
+    }
+
+    socket.volatile.emit('object:update', payload);
+  }
+
+  function emitObjectDelete(objectId: string) {
+    const liveBoardId = boardIdRef.current;
+    const socket = socketRef.current;
+    if (!liveBoardId || !socket?.connected) {
+      return;
+    }
+
+    delete realtimeObjectEmitAtRef.current[objectId];
+    socket.emit('object:delete', {
+      boardId: liveBoardId,
+      objectId,
+      _ts: Date.now(),
+    });
+  }
+
   function serializeBoardObjects(): BoardObjectsRecord {
     const objectsRecord: BoardObjectsRecord = {};
     objectsRef.current.forEach((entry, id) => {
@@ -641,8 +768,14 @@ export function Board() {
     }
   }
 
-  function scheduleBoardSave() {
+  function scheduleBoardSave(immediate = false) {
     hasUnsavedChangesRef.current = true;
+    if (immediate) {
+      clearPersistenceTimer();
+      void persistBoardSave();
+      return;
+    }
+
     clearPersistenceTimer();
     saveTimeoutRef.current = window.setTimeout(() => {
       void persistBoardSave();
@@ -665,6 +798,88 @@ export function Board() {
     setObjectCount(0);
     setSelectedIds([]);
     setEditingText(null);
+  }
+
+  function applyRemoteObjectUpsert(entry: BoardObject) {
+    const normalized = sanitizeBoardObjectForFirestore(entry);
+    const existing = objectsRef.current.get(normalized.id);
+    const existingNode = stageRef.current?.findOne(`#${normalized.id}`);
+
+    let node: BoardCanvasNode | null = null;
+    if (
+      existingNode &&
+      ((normalized.type === 'sticky' && existingNode instanceof Konva.Group) ||
+        (normalized.type === 'rect' && existingNode instanceof Konva.Rect))
+    ) {
+      node = existingNode as BoardCanvasNode;
+    } else if (existingNode) {
+      existingNode.destroy();
+    }
+
+    if (!node) {
+      node = createNodeForObject(normalized);
+      objectsLayerRef.current?.add(node);
+    }
+
+    if (normalized.type === 'sticky' && node instanceof Konva.Group) {
+      node.setAttrs({
+        x: normalized.x,
+        y: normalized.y,
+        rotation: normalized.rotation,
+      });
+
+      const body = node.findOne('.sticky-body') as Konva.Rect | null;
+      const label = node.findOne('.sticky-label') as Konva.Text | null;
+      body?.setAttrs({
+        width: normalized.width,
+        height: normalized.height,
+        fill: normalized.color,
+      });
+      label?.setAttrs({
+        text: getStickyRenderText(normalized.text),
+        fill: getStickyRenderColor(normalized.text),
+        width: normalized.width,
+        height: normalized.height,
+        fontSize: normalized.fontSize || 14,
+      });
+    }
+
+    if (normalized.type === 'rect' && node instanceof Konva.Rect) {
+      node.setAttrs({
+        x: normalized.x,
+        y: normalized.y,
+        width: normalized.width,
+        height: normalized.height,
+        rotation: normalized.rotation,
+        fill: normalized.color,
+        stroke: normalized.stroke || RECT_DEFAULT_STROKE,
+        strokeWidth: normalized.strokeWidth || RECT_DEFAULT_STROKE_WIDTH,
+      });
+    }
+
+    node.zIndex(normalized.zIndex);
+    objectsRef.current.set(normalized.id, normalized);
+    objectsLayerRef.current?.batchDraw();
+    if (!existing) {
+      setObjectCount(objectsRef.current.size);
+      setBoardRevision((value) => value + 1);
+    }
+  }
+
+  function applyRemoteObjectDelete(objectId: string) {
+    const object = objectsRef.current.get(objectId);
+    if (!object) {
+      return;
+    }
+
+    const node = stageRef.current?.findOne(`#${objectId}`);
+    node?.destroy();
+    objectsRef.current.delete(objectId);
+    objectsLayerRef.current?.batchDraw();
+    setObjectCount(objectsRef.current.size);
+    setSelectedIds((previous) => previous.filter((entry) => entry !== objectId));
+    setEditingText((previous) => (previous?.id === objectId ? null : previous));
+    setBoardRevision((value) => value + 1);
   }
 
   function getNextZIndex(): number {
@@ -700,7 +915,12 @@ export function Board() {
     node.scale({ x: 1, y: 1 });
   }
 
-  function syncObjectFromNode(objectId: string, persist: boolean) {
+  function syncObjectFromNode(
+    objectId: string,
+    persist: boolean,
+    emitRealtime = persist,
+    bumpRevision = true,
+  ) {
     const current = objectsRef.current.get(objectId);
     const node = stageRef.current?.findOne(`#${objectId}`);
     if (!current || !node) {
@@ -723,7 +943,7 @@ export function Board() {
       height = node.height();
     }
 
-    objectsRef.current.set(objectId, {
+    const nextObject: BoardObject = {
       ...current,
       x: node.x(),
       y: node.y(),
@@ -731,11 +951,18 @@ export function Board() {
       width,
       height,
       updatedAt: persist ? new Date().toISOString() : current.updatedAt,
-    });
+    };
 
-    setBoardRevision((value) => value + 1);
+    objectsRef.current.set(objectId, nextObject);
+
+    if (bumpRevision) {
+      setBoardRevision((value) => value + 1);
+    }
+    if (emitRealtime) {
+      emitObjectUpdate(nextObject, persist);
+    }
     if (persist) {
-      scheduleBoardSave();
+      scheduleBoardSave(true);
     }
   }
 
@@ -811,6 +1038,13 @@ export function Board() {
     group.on('click tap', (event) => {
       handleObjectSelection(event, object.id);
     });
+    group.on('dragmove', () => {
+      syncObjectFromNode(object.id, false, true, false);
+      const worldPosition = getWorldPointerPosition();
+      if (worldPosition) {
+        publishCursor(worldPosition);
+      }
+    });
     group.on('dragend', () => {
       syncObjectFromNode(object.id, true);
     });
@@ -849,6 +1083,13 @@ export function Board() {
     rect.on('click tap', (event) => {
       handleObjectSelection(event, object.id);
     });
+    rect.on('dragmove', () => {
+      syncObjectFromNode(object.id, false, true, false);
+      const worldPosition = getWorldPointerPosition();
+      if (worldPosition) {
+        publishCursor(worldPosition);
+      }
+    });
     rect.on('dragend', () => {
       syncObjectFromNode(object.id, true);
     });
@@ -880,7 +1121,8 @@ export function Board() {
     setBoardRevision((value) => value + 1);
 
     if (persist) {
-      scheduleBoardSave();
+      emitObjectCreate(object);
+      scheduleBoardSave(true);
     }
   }
 
@@ -903,7 +1145,10 @@ export function Board() {
     setBoardRevision((value) => value + 1);
 
     if (persist) {
-      scheduleBoardSave();
+      objectIds.forEach((objectId) => {
+        emitObjectDelete(objectId);
+      });
+      scheduleBoardSave(true);
     }
   }
 
@@ -924,11 +1169,13 @@ export function Board() {
     const normalizedText = text.replace(/\r\n/g, '\n');
     const nextText = saveChanges ? normalizedText : current.text || '';
 
-    objectsRef.current.set(editingText.id, {
+    const nextObject: BoardObject = {
       ...current,
       text: nextText,
       updatedAt: saveChanges ? new Date().toISOString() : current.updatedAt,
-    });
+    };
+
+    objectsRef.current.set(editingText.id, nextObject);
 
     label?.text(getStickyRenderText(nextText));
     label?.fill(getStickyRenderColor(nextText));
@@ -937,7 +1184,8 @@ export function Board() {
     setBoardRevision((value) => value + 1);
 
     if (saveChanges) {
-      scheduleBoardSave();
+      emitObjectUpdate(nextObject, true);
+      scheduleBoardSave(true);
     }
   }
 
@@ -1040,19 +1288,21 @@ export function Board() {
       : Math.max(RECT_MIN_SIZE, current.height);
     rectNode.setAttrs({ width, height });
 
-    objectsRef.current.set(draft.id, {
+    const finalizedObject: BoardObject = {
       ...current,
       width,
       height,
       updatedAt: new Date().toISOString(),
-    });
+    };
+    objectsRef.current.set(draft.id, finalizedObject);
 
     rectDraftRef.current = null;
     setIsDrawingRect(false);
     setActiveTool('select');
     setSelectedIds([draft.id]);
     setBoardRevision((value) => value + 1);
-    scheduleBoardSave();
+    emitObjectCreate(finalizedObject);
+    scheduleBoardSave(true);
     objectsLayerRef.current?.batchDraw();
   }
 

@@ -76,6 +76,12 @@ function applyGuestIdentity(socket) {
   socket.data.isGuest = true;
 }
 
+function resolveBoardIdFromPayload(socket, data) {
+  const currentBoardId = normalizeNonEmptyString(socket.data.boardId);
+  const payloadBoardId = normalizeNonEmptyString(data?.boardId);
+  return payloadBoardId || currentBoardId || null;
+}
+
 io.use(async (socket, next) => {
   try {
     const token = socket.handshake.auth?.token;
@@ -172,9 +178,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('board:changed', (data) => {
-    const currentBoardId = normalizeNonEmptyString(socket.data.boardId);
-    const payloadBoardId = normalizeNonEmptyString(data?.boardId);
-    const boardId = payloadBoardId || currentBoardId;
+    const boardId = resolveBoardIdFromPayload(socket, data);
     if (!boardId) {
       return;
     }
@@ -182,6 +186,73 @@ io.on('connection', (socket) => {
     const ts = Number(data?._ts);
     socket.to(boardRoom(boardId)).emit('board:changed', {
       boardId,
+      _ts: Number.isFinite(ts) ? ts : Date.now(),
+    });
+  });
+
+  socket.on('object:create', (data) => {
+    const boardId = resolveBoardIdFromPayload(socket, data);
+    if (!boardId) {
+      return;
+    }
+
+    const object = data?.object;
+    if (!object || typeof object !== 'object') {
+      return;
+    }
+
+    const objectId = normalizeNonEmptyString(object.id);
+    if (!objectId) {
+      return;
+    }
+
+    const ts = Number(data?._ts);
+    socket.to(boardRoom(boardId)).emit('object:create', {
+      boardId,
+      object,
+      _ts: Number.isFinite(ts) ? ts : Date.now(),
+    });
+  });
+
+  socket.on('object:update', (data) => {
+    const boardId = resolveBoardIdFromPayload(socket, data);
+    if (!boardId) {
+      return;
+    }
+
+    const object = data?.object;
+    if (!object || typeof object !== 'object') {
+      return;
+    }
+
+    const objectId = normalizeNonEmptyString(object.id);
+    if (!objectId) {
+      return;
+    }
+
+    const ts = Number(data?._ts);
+    socket.to(boardRoom(boardId)).emit('object:update', {
+      boardId,
+      object,
+      _ts: Number.isFinite(ts) ? ts : Date.now(),
+    });
+  });
+
+  socket.on('object:delete', (data) => {
+    const boardId = resolveBoardIdFromPayload(socket, data);
+    if (!boardId) {
+      return;
+    }
+
+    const objectId = normalizeNonEmptyString(data?.objectId);
+    if (!objectId) {
+      return;
+    }
+
+    const ts = Number(data?._ts);
+    socket.to(boardRoom(boardId)).emit('object:delete', {
+      boardId,
+      objectId,
       _ts: Number.isFinite(ts) ? ts : Date.now(),
     });
   });
