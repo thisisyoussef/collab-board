@@ -31,7 +31,7 @@ export function toFirestoreUserMessage(fallback: string, err: unknown): string {
   const message = err instanceof Error ? err.message.toLowerCase() : '';
 
   if (code === 'permission-denied') {
-    return `${fallback} Permission denied for this account.`;
+    return `${fallback} Permission denied for this account. If this is a shared board, deploy Firestore rules that allow authenticated read/update access.`;
   }
 
   if (

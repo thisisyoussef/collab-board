@@ -45,13 +45,17 @@ type BoardCanvasNode = Konva.Group | Konva.Rect;
 const STICKY_DEFAULT_WIDTH = 150;
 const STICKY_DEFAULT_HEIGHT = 100;
 const STICKY_DEFAULT_COLOR = '#FFEB3B';
+const STICKY_PLACEHOLDER_TEXT = 'New note';
 const RECT_DEFAULT_COLOR = '#E3F2FD';
 const RECT_DEFAULT_STROKE = '#1565C0';
 const RECT_DEFAULT_STROKE_WIDTH = 2;
 const RECT_MIN_SIZE = 20;
+const RECT_CLICK_DEFAULT_WIDTH = 180;
+const RECT_CLICK_DEFAULT_HEIGHT = 120;
+const RECT_CLICK_DRAG_THRESHOLD = 8;
 const STICKY_MIN_WIDTH = 80;
 const STICKY_MIN_HEIGHT = 60;
-const BOARD_SAVE_DEBOUNCE_MS = 3000;
+const BOARD_SAVE_DEBOUNCE_MS = 1500;
 
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) {
@@ -73,6 +77,22 @@ function intersects(a: Bounds, b: Bounds): boolean {
     a.y + a.height < b.y ||
     b.y + b.height < a.y
   );
+}
+
+function isPlaceholderStickyText(value: string | undefined): boolean {
+  if (!value) {
+    return true;
+  }
+
+  return value.trim().toLowerCase() === STICKY_PLACEHOLDER_TEXT.toLowerCase();
+}
+
+function getStickyRenderText(value: string | undefined): string {
+  return isPlaceholderStickyText(value) ? STICKY_PLACEHOLDER_TEXT : value || '';
+}
+
+function getStickyRenderColor(value: string | undefined): string {
+  return isPlaceholderStickyText(value) ? '#6b7280' : '#111827';
 }
 
 function normalizeLoadedObject(raw: unknown, fallbackUserId: string): BoardObject | null {
@@ -102,7 +122,7 @@ function normalizeLoadedObject(raw: unknown, fallbackUserId: string): BoardObjec
     width,
     height,
     rotation: Number(candidate.rotation || 0),
-    text: candidate.type === 'sticky' ? String(candidate.text || 'New note') : undefined,
+    text: candidate.type === 'sticky' ? String(candidate.text || '') : undefined,
     color:
       typeof candidate.color === 'string' && candidate.color.trim()
         ? candidate.color
@@ -154,6 +174,9 @@ export function Board() {
   const selectionRectRef = useRef<Konva.Rect | null>(null);
   const objectsRef = useRef<Map<string, BoardObject>>(new Map());
   const saveTimeoutRef = useRef<number | null>(null);
+  const saveInFlightRef = useRef(false);
+  const saveQueuedRef = useRef(false);
+  const hasUnsavedChangesRef = useRef(false);
   const rectDraftRef = useRef<RectDraftState | null>(null);
   const selectionDraftRef = useRef<SelectionDraftState | null>(null);
   const boardIdRef = useRef<string | undefined>(boardId);
@@ -206,10 +229,10 @@ export function Board() {
 
   useEffect(
     () => () => {
-      if (saveTimeoutRef.current) {
-        window.clearTimeout(saveTimeoutRef.current);
-      }
+      clearPersistenceTimer();
+      flushBoardSave();
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
 
@@ -294,6 +317,7 @@ export function Board() {
 
         objectsLayerRef.current?.batchDraw();
         setObjectCount(objectsRef.current.size);
+        hasUnsavedChangesRef.current = false;
         setCanvasNotice(null);
         setBoardRevision((value) => value + 1);
       } catch (err) {
@@ -413,6 +437,33 @@ export function Board() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedIds]);
 
+  useEffect(() => {
+    if (!boardId || !user) {
+      return;
+    }
+
+    const handlePageHide = () => {
+      flushBoardSave();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        flushBoardSave();
+      }
+    };
+
+    window.addEventListener('beforeunload', handlePageHide);
+    window.addEventListener('pagehide', handlePageHide);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('beforeunload', handlePageHide);
+      window.removeEventListener('pagehide', handlePageHide);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [boardId, user]);
+
   function isBackgroundTarget(target: Konva.Node | null, stage: Konva.Stage): boolean {
     return target === stage || Boolean(target?.hasName('board-background'));
   }
@@ -434,42 +485,75 @@ export function Board() {
   function clearPersistenceTimer() {
     if (saveTimeoutRef.current) {
       window.clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
+  }
+
+  function serializeBoardObjects(): BoardObjectsRecord {
+    const objectsRecord: BoardObjectsRecord = {};
+    objectsRef.current.forEach((entry, id) => {
+      objectsRecord[id] = entry;
+    });
+    return objectsRecord;
+  }
+
+  async function persistBoardSave() {
+    const liveBoardId = boardIdRef.current;
+    if (!liveBoardId || !hasUnsavedChangesRef.current) {
+      return;
+    }
+
+    if (saveInFlightRef.current) {
+      saveQueuedRef.current = true;
+      return;
+    }
+
+    saveInFlightRef.current = true;
+    const objectsRecord = serializeBoardObjects();
+
+    try {
+      await withFirestoreTimeout(
+        'Saving board changes',
+        updateDoc(doc(db, 'boards', liveBoardId), {
+          objects: objectsRecord,
+          updatedAt: serverTimestamp(),
+        }),
+      );
+      hasUnsavedChangesRef.current = false;
+      setCanvasNotice(null);
+    } catch (err) {
+      hasUnsavedChangesRef.current = true;
+      setCanvasNotice(toFirestoreUserMessage('Unable to save board changes.', err));
+    } finally {
+      saveInFlightRef.current = false;
+      if (saveQueuedRef.current) {
+        saveQueuedRef.current = false;
+        void persistBoardSave();
+      }
     }
   }
 
   function scheduleBoardSave() {
+    hasUnsavedChangesRef.current = true;
     clearPersistenceTimer();
-
-    saveTimeoutRef.current = window.setTimeout(async () => {
-      const liveBoardId = boardIdRef.current;
-      if (!liveBoardId) {
-        return;
-      }
-
-      const objectsRecord: BoardObjectsRecord = {};
-      objectsRef.current.forEach((entry, id) => {
-        objectsRecord[id] = entry;
-      });
-
-      try {
-        await withFirestoreTimeout(
-          'Saving board changes',
-          updateDoc(doc(db, 'boards', liveBoardId), {
-            objects: objectsRecord,
-            updatedAt: serverTimestamp(),
-          }),
-        );
-        setCanvasNotice(null);
-      } catch (err) {
-        setCanvasNotice(toFirestoreUserMessage('Unable to save board changes.', err));
-      }
+    saveTimeoutRef.current = window.setTimeout(() => {
+      void persistBoardSave();
     }, BOARD_SAVE_DEBOUNCE_MS);
+  }
+
+  function flushBoardSave() {
+    clearPersistenceTimer();
+    if (!hasUnsavedChangesRef.current) {
+      return;
+    }
+    void persistBoardSave();
   }
 
   function clearBoardObjects() {
     objectsLayerRef.current?.destroyChildren();
     objectsLayerRef.current?.batchDraw();
     objectsRef.current.clear();
+    hasUnsavedChangesRef.current = false;
     setObjectCount(0);
     setSelectedIds([]);
     setEditingText(null);
@@ -555,7 +639,7 @@ export function Board() {
 
     setEditingText({
       id: objectId,
-      value: object.text || '',
+      value: isPlaceholderStickyText(object.text) ? '' : object.text || '',
     });
   }
 
@@ -600,10 +684,10 @@ export function Board() {
 
     const label = new Konva.Text({
       name: 'sticky-label',
-      text: object.text || 'New note',
+      text: getStickyRenderText(object.text),
       width: object.width,
       height: object.height,
-      fill: '#111827',
+      fill: getStickyRenderColor(object.text),
       fontSize: object.fontSize || 14,
       fontFamily: 'Segoe UI, sans-serif',
       padding: 8,
@@ -729,14 +813,17 @@ export function Board() {
     const group = stageRef.current?.findOne(`#${editingText.id}`) as Konva.Group | null;
     const label = group?.findOne('.sticky-label') as Konva.Text | null;
     const text = editingText.value;
+    const normalizedText = text.replace(/\r\n/g, '\n');
+    const nextText = saveChanges ? normalizedText : current.text || '';
 
     objectsRef.current.set(editingText.id, {
       ...current,
-      text,
+      text: nextText,
       updatedAt: saveChanges ? new Date().toISOString() : current.updatedAt,
     });
 
-    label?.text(text || ' ');
+    label?.text(getStickyRenderText(nextText));
+    label?.fill(getStickyRenderColor(nextText));
     objectsLayerRef.current?.batchDraw();
     setEditingText(null);
     setBoardRevision((value) => value + 1);
@@ -759,7 +846,7 @@ export function Board() {
       width: STICKY_DEFAULT_WIDTH,
       height: STICKY_DEFAULT_HEIGHT,
       rotation: 0,
-      text: 'New note',
+      text: '',
       color: STICKY_DEFAULT_COLOR,
       fontSize: 14,
       zIndex: getNextZIndex(),
@@ -845,8 +932,12 @@ export function Board() {
       return;
     }
 
-    const width = Math.max(RECT_MIN_SIZE, current.width);
-    const height = Math.max(RECT_MIN_SIZE, current.height);
+    const isClickCreate =
+      current.width < RECT_CLICK_DRAG_THRESHOLD && current.height < RECT_CLICK_DRAG_THRESHOLD;
+    const width = isClickCreate ? RECT_CLICK_DEFAULT_WIDTH : Math.max(RECT_MIN_SIZE, current.width);
+    const height = isClickCreate
+      ? RECT_CLICK_DEFAULT_HEIGHT
+      : Math.max(RECT_MIN_SIZE, current.height);
     rectNode.setAttrs({ width, height });
 
     objectsRef.current.set(draft.id, {
@@ -1120,6 +1211,7 @@ export function Board() {
 
   const detailsMessage =
     canvasNotice || titleError || 'Use V/S/R shortcuts for Select, Sticky, and Rect.';
+  const gridCellSize = Math.max(8, Math.min(72, 24 * (zoomPercent / 100)));
 
   return (
     <main className="figma-board-root">
@@ -1238,7 +1330,11 @@ export function Board() {
             <span>User: {displayName}</span>
             <span>{detailsMessage}</span>
           </div>
-          <div className="canvas-grid cursor-canvas-grid" ref={canvasContainerRef}>
+          <div
+            className="canvas-grid cursor-canvas-grid"
+            ref={canvasContainerRef}
+            style={{ backgroundSize: `${gridCellSize}px ${gridCellSize}px` }}
+          >
             <Stage
               ref={stageRef}
               width={canvasSize.width}
@@ -1296,6 +1392,7 @@ export function Board() {
                   fontSize: textEditorLayout.fontSize,
                 }}
                 value={editingText.value}
+                placeholder={STICKY_PLACEHOLDER_TEXT}
                 autoFocus
                 onChange={(event) => {
                   setEditingText((previous) =>
