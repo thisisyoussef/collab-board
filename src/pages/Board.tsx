@@ -14,6 +14,11 @@ import { toFirestoreUserMessage, withFirestoreTimeout } from '../lib/firestore-c
 import { db } from '../lib/firebase';
 import { screenToWorld, worldToScreen } from '../lib/utils';
 import type { BoardObject, BoardObjectsRecord } from '../types/board';
+import type {
+  ObjectCreatePayload,
+  ObjectDeletePayload,
+  ObjectUpdatePayload,
+} from '../types/realtime';
 
 type ActiveTool = 'select' | 'sticky' | 'rect';
 
@@ -57,6 +62,13 @@ const STICKY_MIN_WIDTH = 80;
 const STICKY_MIN_HEIGHT = 60;
 const BOARD_SAVE_DEBOUNCE_MS = 300;
 const OBJECT_UPDATE_EMIT_THROTTLE_MS = 45;
+const OBJECT_LATENCY_SAMPLE_WINDOW = 30;
+const OBJECT_LATENCY_UI_UPDATE_MS = 120;
+
+type PendingRemoteObjectEvent =
+  | { kind: 'create'; payload: ObjectCreatePayload }
+  | { kind: 'update'; payload: ObjectUpdatePayload }
+  | { kind: 'delete'; payload: ObjectDeletePayload };
 
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) {
@@ -218,6 +230,10 @@ export function Board() {
   const selectionDraftRef = useRef<SelectionDraftState | null>(null);
   const boardIdRef = useRef<string | undefined>(boardId);
   const realtimeObjectEmitAtRef = useRef<Record<string, number>>({});
+  const hasInitialBoardLoadRef = useRef(false);
+  const pendingRemoteObjectEventsRef = useRef<PendingRemoteObjectEvent[]>([]);
+  const objectLatencySamplesRef = useRef<number[]>([]);
+  const lastObjectLatencyUiUpdateAtRef = useRef(0);
 
   const [canvasSize, setCanvasSize] = useState({ width: 960, height: 560 });
   const [boardTitle, setBoardTitle] = useState('Untitled board');
@@ -234,6 +250,7 @@ export function Board() {
   const [editingText, setEditingText] = useState<EditingTextState | null>(null);
   const [isDrawingRect, setIsDrawingRect] = useState(false);
   const [isSelecting, setIsSelecting] = useState(false);
+  const [averageObjectLatencyMs, setAverageObjectLatencyMs] = useState(0);
 
   const selectedObject =
     selectedIds.length === 1 ? objectsRef.current.get(selectedIds[0]) ?? null : null;
@@ -263,6 +280,11 @@ export function Board() {
 
   useEffect(() => {
     boardIdRef.current = boardId;
+    hasInitialBoardLoadRef.current = false;
+    pendingRemoteObjectEventsRef.current = [];
+    objectLatencySamplesRef.current = [];
+    lastObjectLatencyUiUpdateAtRef.current = 0;
+    setAverageObjectLatencyMs(0);
   }, [boardId]);
 
   useEffect(
@@ -335,6 +357,8 @@ export function Board() {
         if (!snapshot.exists()) {
           setCanvasNotice('Board not found.');
           clearBoardObjects();
+          hasInitialBoardLoadRef.current = true;
+          pendingRemoteObjectEventsRef.current = [];
           return;
         }
 
@@ -358,6 +382,8 @@ export function Board() {
         hasUnsavedChangesRef.current = false;
         setCanvasNotice(null);
         setBoardRevision((value) => value + 1);
+        hasInitialBoardLoadRef.current = true;
+        flushPendingRemoteObjectEvents();
       } catch (err) {
         if (cancelled) {
           return;
@@ -508,10 +534,15 @@ export function Board() {
       return;
     }
 
-    const handleRemoteCreate = (payload: { boardId: string; object: BoardObject }) => {
+    const handleRemoteCreate = (payload: ObjectCreatePayload) => {
       const changedBoardId =
         typeof payload?.boardId === 'string' ? payload.boardId.trim() : '';
       if (!changedBoardId || changedBoardId !== boardId) {
+        return;
+      }
+
+      if (!hasInitialBoardLoadRef.current) {
+        enqueueRemoteObjectEvent({ kind: 'create', payload });
         return;
       }
 
@@ -520,13 +551,19 @@ export function Board() {
         return;
       }
 
-      applyRemoteObjectUpsert(normalized);
+      recordRemoteObjectLatency(payload._ts);
+      applyRemoteObjectUpsert(normalized, payload._ts);
     };
 
-    const handleRemoteUpdate = (payload: { boardId: string; object: BoardObject }) => {
+    const handleRemoteUpdate = (payload: ObjectUpdatePayload) => {
       const changedBoardId =
         typeof payload?.boardId === 'string' ? payload.boardId.trim() : '';
       if (!changedBoardId || changedBoardId !== boardId) {
+        return;
+      }
+
+      if (!hasInitialBoardLoadRef.current) {
+        enqueueRemoteObjectEvent({ kind: 'update', payload });
         return;
       }
 
@@ -535,13 +572,19 @@ export function Board() {
         return;
       }
 
-      applyRemoteObjectUpsert(normalized);
+      recordRemoteObjectLatency(payload._ts);
+      applyRemoteObjectUpsert(normalized, payload._ts);
     };
 
-    const handleRemoteDelete = (payload: { boardId: string; objectId: string }) => {
+    const handleRemoteDelete = (payload: ObjectDeletePayload) => {
       const changedBoardId =
         typeof payload?.boardId === 'string' ? payload.boardId.trim() : '';
       if (!changedBoardId || changedBoardId !== boardId) {
+        return;
+      }
+
+      if (!hasInitialBoardLoadRef.current) {
+        enqueueRemoteObjectEvent({ kind: 'delete', payload });
         return;
       }
 
@@ -550,7 +593,8 @@ export function Board() {
         return;
       }
 
-      applyRemoteObjectDelete(objectId);
+      recordRemoteObjectLatency(payload._ts);
+      applyRemoteObjectDelete(objectId, payload._ts);
     };
 
     socket.on('object:create', handleRemoteCreate);
@@ -694,12 +738,7 @@ export function Board() {
       _ts: now,
     };
 
-    if (force) {
-      socket.emit('object:update', payload);
-      return;
-    }
-
-    socket.volatile.emit('object:update', payload);
+    socket.emit('object:update', payload);
   }
 
   function emitObjectDelete(objectId: string) {
@@ -768,14 +807,8 @@ export function Board() {
     }
   }
 
-  function scheduleBoardSave(immediate = false) {
+  function scheduleBoardSave() {
     hasUnsavedChangesRef.current = true;
-    if (immediate) {
-      clearPersistenceTimer();
-      void persistBoardSave();
-      return;
-    }
-
     clearPersistenceTimer();
     saveTimeoutRef.current = window.setTimeout(() => {
       void persistBoardSave();
@@ -800,9 +833,46 @@ export function Board() {
     setEditingText(null);
   }
 
-  function applyRemoteObjectUpsert(entry: BoardObject) {
+  function parseUpdatedAtMs(value: string | undefined): number {
+    const ms = Date.parse(String(value || ''));
+    return Number.isFinite(ms) ? ms : 0;
+  }
+
+  function recordRemoteObjectLatency(sentAt: number | undefined) {
+    if (!Number.isFinite(sentAt)) {
+      return;
+    }
+
+    const latency = Math.max(0, Date.now() - Number(sentAt));
+    const next = [...objectLatencySamplesRef.current, latency].slice(-OBJECT_LATENCY_SAMPLE_WINDOW);
+    objectLatencySamplesRef.current = next;
+
+    const now = Date.now();
+    if (now - lastObjectLatencyUiUpdateAtRef.current < OBJECT_LATENCY_UI_UPDATE_MS) {
+      return;
+    }
+
+    lastObjectLatencyUiUpdateAtRef.current = now;
+    const average = next.reduce((sum, value) => sum + value, 0) / next.length;
+    setAverageObjectLatencyMs(Math.round(average));
+  }
+
+  function applyRemoteObjectUpsert(entry: BoardObject, eventTs?: number): boolean {
     const normalized = sanitizeBoardObjectForFirestore(entry);
     const existing = objectsRef.current.get(normalized.id);
+
+    if (existing) {
+      const localUpdatedAtMs = parseUpdatedAtMs(existing.updatedAt);
+      const remoteUpdatedAtMs = parseUpdatedAtMs(normalized.updatedAt);
+      if (remoteUpdatedAtMs && localUpdatedAtMs && remoteUpdatedAtMs <= localUpdatedAtMs) {
+        return false;
+      }
+
+      if (Number.isFinite(eventTs) && localUpdatedAtMs && Number(eventTs) < localUpdatedAtMs) {
+        return false;
+      }
+    }
+
     const existingNode = stageRef.current?.findOne(`#${normalized.id}`);
 
     let node: BoardCanvasNode | null = null;
@@ -862,14 +932,21 @@ export function Board() {
     objectsLayerRef.current?.batchDraw();
     if (!existing) {
       setObjectCount(objectsRef.current.size);
-      setBoardRevision((value) => value + 1);
     }
+
+    setBoardRevision((value) => value + 1);
+    return true;
   }
 
-  function applyRemoteObjectDelete(objectId: string) {
+  function applyRemoteObjectDelete(objectId: string, eventTs?: number): boolean {
     const object = objectsRef.current.get(objectId);
     if (!object) {
-      return;
+      return false;
+    }
+
+    const localUpdatedAtMs = parseUpdatedAtMs(object.updatedAt);
+    if (Number.isFinite(eventTs) && localUpdatedAtMs && Number(eventTs) < localUpdatedAtMs) {
+      return false;
     }
 
     const node = stageRef.current?.findOne(`#${objectId}`);
@@ -880,6 +957,43 @@ export function Board() {
     setSelectedIds((previous) => previous.filter((entry) => entry !== objectId));
     setEditingText((previous) => (previous?.id === objectId ? null : previous));
     setBoardRevision((value) => value + 1);
+    return true;
+  }
+
+  function enqueueRemoteObjectEvent(event: PendingRemoteObjectEvent) {
+    pendingRemoteObjectEventsRef.current.push(event);
+  }
+
+  function flushPendingRemoteObjectEvents() {
+    if (!hasInitialBoardLoadRef.current || pendingRemoteObjectEventsRef.current.length === 0) {
+      return;
+    }
+
+    const queue = pendingRemoteObjectEventsRef.current;
+    pendingRemoteObjectEventsRef.current = [];
+
+    queue.forEach((event) => {
+      if (event.kind === 'create') {
+        const normalized = normalizeLoadedObject(event.payload.object, 'guest');
+        if (normalized) {
+          recordRemoteObjectLatency(event.payload._ts);
+          applyRemoteObjectUpsert(normalized, event.payload._ts);
+        }
+        return;
+      }
+
+      if (event.kind === 'update') {
+        const normalized = normalizeLoadedObject(event.payload.object, 'guest');
+        if (normalized) {
+          recordRemoteObjectLatency(event.payload._ts);
+          applyRemoteObjectUpsert(normalized, event.payload._ts);
+        }
+        return;
+      }
+
+      recordRemoteObjectLatency(event.payload._ts);
+      applyRemoteObjectDelete(event.payload.objectId, event.payload._ts);
+    });
   }
 
   function getNextZIndex(): number {
@@ -962,7 +1076,7 @@ export function Board() {
       emitObjectUpdate(nextObject, persist);
     }
     if (persist) {
-      scheduleBoardSave(true);
+      scheduleBoardSave();
     }
   }
 
@@ -1122,7 +1236,7 @@ export function Board() {
 
     if (persist) {
       emitObjectCreate(object);
-      scheduleBoardSave(true);
+      scheduleBoardSave();
     }
   }
 
@@ -1148,7 +1262,7 @@ export function Board() {
       objectIds.forEach((objectId) => {
         emitObjectDelete(objectId);
       });
-      scheduleBoardSave(true);
+      scheduleBoardSave();
     }
   }
 
@@ -1185,7 +1299,7 @@ export function Board() {
 
     if (saveChanges) {
       emitObjectUpdate(nextObject, true);
-      scheduleBoardSave(true);
+      scheduleBoardSave();
     }
   }
 
@@ -1302,7 +1416,7 @@ export function Board() {
     setSelectedIds([draft.id]);
     setBoardRevision((value) => value + 1);
     emitObjectCreate(finalizedObject);
-    scheduleBoardSave(true);
+    scheduleBoardSave();
     objectsLayerRef.current?.batchDraw();
   }
 
@@ -1778,6 +1892,7 @@ export function Board() {
 
           <MetricsOverlay
             averageCursorLatencyMs={averageLatencyMs}
+            averageObjectLatencyMs={averageObjectLatencyMs}
             userCount={members.length}
             objectCount={objectCount}
           />

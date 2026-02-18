@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 interface MetricsOverlayProps {
   averageCursorLatencyMs: number;
+  averageObjectLatencyMs: number;
   userCount: number;
   objectCount: number;
 }
@@ -10,7 +11,12 @@ const enableMetricsFromEnv =
   String(import.meta.env.VITE_ENABLE_METRICS || '').toLowerCase() === 'true';
 const shouldShowMetrics = import.meta.env.DEV || enableMetricsFromEnv;
 
-export function MetricsOverlay({ averageCursorLatencyMs, userCount, objectCount }: MetricsOverlayProps) {
+export function MetricsOverlay({
+  averageCursorLatencyMs,
+  averageObjectLatencyMs,
+  userCount,
+  objectCount,
+}: MetricsOverlayProps) {
   const [fps, setFps] = useState(60);
 
   useEffect(() => {
@@ -44,6 +50,10 @@ export function MetricsOverlay({ averageCursorLatencyMs, userCount, objectCount 
     () => (averageCursorLatencyMs < 50 ? '✅' : '⚠️'),
     [averageCursorLatencyMs],
   );
+  const objectStatus = useMemo(
+    () => (averageObjectLatencyMs < 100 ? '✅' : '⚠️'),
+    [averageObjectLatencyMs],
+  );
 
   if (!shouldShowMetrics) {
     return null;
@@ -54,6 +64,9 @@ export function MetricsOverlay({ averageCursorLatencyMs, userCount, objectCount 
       <p>FPS: {fps}</p>
       <p>
         Cursor avg: {averageCursorLatencyMs}ms {cursorStatus}
+      </p>
+      <p>
+        Object avg: {averageObjectLatencyMs}ms {objectStatus}
       </p>
       <p>
         Users: {userCount} | Objects: {objectCount}
