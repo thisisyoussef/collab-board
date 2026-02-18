@@ -182,6 +182,10 @@ Result:
 3. Full test run passed: 31 files / 207 tests.
 4. `npm run build` passed (local Node 18 warning from Vite requirement; build output generated).
 5. Firestore rules deploy attempt failed due Firebase CLI auth 401 (not a rules syntax error).
+6. Production API currently returns `Auth service not configured` until Vercel env is set for:
+   - `FIREBASE_PROJECT_ID`
+   - `FIREBASE_CLIENT_EMAIL`
+   - `FIREBASE_PRIVATE_KEY`
 
 ## User Checkpoint Test
 
@@ -196,5 +200,5 @@ Result:
 - User Validation: Pending
 - Notes:
 1. Vercel production alias updated with US2-05 build.
-2. `/api/ai/generate` now returns `401` without bearer token (verified).
+2. `/api/ai/generate` now enforces bearer token checks and board permission checks, but requires Firebase Admin env vars on Vercel to run.
 3. Firestore rules file updated locally for v2 access model, but Firebase deploy is blocked by account auth (`HTTP 401`) and must be retried from your authenticated CLI session.
