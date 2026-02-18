@@ -14,11 +14,12 @@ import type {
   UserLeftPayload,
 } from '../types/realtime';
 
-const CURSOR_THROTTLE_MS = 40;
+const CURSOR_THROTTLE_MS = 16;
 const CURSOR_HIDE_THROTTLE_MS = 150;
 const CURSOR_STALE_TTL_MS = 4000;
 const CURSOR_STALE_SWEEP_MS = 1000;
 const LATENCY_SAMPLE_WINDOW = 20;
+const LATENCY_UI_UPDATE_MS = 120;
 
 export interface RemoteCursor {
   socketId: string;
@@ -65,6 +66,7 @@ export function useCursors({ boardId, user, socketRef, socketStatus }: UseCursor
   const guestIdentity = useMemo(() => getOrCreateGuestIdentity(), []);
   const lastEmitAtRef = useRef(0);
   const lastHideEmitAtRef = useRef(0);
+  const lastLatencyUiUpdateAtRef = useRef(0);
   const latenciesRef = useRef<number[]>([]);
   const cursorTouchedAtRef = useRef<Record<string, number>>({});
 
@@ -148,11 +150,27 @@ export function useCursors({ boardId, user, socketRef, socketStatus }: UseCursor
       const latency = Math.max(0, Date.now() - Number(payload._ts || 0));
       const nextLatencies = [...latenciesRef.current, latency].slice(-LATENCY_SAMPLE_WINDOW);
       latenciesRef.current = nextLatencies;
-      const average = nextLatencies.reduce((sum, value) => sum + value, 0) / nextLatencies.length;
-      setAverageLatencyMs(Math.round(average));
+      const now = Date.now();
+      if (now - lastLatencyUiUpdateAtRef.current >= LATENCY_UI_UPDATE_MS) {
+        lastLatencyUiUpdateAtRef.current = now;
+        const average = nextLatencies.reduce((sum, value) => sum + value, 0) / nextLatencies.length;
+        setAverageLatencyMs(Math.round(average));
+      }
 
-      cursorTouchedAtRef.current[normalized.socketId] = Date.now();
+      cursorTouchedAtRef.current[normalized.socketId] = now;
       setRemoteCursors((previous) => {
+        const existing = previous.find((entry) => entry.socketId === normalized.socketId);
+        if (
+          existing &&
+          existing.x === normalized.x &&
+          existing.y === normalized.y &&
+          existing.displayName === normalized.displayName &&
+          existing.color === normalized.color &&
+          existing.userId === normalized.userId
+        ) {
+          return previous;
+        }
+
         const next = previous.filter((entry) => entry.socketId !== normalized.socketId);
         next.push(normalized);
         return next;

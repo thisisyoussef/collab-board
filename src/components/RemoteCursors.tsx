@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Group, Layer, Line, Rect, Text } from 'react-konva';
 import type { RemoteCursor } from '../hooks/useCursors';
 
-const INTERPOLATION_FACTOR = 0.35;
-const SNAP_THRESHOLD = 0.5;
+const INTERPOLATION_FACTOR = 0.62;
+const SNAP_THRESHOLD = 0.2;
 const NAME_MAX_LENGTH = 12;
 
 interface AnimatedCursor extends RemoteCursor {
@@ -24,54 +24,24 @@ function clampName(displayName: string): string {
 
 export function RemoteCursors({ cursors }: RemoteCursorsProps) {
   const [animatedBySocketId, setAnimatedBySocketId] = useState<Record<string, AnimatedCursor>>({});
+  const animationFrameRef = useRef<number | null>(null);
 
-  useEffect(() => {
-    const frameId = window.requestAnimationFrame(() => {
-      setAnimatedBySocketId((previous) => {
-        const next: Record<string, AnimatedCursor> = {};
-
-        cursors.forEach((cursor) => {
-          const existing = previous[cursor.socketId];
-          next[cursor.socketId] = existing
-            ? {
-                ...existing,
-                userId: cursor.userId,
-                displayName: cursor.displayName,
-                color: cursor.color,
-                targetX: cursor.x,
-                targetY: cursor.y,
-              }
-            : {
-                ...cursor,
-                renderX: cursor.x,
-                renderY: cursor.y,
-                targetX: cursor.x,
-                targetY: cursor.y,
-              };
-        });
-
-        return next;
-      });
-    });
-
-    return () => {
-      window.cancelAnimationFrame(frameId);
-    };
-  }, [cursors]);
-
-  const hasAnimatedCursors = useMemo(
-    () => Object.keys(animatedBySocketId).length > 0,
-    [animatedBySocketId],
-  );
-
-  useEffect(() => {
-    if (!hasAnimatedCursors) {
+  const stopAnimationLoop = useCallback(() => {
+    if (animationFrameRef.current === null) {
       return;
     }
 
-    let frameId = 0;
+    window.cancelAnimationFrame(animationFrameRef.current);
+    animationFrameRef.current = null;
+  }, []);
+
+  const startAnimationLoop = useCallback(() => {
+    if (animationFrameRef.current !== null) {
+      return;
+    }
 
     const animate = () => {
+      let hasPendingMotion = false;
       setAnimatedBySocketId((previous) => {
         let changed = false;
         const next: Record<string, AnimatedCursor> = {};
@@ -88,6 +58,7 @@ export function RemoteCursors({ cursors }: RemoteCursorsProps) {
 
           if (nextX !== cursor.renderX || nextY !== cursor.renderY) {
             changed = true;
+            hasPendingMotion = true;
           }
 
           next[socketId] = {
@@ -100,14 +71,62 @@ export function RemoteCursors({ cursors }: RemoteCursorsProps) {
         return changed ? next : previous;
       });
 
-      frameId = window.requestAnimationFrame(animate);
+      if (hasPendingMotion) {
+        animationFrameRef.current = window.requestAnimationFrame(animate);
+      } else {
+        animationFrameRef.current = null;
+      }
     };
 
-    frameId = window.requestAnimationFrame(animate);
+    animationFrameRef.current = window.requestAnimationFrame(animate);
+  }, []);
+
+  useEffect(() => {
+    const frameId = window.requestAnimationFrame(() => {
+      setAnimatedBySocketId((previous) => {
+        const next: Record<string, AnimatedCursor> = {};
+
+        cursors.forEach((cursor) => {
+          const existing = previous[cursor.socketId];
+          if (existing) {
+            next[cursor.socketId] = {
+              ...existing,
+              userId: cursor.userId,
+              displayName: cursor.displayName,
+              color: cursor.color,
+              targetX: cursor.x,
+              targetY: cursor.y,
+            };
+            return;
+          }
+
+          next[cursor.socketId] = {
+            ...cursor,
+            renderX: cursor.x,
+            renderY: cursor.y,
+            targetX: cursor.x,
+            targetY: cursor.y,
+          };
+        });
+
+        return next;
+      });
+    });
+
+    if (cursors.length > 0) {
+      startAnimationLoop();
+    }
+
     return () => {
       window.cancelAnimationFrame(frameId);
     };
-  }, [hasAnimatedCursors]);
+  }, [cursors, startAnimationLoop]);
+
+  useEffect(() => {
+    return () => {
+      stopAnimationLoop();
+    };
+  }, [stopAnimationLoop]);
 
   const cursorsToRender = useMemo(
     () => Object.values(animatedBySocketId),
