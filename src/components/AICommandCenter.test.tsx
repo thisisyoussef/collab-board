@@ -1,0 +1,144 @@
+import { fireEvent, render, screen } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AIPanelState } from '../types/ai';
+
+const { AICommandCenter } = await import('./AICommandCenter');
+
+const baseState: AIPanelState = {
+  prompt: '',
+  mode: 'preview',
+  loading: false,
+  error: null,
+  message: null,
+  actions: [],
+};
+
+describe('AICommandCenter', () => {
+const handlers = {
+    onPromptChange: vi.fn(),
+    onSubmit: vi.fn(),
+    onModeChange: vi.fn(),
+    onApply: vi.fn(),
+    onUndo: vi.fn(),
+    onRetry: vi.fn(),
+    onClear: vi.fn(),
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('renders prompt input, submit button, and mode toggle', () => {
+    render(<AICommandCenter state={baseState} {...handlers} />);
+
+    expect(screen.getByText('AI Command Center')).toBeInTheDocument();
+    expect(screen.getByLabelText('AI prompt')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Generate Plan' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Preview mode' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Auto mode' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Apply changes' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Undo last AI apply' })).toBeInTheDocument();
+  });
+
+  it('disables submit while loading', () => {
+    render(
+      <AICommandCenter
+        state={{
+          ...baseState,
+          loading: true,
+        }}
+        {...handlers}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Thinking...' })).toBeDisabled();
+  });
+
+  it('renders success message and action list', () => {
+    render(
+      <AICommandCenter
+        state={{
+          ...baseState,
+          message: 'Here is a suggested plan.',
+          actions: [
+            {
+              id: 'a-1',
+              name: 'createStickyNote',
+              summary: 'text=Kickoff · x=100 · y=140',
+              input: { text: 'Kickoff', x: 100, y: 140 },
+            },
+          ],
+        }}
+        {...handlers}
+      />,
+    );
+
+    expect(screen.getByText('Here is a suggested plan.')).toBeInTheDocument();
+    expect(screen.getByText('createStickyNote')).toBeInTheDocument();
+    expect(screen.getByText('text=Kickoff · x=100 · y=140')).toBeInTheDocument();
+  });
+
+  it('renders error state and triggers retry callback', () => {
+    render(
+      <AICommandCenter
+        state={{
+          ...baseState,
+          error: 'AI request failed.',
+        }}
+        {...handlers}
+      />,
+    );
+
+    expect(screen.getByText('AI request failed.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(handlers.onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it('triggers apply and undo callbacks when enabled', () => {
+    render(
+      <AICommandCenter
+        state={{
+          ...baseState,
+          actions: [
+            {
+              id: 'a-1',
+              name: 'createStickyNote',
+              summary: 'text=Kickoff',
+              input: { text: 'Kickoff' },
+            },
+          ],
+          applyDisabled: false,
+          canUndo: true,
+        }}
+        {...handlers}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Apply changes' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Undo last AI apply' }));
+
+    expect(handlers.onApply).toHaveBeenCalledTimes(1);
+    expect(handlers.onUndo).toHaveBeenCalledTimes(1);
+  });
+
+  it('disables undo button when no transaction is available', () => {
+    render(
+      <AICommandCenter
+        state={{
+          ...baseState,
+          canUndo: false,
+          applyDisabled: true,
+        }}
+        {...handlers}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Undo last AI apply' })).toBeDisabled();
+  });
+
+  it('shows explicit hint when no executable actions are available', () => {
+    render(<AICommandCenter state={baseState} {...handlers} />);
+
+    expect(screen.getByText('No executable actions in this plan yet.')).toBeInTheDocument();
+  });
+});

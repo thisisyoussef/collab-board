@@ -7,6 +7,46 @@ import { useAuth } from './useAuth';
 export type SocketStatus = 'connecting' | 'connected' | 'disconnected';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_SERVER_URL as string | undefined;
+const SOCKET_WAKE_TIMEOUT_MS = 8000;
+const SOCKET_KEEPALIVE_MS = 120000;
+
+function toHealthUrl(socketUrl: string): string {
+  const trimmed = socketUrl.trim().replace(/\/+$/, '');
+  if (trimmed.startsWith('wss://')) {
+    return `https://${trimmed.slice('wss://'.length)}/health`;
+  }
+  if (trimmed.startsWith('ws://')) {
+    return `http://${trimmed.slice('ws://'.length)}/health`;
+  }
+  return `${trimmed}/health`;
+}
+
+async function wakeSocketServer(socketUrl: string): Promise<void> {
+  if (typeof fetch !== 'function') {
+    return;
+  }
+
+  const pingPromise = fetch(toHealthUrl(socketUrl), {
+    method: 'GET',
+    mode: 'no-cors',
+    cache: 'no-store',
+    keepalive: true,
+  }).catch(() => undefined);
+
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  try {
+    await Promise.race([
+      pingPromise,
+      new Promise<void>((resolve) => {
+        timeoutId = setTimeout(resolve, SOCKET_WAKE_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
 
 export function useSocket(boardId: string | undefined) {
   const { user } = useAuth();
@@ -18,6 +58,27 @@ export function useSocket(boardId: string | undefined) {
   const [disconnectedSinceMs, setDisconnectedSinceMs] = useState<number | null>(null);
   const hasEverConnectedRef = useRef(false);
   const canConnect = Boolean(boardId && SOCKET_URL);
+
+  useEffect(() => {
+    if (!canConnect || !SOCKET_URL) {
+      return;
+    }
+
+    let active = true;
+    const ping = () => {
+      if (!active) {
+        return;
+      }
+      void wakeSocketServer(SOCKET_URL);
+    };
+
+    ping();
+    const intervalId = window.setInterval(ping, SOCKET_KEEPALIVE_MS);
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
+  }, [canConnect]);
 
   useEffect(() => {
     let cancelled = false;
@@ -33,6 +94,9 @@ export function useSocket(boardId: string | undefined) {
     const connect = async () => {
       try {
         setConnectionStatus('connecting');
+        if (SOCKET_URL) {
+          void wakeSocketServer(SOCKET_URL);
+        }
         const token = user ? await user.getIdToken() : null;
         if (cancelled) {
           return;
@@ -74,7 +138,10 @@ export function useSocket(boardId: string | undefined) {
 
         socket.on('connect_error', async (err) => {
           setDisconnectedSinceMs((previous) => previous ?? Date.now());
-          setConnectionStatus('disconnected');
+          setConnectionStatus(hasEverConnectedRef.current ? 'disconnected' : 'connecting');
+          if (SOCKET_URL) {
+            void wakeSocketServer(SOCKET_URL);
+          }
 
           if (!user || refreshAttempted || err.message !== 'Authentication failed') {
             return;

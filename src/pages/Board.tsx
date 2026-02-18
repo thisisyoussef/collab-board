@@ -1,34 +1,71 @@
 import { doc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore/lite';
 import Konva from 'konva';
 import { useEffect, useRef, useState } from 'react';
-import { Layer, Rect as KonvaRectShape, Stage, Transformer } from 'react-konva';
+import { Circle as KonvaCircleShape, Layer, Rect as KonvaRectShape, Stage, Transformer } from 'react-konva';
 import { useNavigate, useParams } from 'react-router-dom';
+import { AICommandCenter } from '../components/AICommandCenter';
 import { MetricsOverlay } from '../components/MetricsOverlay';
 import { PresenceAvatars } from '../components/PresenceAvatars';
 import { ReconnectBanner } from '../components/ReconnectBanner';
 import { RemoteCursors } from '../components/RemoteCursors';
 import { useAuth } from '../hooks/useAuth';
+import { useAICommandCenter } from '../hooks/useAICommandCenter';
+import { useAIExecutor, type AICommitMeta } from '../hooks/useAIExecutor';
 import { useCursors } from '../hooks/useCursors';
 import { usePresence } from '../hooks/usePresence';
 import { useSocket, type SocketStatus } from '../hooks/useSocket';
+import {
+  applyIncomingObjectUpsert,
+  createDefaultObject,
+  FRAME_DEFAULT_STROKE,
+  FRAME_MIN_HEIGHT,
+  FRAME_MIN_WIDTH,
+  getObjectAnchorCandidates,
+  getObjectBounds,
+  normalizeLoadedObject as normalizeBoardObject,
+  RECT_DEFAULT_STROKE,
+  RECT_DEFAULT_STROKE_WIDTH,
+  RECT_MIN_SIZE,
+  resolveConnectorPoints,
+  resolveObjectAnchorPoint,
+  sanitizeBoardObjectForFirestore as sanitizeBoardObject,
+  STICKY_DEFAULT_COLOR,
+  STICKY_DEFAULT_HEIGHT,
+  STICKY_DEFAULT_WIDTH,
+  STICKY_MIN_HEIGHT,
+  STICKY_MIN_WIDTH,
+  TEXT_DEFAULT_COLOR,
+  TEXT_DEFAULT_FONT_SIZE,
+  TEXT_MIN_HEIGHT,
+  TEXT_MIN_WIDTH,
+} from '../lib/board-object';
 import { toFirestoreUserMessage, withFirestoreTimeout } from '../lib/firestore-client';
 import { db } from '../lib/firebase';
+import { loadViewportState, saveViewportState } from '../lib/viewport';
 import { screenToWorld, worldToScreen } from '../lib/utils';
 import type { BoardObject, BoardObjectsRecord } from '../types/board';
+import type { AIActionPreview } from '../types/ai';
 import type {
   ObjectCreatePayload,
   ObjectDeletePayload,
   ObjectUpdatePayload,
 } from '../types/realtime';
 
-type ActiveTool = 'select' | 'sticky' | 'rect';
+type ActiveTool = 'select' | 'sticky' | 'rect' | 'circle' | 'line' | 'text' | 'frame' | 'connector';
 
 interface EditingTextState {
   id: string;
   value: string;
 }
 
-interface RectDraftState {
+interface ShapeDraftState {
+  id: string;
+  startX: number;
+  startY: number;
+  type: 'rect' | 'circle' | 'line';
+}
+
+interface ConnectorDraftState {
   id: string;
   startX: number;
   startY: number;
@@ -46,44 +83,60 @@ interface Bounds {
   height: number;
 }
 
-type BoardCanvasNode = Konva.Group | Konva.Rect;
+type BoardCanvasNode = Konva.Group | Konva.Shape;
+type ConnectorEndpoint = 'from' | 'to';
 
-const STICKY_DEFAULT_WIDTH = 150;
-const STICKY_DEFAULT_HEIGHT = 100;
-const STICKY_DEFAULT_COLOR = '#FFEB3B';
+interface ConnectorAttachmentResult {
+  objectId: string;
+  x: number;
+  y: number;
+  anchorX: number;
+  anchorY: number;
+}
+
+interface ConnectorAttachmentCandidate extends ConnectorAttachmentResult {
+  distance: number;
+}
+
+interface ConnectorShapeAnchorMarker {
+  key: string;
+  objectId: string;
+  anchorX: number;
+  anchorY: number;
+  x: number;
+  y: number;
+  endpoint: ConnectorEndpoint | null;
+}
+
+interface ConnectorAnchorIgnore {
+  objectId: string;
+  anchorX: number;
+  anchorY: number;
+}
+
 const STICKY_PLACEHOLDER_TEXT = 'New note';
-const RECT_DEFAULT_COLOR = '#E3F2FD';
-const RECT_DEFAULT_STROKE = '#1565C0';
-const RECT_DEFAULT_STROKE_WIDTH = 2;
-const RECT_MIN_SIZE = 10;
 const RECT_CLICK_DEFAULT_WIDTH = 180;
 const RECT_CLICK_DEFAULT_HEIGHT = 120;
+const CIRCLE_CLICK_DEFAULT_SIZE = 120;
+const LINE_CLICK_DEFAULT_WIDTH = 180;
 const RECT_CLICK_DRAG_THRESHOLD = 8;
-const STICKY_MIN_WIDTH = 48;
-const STICKY_MIN_HEIGHT = 36;
 const BOARD_SAVE_DEBOUNCE_MS = 300;
 const OBJECT_UPDATE_EMIT_THROTTLE_MS = 45;
 const OBJECT_LATENCY_SAMPLE_WINDOW = 30;
 const OBJECT_LATENCY_UI_UPDATE_MS = 120;
 const SHARE_FEEDBACK_RESET_MS = 2000;
+const VIEWPORT_SAVE_DEBOUNCE_MS = 180;
+const CONNECTOR_HANDLE_RADIUS = 7;
+const CONNECTOR_HANDLE_STROKE = '#2563eb';
+const CONNECTOR_SNAP_DISTANCE_PX = 20;
+const CONNECTOR_SNAP_RELEASE_BUFFER_PX = 10;
+const SHAPE_ANCHOR_RADIUS = 4;
+const SHAPE_ANCHOR_MATCH_EPSILON = 0.01;
 
 type PendingRemoteObjectEvent =
   | { kind: 'create'; payload: ObjectCreatePayload }
   | { kind: 'update'; payload: ObjectUpdatePayload }
   | { kind: 'delete'; payload: ObjectDeletePayload };
-
-function isEditableTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) {
-    return false;
-  }
-
-  return (
-    target.tagName === 'INPUT' ||
-    target.tagName === 'TEXTAREA' ||
-    target.tagName === 'SELECT' ||
-    target.isContentEditable
-  );
-}
 
 function intersects(a: Bounds, b: Bounds): boolean {
   return !(
@@ -137,96 +190,11 @@ function fallbackCopyToClipboard(value: string): boolean {
 }
 
 function normalizeLoadedObject(raw: unknown, fallbackUserId: string): BoardObject | null {
-  if (!raw || typeof raw !== 'object') {
-    return null;
-  }
-
-  const candidate = raw as Partial<BoardObject>;
-  if (candidate.type !== 'sticky' && candidate.type !== 'rect') {
-    return null;
-  }
-
-  const width = Math.max(
-    candidate.type === 'sticky' ? STICKY_MIN_WIDTH : RECT_MIN_SIZE,
-    Number(candidate.width || 0),
-  );
-  const height = Math.max(
-    candidate.type === 'sticky' ? STICKY_MIN_HEIGHT : RECT_MIN_SIZE,
-    Number(candidate.height || 0),
-  );
-
-  return {
-    id: String(candidate.id || crypto.randomUUID()),
-    type: candidate.type,
-    x: Number(candidate.x || 0),
-    y: Number(candidate.y || 0),
-    width,
-    height,
-    rotation: Number(candidate.rotation || 0),
-    text: candidate.type === 'sticky' ? String(candidate.text || '') : undefined,
-    color:
-      typeof candidate.color === 'string' && candidate.color.trim()
-        ? candidate.color
-        : candidate.type === 'sticky'
-          ? STICKY_DEFAULT_COLOR
-          : RECT_DEFAULT_COLOR,
-    stroke:
-      candidate.type === 'rect'
-        ? typeof candidate.stroke === 'string' && candidate.stroke.trim()
-          ? candidate.stroke
-          : RECT_DEFAULT_STROKE
-        : undefined,
-    strokeWidth:
-      candidate.type === 'rect'
-        ? Number(candidate.strokeWidth || RECT_DEFAULT_STROKE_WIDTH)
-        : undefined,
-    fontSize:
-      candidate.type === 'sticky'
-        ? Math.max(10, Number(candidate.fontSize || 14))
-        : undefined,
-    zIndex: Number(candidate.zIndex || 1),
-    createdBy: String(candidate.createdBy || fallbackUserId),
-    updatedAt:
-      typeof candidate.updatedAt === 'string' && candidate.updatedAt
-        ? candidate.updatedAt
-        : new Date().toISOString(),
-  };
+  return normalizeBoardObject(raw, fallbackUserId);
 }
 
 function sanitizeBoardObjectForFirestore(entry: BoardObject): BoardObject {
-  if (entry.type === 'sticky') {
-    return {
-      id: entry.id,
-      type: 'sticky',
-      x: entry.x,
-      y: entry.y,
-      width: entry.width,
-      height: entry.height,
-      rotation: entry.rotation,
-      text: entry.text || '',
-      color: entry.color,
-      fontSize: entry.fontSize || 14,
-      zIndex: entry.zIndex,
-      createdBy: entry.createdBy || 'guest',
-      updatedAt: entry.updatedAt,
-    };
-  }
-
-  return {
-    id: entry.id,
-    type: 'rect',
-    x: entry.x,
-    y: entry.y,
-    width: entry.width,
-    height: entry.height,
-    rotation: entry.rotation,
-    color: entry.color,
-    stroke: entry.stroke || RECT_DEFAULT_STROKE,
-    strokeWidth: entry.strokeWidth || RECT_DEFAULT_STROKE_WIDTH,
-    zIndex: entry.zIndex,
-    createdBy: entry.createdBy || 'guest',
-    updatedAt: entry.updatedAt,
-  };
+  return sanitizeBoardObject(entry);
 }
 
 export function Board() {
@@ -260,7 +228,8 @@ export function Board() {
   const saveInFlightRef = useRef(false);
   const saveQueuedRef = useRef(false);
   const hasUnsavedChangesRef = useRef(false);
-  const rectDraftRef = useRef<RectDraftState | null>(null);
+  const rectDraftRef = useRef<ShapeDraftState | null>(null);
+  const connectorDraftRef = useRef<ConnectorDraftState | null>(null);
   const selectionDraftRef = useRef<SelectionDraftState | null>(null);
   const boardIdRef = useRef<string | undefined>(boardId);
   const previousSocketStatusRef = useRef<SocketStatus>(socketStatus);
@@ -270,6 +239,8 @@ export function Board() {
   const objectLatencySamplesRef = useRef<number[]>([]);
   const lastObjectLatencyUiUpdateAtRef = useRef(0);
   const shareFeedbackTimeoutRef = useRef<number | null>(null);
+  const viewportSaveTimeoutRef = useRef<number | null>(null);
+  const viewportRestoredRef = useRef(false);
 
   const [canvasSize, setCanvasSize] = useState({ width: 960, height: 560 });
   const [boardTitle, setBoardTitle] = useState('Untitled board');
@@ -285,12 +256,120 @@ export function Board() {
   const [zoomPercent, setZoomPercent] = useState(100);
   const [editingText, setEditingText] = useState<EditingTextState | null>(null);
   const [isDrawingRect, setIsDrawingRect] = useState(false);
+  const [isDrawingConnector, setIsDrawingConnector] = useState(false);
   const [isSelecting, setIsSelecting] = useState(false);
+  const [isDraggingConnectorHandle, setIsDraggingConnectorHandle] = useState(false);
   const [averageObjectLatencyMs, setAverageObjectLatencyMs] = useState(0);
   const [shareState, setShareState] = useState<'idle' | 'copied' | 'error'>('idle');
 
   const selectedObject =
     selectedIds.length === 1 ? objectsRef.current.get(selectedIds[0]) ?? null : null;
+  const selectedConnector =
+    selectedObject && selectedObject.type === 'connector' ? selectedObject : null;
+  const selectedShapeQuickConnectId =
+    activeTool === 'select' &&
+    selectedIds.length === 1 &&
+    selectedObject &&
+    selectedObject.type !== 'connector'
+      ? selectedObject.id
+      : null;
+  const canStartConnectorFromAnchor = activeTool === 'connector' || Boolean(selectedShapeQuickConnectId);
+  const connectorShapeAnchors = (() => {
+    const showConnectorToolAnchors = activeTool === 'connector';
+    const showSelectedConnectorAnchors = activeTool === 'select' && Boolean(selectedConnector);
+    const showQuickConnectAnchors = Boolean(selectedShapeQuickConnectId);
+    if (!showConnectorToolAnchors && !showSelectedConnectorAnchors && !showQuickConnectAnchors) {
+      return [] as ConnectorShapeAnchorMarker[];
+    }
+
+    const markers: ConnectorShapeAnchorMarker[] = [];
+    objectsRef.current.forEach((entry) => {
+      if (entry.type === 'connector') {
+        return;
+      }
+      if (
+        showQuickConnectAnchors &&
+        !showConnectorToolAnchors &&
+        !showSelectedConnectorAnchors &&
+        entry.id !== selectedShapeQuickConnectId
+      ) {
+        return;
+      }
+
+      const candidates = getObjectAnchorCandidates(entry);
+      candidates.forEach((candidate, index) => {
+        const connector = showSelectedConnectorAnchors ? selectedConnector : null;
+        const fromMatch =
+          connector?.fromId === entry.id &&
+          Number.isFinite(connector.fromAnchorX) &&
+          Number.isFinite(connector.fromAnchorY) &&
+          Math.abs((connector.fromAnchorX || 0) - candidate.anchorX) <=
+            SHAPE_ANCHOR_MATCH_EPSILON &&
+          Math.abs((connector.fromAnchorY || 0) - candidate.anchorY) <=
+            SHAPE_ANCHOR_MATCH_EPSILON;
+        const toMatch =
+          connector?.toId === entry.id &&
+          Number.isFinite(connector.toAnchorX) &&
+          Number.isFinite(connector.toAnchorY) &&
+          Math.abs((connector.toAnchorX || 0) - candidate.anchorX) <=
+            SHAPE_ANCHOR_MATCH_EPSILON &&
+          Math.abs((connector.toAnchorY || 0) - candidate.anchorY) <=
+            SHAPE_ANCHOR_MATCH_EPSILON;
+
+        markers.push({
+          key: `${entry.id}-${index}`,
+          objectId: entry.id,
+          anchorX: candidate.anchorX,
+          anchorY: candidate.anchorY,
+          x: candidate.x,
+          y: candidate.y,
+          endpoint: fromMatch ? 'from' : toMatch ? 'to' : null,
+        });
+      });
+    });
+
+    return markers;
+  })();
+  const aiCommandCenter = useAICommandCenter({
+    boardId,
+    user,
+    getBoardState: serializeBoardObjects,
+  });
+  const aiExecutor = useAIExecutor({
+    actorUserId: user?.uid || 'guest',
+    getBoardState: serializeBoardObjects,
+    commitBoardState: applyAIBoardStateCommit,
+  });
+
+  const handleApplyAIPlan = async (actions: AIActionPreview[] = aiCommandCenter.actions) => {
+    const applied = await aiExecutor.applyPreviewActions(actions, aiCommandCenter.message);
+    if (applied) {
+      setCanvasNotice('AI changes applied.');
+    }
+  };
+
+  const handleSubmitAI = async () => {
+    const result = await aiCommandCenter.submitPrompt();
+    if (!result || aiCommandCenter.mode !== 'auto' || result.actions.length === 0) {
+      return;
+    }
+    await handleApplyAIPlan(result.actions);
+  };
+
+  const handleRetryAI = async () => {
+    const result = await aiCommandCenter.retryLast();
+    if (!result || aiCommandCenter.mode !== 'auto' || result.actions.length === 0) {
+      return;
+    }
+    await handleApplyAIPlan(result.actions);
+  };
+
+  const handleUndoAI = async () => {
+    const undone = await aiExecutor.undoLast();
+    if (undone) {
+      setCanvasNotice('Undid last AI apply.');
+    }
+  };
 
   const textEditorLayout = (() => {
     if (!editingText) {
@@ -299,19 +378,22 @@ export function Board() {
 
     const stage = stageRef.current;
     const object = objectsRef.current.get(editingText.id);
-    if (!stage || !object || object.type !== 'sticky') {
+    if (!stage || !object || (object.type !== 'sticky' && object.type !== 'text')) {
       return null;
     }
 
     const point = worldToScreen(stage, { x: object.x, y: object.y });
     const scale = stage.scaleX() || 1;
+    const minWidth = object.type === 'sticky' ? STICKY_MIN_WIDTH : TEXT_MIN_WIDTH;
+    const minHeight = object.type === 'sticky' ? STICKY_MIN_HEIGHT : TEXT_MIN_HEIGHT;
+    const fontSize = object.fontSize || (object.type === 'sticky' ? 14 : TEXT_DEFAULT_FONT_SIZE);
 
     return {
       left: point.x,
       top: point.y,
-      width: Math.max(STICKY_MIN_WIDTH, object.width * scale),
-      height: Math.max(STICKY_MIN_HEIGHT, object.height * scale),
-      fontSize: Math.max(12, (object.fontSize || 14) * scale),
+      width: Math.max(minWidth, object.width * scale),
+      height: Math.max(minHeight, object.height * scale),
+      fontSize: Math.max(12, fontSize * scale),
     };
   })();
 
@@ -326,6 +408,11 @@ export function Board() {
       window.clearTimeout(shareFeedbackTimeoutRef.current);
       shareFeedbackTimeoutRef.current = null;
     }
+    if (viewportSaveTimeoutRef.current) {
+      window.clearTimeout(viewportSaveTimeoutRef.current);
+      viewportSaveTimeoutRef.current = null;
+    }
+    viewportRestoredRef.current = false;
     setShareState('idle');
   }, [boardId]);
 
@@ -334,6 +421,10 @@ export function Board() {
       if (shareFeedbackTimeoutRef.current) {
         window.clearTimeout(shareFeedbackTimeoutRef.current);
         shareFeedbackTimeoutRef.current = null;
+      }
+      if (viewportSaveTimeoutRef.current) {
+        window.clearTimeout(viewportSaveTimeoutRef.current);
+        viewportSaveTimeoutRef.current = null;
       }
       clearPersistenceTimer();
       flushBoardSave();
@@ -464,6 +555,33 @@ export function Board() {
   }, []);
 
   useEffect(() => {
+    if (!boardId || viewportRestoredRef.current) {
+      return;
+    }
+
+    const stage = stageRef.current;
+    if (!stage || canvasSize.width <= 0 || canvasSize.height <= 0) {
+      return;
+    }
+
+    const restored = loadViewportState({
+      boardId,
+      userId: user?.uid ?? null,
+    });
+
+    if (restored) {
+      stage.scale({ x: restored.scale, y: restored.scale });
+      stage.position({ x: restored.x, y: restored.y });
+      stage.batchDraw();
+      setZoomPercent(Math.round(restored.scale * 100));
+    } else {
+      setZoomPercent(Math.round((stage.scaleX() || 1) * 100));
+    }
+
+    viewportRestoredRef.current = true;
+  }, [boardId, canvasSize.height, canvasSize.width, user?.uid]);
+
+  useEffect(() => {
     const transformer = transformerRef.current;
     const stage = stageRef.current;
     if (!transformer || !stage) {
@@ -471,12 +589,38 @@ export function Board() {
     }
 
     const nodes = selectedIds
+      .filter((id) => objectsRef.current.get(id)?.type !== 'connector')
       .map((id) => stage.findOne(`#${id}`))
       .filter((node): node is Konva.Node => Boolean(node));
+
+    const singleSelected =
+      selectedIds.length === 1 ? objectsRef.current.get(selectedIds[0]) ?? null : null;
+    const isCircleSelection = singleSelected?.type === 'circle';
+    transformer.keepRatio(Boolean(isCircleSelection));
+    transformer.enabledAnchors(
+      isCircleSelection
+        ? ['top-left', 'top-right', 'bottom-left', 'bottom-right']
+        : [
+            'top-left',
+            'top-center',
+            'top-right',
+            'middle-left',
+            'middle-right',
+            'bottom-left',
+            'bottom-center',
+            'bottom-right',
+          ],
+    );
 
     transformer.nodes(nodes);
     transformer.getLayer()?.batchDraw();
   }, [selectedIds, boardRevision]);
+
+  useEffect(() => {
+    if (!selectedConnector) {
+      setIsDraggingConnectorHandle(false);
+    }
+  }, [selectedConnector]);
 
   useEffect(() => {
     objectsRef.current.forEach((_, id) => {
@@ -485,47 +629,11 @@ export function Board() {
         return;
       }
 
-      node.draggable(activeTool === 'select' && !editingText);
+      const object = objectsRef.current.get(id);
+      const isConnector = object?.type === 'connector';
+      node.draggable(activeTool === 'select' && !editingText && !isConnector && !isDraggingConnectorHandle);
     });
-  }, [activeTool, editingText, boardRevision]);
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (isEditableTarget(event.target)) {
-        return;
-      }
-
-      if (event.key === 'Delete' || event.key === 'Backspace') {
-        if (selectedIds.length === 0) {
-          return;
-        }
-        event.preventDefault();
-        removeObjects(selectedIds, true);
-        return;
-      }
-
-      const key = event.key.toLowerCase();
-      if (key === 'v') {
-        setActiveTool('select');
-        return;
-      }
-
-      if (key === 's') {
-        setActiveTool('sticky');
-        return;
-      }
-
-      if (key === 'r') {
-        setActiveTool('rect');
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedIds]);
+  }, [activeTool, editingText, isDraggingConnectorHandle, boardRevision]);
 
   useEffect(() => {
     if (!boardId) {
@@ -533,11 +641,13 @@ export function Board() {
     }
 
     const handlePageHide = () => {
+      saveViewportNow();
       flushBoardSave();
     };
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
+        saveViewportNow();
         flushBoardSave();
       }
     };
@@ -747,6 +857,35 @@ export function Board() {
     return screenToWorld(stage, pointer);
   }
 
+  function saveViewportNow() {
+    const stage = stageRef.current;
+    const liveBoardId = boardIdRef.current;
+    if (!stage || !liveBoardId) {
+      return;
+    }
+
+    saveViewportState({
+      boardId: liveBoardId,
+      userId: user?.uid ?? null,
+      viewport: {
+        x: stage.x(),
+        y: stage.y(),
+        scale: stage.scaleX() || 1,
+      },
+    });
+  }
+
+  function scheduleViewportSave() {
+    if (viewportSaveTimeoutRef.current) {
+      window.clearTimeout(viewportSaveTimeoutRef.current);
+    }
+
+    viewportSaveTimeoutRef.current = window.setTimeout(() => {
+      saveViewportNow();
+      viewportSaveTimeoutRef.current = null;
+    }, VIEWPORT_SAVE_DEBOUNCE_MS);
+  }
+
   function clearPersistenceTimer() {
     if (saveTimeoutRef.current) {
       window.clearTimeout(saveTimeoutRef.current);
@@ -819,6 +958,31 @@ export function Board() {
     return objectsRecord;
   }
 
+  function applyAIBoardStateCommit(nextBoardState: BoardObjectsRecord, meta: AICommitMeta) {
+    hydrateBoardObjects(nextBoardState, user?.uid || 'guest');
+    setSelectedIds([]);
+
+    meta.diff.createdIds.forEach((objectId) => {
+      const object = objectsRef.current.get(objectId);
+      if (object) {
+        emitObjectCreate(object);
+      }
+    });
+    meta.diff.updatedIds.forEach((objectId) => {
+      const object = objectsRef.current.get(objectId);
+      if (object) {
+        emitObjectUpdate(object, true);
+      }
+    });
+    meta.diff.deletedIds.forEach((objectId) => {
+      emitObjectDelete(objectId);
+    });
+
+    scheduleBoardSave();
+    // AI and undo are high-intent actions; flush immediately to reduce refresh race windows.
+    flushBoardSave();
+  }
+
   async function persistBoardSave() {
     const liveBoardId = boardIdRef.current;
     if (!liveBoardId || !hasUnsavedChangesRef.current) {
@@ -882,10 +1046,35 @@ export function Board() {
     objectsLayerRef.current?.destroyChildren();
     objectsLayerRef.current?.batchDraw();
     objectsRef.current.clear();
+    connectorDraftRef.current = null;
     hasUnsavedChangesRef.current = false;
     setObjectCount(0);
     setSelectedIds([]);
     setEditingText(null);
+    setIsDrawingConnector(false);
+  }
+
+  function syncObjectsLayerZOrder() {
+    const layer = objectsLayerRef.current;
+    const stage = stageRef.current;
+    if (!layer || !stage) {
+      return;
+    }
+
+    const orderedObjects = Array.from(objectsRef.current.values()).sort((a, b) => {
+      if (a.zIndex === b.zIndex) {
+        return a.id.localeCompare(b.id);
+      }
+      return a.zIndex - b.zIndex;
+    });
+
+    orderedObjects.forEach((entry, index) => {
+      const node = stage.findOne(`#${entry.id}`);
+      if (!node) {
+        return;
+      }
+      node.zIndex(index);
+    });
   }
 
   function hydrateBoardObjects(rawObjects: BoardObjectsRecord, fallbackUserId: string) {
@@ -900,7 +1089,13 @@ export function Board() {
       objectsRef.current.set(entry.id, entry);
       const node = createNodeForObject(entry);
       objectsLayerRef.current?.add(node);
-      node.zIndex(entry.zIndex);
+    });
+    syncObjectsLayerZOrder();
+
+    normalizedObjects.forEach((entry) => {
+      if (entry.type !== 'connector') {
+        syncConnectedConnectors(entry.id, false, false);
+      }
     });
 
     objectsLayerRef.current?.batchDraw();
@@ -937,48 +1132,76 @@ export function Board() {
   }
 
   function applyRemoteObjectUpsert(entry: BoardObject, eventTs?: number): boolean {
-    const normalized = sanitizeBoardObjectForFirestore(entry);
+    let normalized = sanitizeBoardObjectForFirestore(entry);
     const existing = objectsRef.current.get(normalized.id);
+    const applyDecision = applyIncomingObjectUpsert({
+      existing,
+      incoming: normalized,
+      eventTs,
+    });
+    if (!applyDecision.shouldApply) {
+      return false;
+    }
 
-    if (existing) {
-      const localUpdatedAtMs = parseUpdatedAtMs(existing.updatedAt);
-      const remoteUpdatedAtMs = parseUpdatedAtMs(normalized.updatedAt);
-      if (remoteUpdatedAtMs && localUpdatedAtMs && remoteUpdatedAtMs <= localUpdatedAtMs) {
-        return false;
-      }
-
-      if (Number.isFinite(eventTs) && localUpdatedAtMs && Number(eventTs) < localUpdatedAtMs) {
-        return false;
-      }
+    if (normalized.type === 'connector') {
+      const from = normalized.fromId ? objectsRef.current.get(normalized.fromId) : undefined;
+      const to = normalized.toId ? objectsRef.current.get(normalized.toId) : undefined;
+      const points = resolveConnectorPoints({
+        from,
+        to,
+        fromAnchorX: normalized.fromAnchorX,
+        fromAnchorY: normalized.fromAnchorY,
+        toAnchorX: normalized.toAnchorX,
+        toAnchorY: normalized.toAnchorY,
+        fallback: normalized.points || [normalized.x, normalized.y, normalized.x + normalized.width, normalized.y],
+      });
+      normalized = {
+        ...normalized,
+        x: 0,
+        y: 0,
+        points,
+        width: Math.abs((points[2] || 0) - (points[0] || 0)),
+        height: Math.abs((points[3] || 0) - (points[1] || 0)),
+      };
     }
 
     const existingNode = stageRef.current?.findOne(`#${normalized.id}`);
 
-    let node: BoardCanvasNode | null = null;
-    if (
-      existingNode &&
+    const isNodeCompatible =
+      !!existingNode &&
       ((normalized.type === 'sticky' && existingNode instanceof Konva.Group) ||
-        (normalized.type === 'rect' && existingNode instanceof Konva.Rect))
-    ) {
-      node = existingNode as BoardCanvasNode;
-    } else if (existingNode) {
+        ((normalized.type === 'rect' || normalized.type === 'circle') &&
+          existingNode instanceof Konva.Rect) ||
+        (normalized.type === 'line' &&
+          existingNode instanceof Konva.Line &&
+          !(existingNode instanceof Konva.Arrow)) ||
+        (normalized.type === 'text' && existingNode instanceof Konva.Text) ||
+        (normalized.type === 'frame' && existingNode instanceof Konva.Group) ||
+        (normalized.type === 'connector' &&
+          ((normalized.style === 'arrow' && existingNode instanceof Konva.Arrow) ||
+            (normalized.style !== 'arrow' &&
+              existingNode instanceof Konva.Line &&
+              !(existingNode instanceof Konva.Arrow)))));
+
+    const node = isNodeCompatible ? (existingNode as BoardCanvasNode) : null;
+    if (existingNode && !isNodeCompatible) {
       existingNode.destroy();
     }
 
+    const targetNode = node || createNodeForObject(normalized);
     if (!node) {
-      node = createNodeForObject(normalized);
-      objectsLayerRef.current?.add(node);
+      objectsLayerRef.current?.add(targetNode);
     }
 
-    if (normalized.type === 'sticky' && node instanceof Konva.Group) {
-      node.setAttrs({
+    if (normalized.type === 'sticky' && targetNode instanceof Konva.Group) {
+      targetNode.setAttrs({
         x: normalized.x,
         y: normalized.y,
         rotation: normalized.rotation,
       });
 
-      const body = node.findOne('.sticky-body') as Konva.Rect | null;
-      const label = node.findOne('.sticky-label') as Konva.Text | null;
+      const body = targetNode.findOne('.sticky-body') as Konva.Rect | null;
+      const label = targetNode.findOne('.sticky-label') as Konva.Text | null;
       body?.setAttrs({
         width: normalized.width,
         height: normalized.height,
@@ -993,8 +1216,8 @@ export function Board() {
       });
     }
 
-    if (normalized.type === 'rect' && node instanceof Konva.Rect) {
-      node.setAttrs({
+    if ((normalized.type === 'rect' || normalized.type === 'circle') && targetNode instanceof Konva.Rect) {
+      targetNode.setAttrs({
         x: normalized.x,
         y: normalized.y,
         width: normalized.width,
@@ -1003,14 +1226,80 @@ export function Board() {
         fill: normalized.color,
         stroke: normalized.stroke || RECT_DEFAULT_STROKE,
         strokeWidth: normalized.strokeWidth || RECT_DEFAULT_STROKE_WIDTH,
+        cornerRadius:
+          normalized.type === 'circle' ? Math.min(normalized.width, normalized.height) / 2 : 0,
       });
     }
 
-    node.zIndex(normalized.zIndex);
+    if (normalized.type === 'line' && targetNode instanceof Konva.Line) {
+      targetNode.setAttrs({
+        x: normalized.x,
+        y: normalized.y,
+        points: normalized.points || [0, 0, normalized.width, normalized.height],
+        stroke: normalized.color,
+        strokeWidth: normalized.strokeWidth || 2,
+        rotation: normalized.rotation,
+      });
+    }
+
+    if (normalized.type === 'text' && targetNode instanceof Konva.Text) {
+      targetNode.setAttrs({
+        x: normalized.x,
+        y: normalized.y,
+        width: normalized.width,
+        height: normalized.height,
+        text: normalized.text || 'Text',
+        fill: normalized.color || TEXT_DEFAULT_COLOR,
+        fontSize: normalized.fontSize || TEXT_DEFAULT_FONT_SIZE,
+        rotation: normalized.rotation,
+      });
+    }
+
+    if (normalized.type === 'frame' && targetNode instanceof Konva.Group) {
+      targetNode.setAttrs({
+        x: normalized.x,
+        y: normalized.y,
+        rotation: normalized.rotation,
+      });
+      const body = targetNode.findOne('.frame-body') as Konva.Rect | null;
+      const title = targetNode.findOne('.frame-title') as Konva.Text | null;
+      body?.setAttrs({
+        width: normalized.width,
+        height: normalized.height,
+        fill: normalized.color || '#fff',
+        stroke: normalized.stroke || FRAME_DEFAULT_STROKE,
+        strokeWidth: normalized.strokeWidth || 2,
+      });
+      title?.setAttrs({
+        width: Math.max(60, normalized.width - 20),
+        text: normalized.title || 'Frame',
+      });
+    }
+
+    if (normalized.type === 'connector' && (targetNode instanceof Konva.Line || targetNode instanceof Konva.Arrow)) {
+      targetNode.setAttrs({
+        points: normalized.points || [normalized.x, normalized.y, normalized.x + normalized.width, normalized.y],
+        stroke: normalized.color,
+        strokeWidth: normalized.strokeWidth || 2,
+      });
+      if (targetNode instanceof Konva.Line) {
+        if (normalized.style === 'dashed') {
+          targetNode.dash([10, 6]);
+        } else {
+          targetNode.dash([]);
+        }
+      }
+    }
+
     objectsRef.current.set(normalized.id, normalized);
+    syncObjectsLayerZOrder();
     objectsLayerRef.current?.batchDraw();
     if (!existing) {
       setObjectCount(objectsRef.current.size);
+    }
+
+    if (normalized.type !== 'connector') {
+      syncConnectedConnectors(normalized.id, false, false);
     }
 
     setBoardRevision((value) => value + 1);
@@ -1031,6 +1320,7 @@ export function Board() {
     const node = stageRef.current?.findOne(`#${objectId}`);
     node?.destroy();
     objectsRef.current.delete(objectId);
+    syncObjectsLayerZOrder();
     objectsLayerRef.current?.batchDraw();
     setObjectCount(objectsRef.current.size);
     setSelectedIds((previous) => previous.filter((entry) => entry !== objectId));
@@ -1108,6 +1398,341 @@ export function Board() {
     node.scale({ x: 1, y: 1 });
   }
 
+  function applyCircleTransform(node: Konva.Rect, object: BoardObject) {
+    const scaleX = node.scaleX() || 1;
+    const scaleY = node.scaleY() || 1;
+    const scaledWidth = Math.max(RECT_MIN_SIZE, node.width() * scaleX || object.width * scaleX);
+    const scaledHeight = Math.max(RECT_MIN_SIZE, node.height() * scaleY || object.height * scaleY);
+    const size = Math.max(RECT_MIN_SIZE, Math.max(scaledWidth, scaledHeight));
+    const centerX = node.x() + scaledWidth / 2;
+    const centerY = node.y() + scaledHeight / 2;
+
+    node.position({
+      x: centerX - size / 2,
+      y: centerY - size / 2,
+    });
+    node.width(size);
+    node.height(size);
+    node.cornerRadius(size / 2);
+    node.scale({ x: 1, y: 1 });
+  }
+
+  function applyLineTransform(node: Konva.Line | Konva.Arrow) {
+    const scaleX = node.scaleX() || 1;
+    const scaleY = node.scaleY() || 1;
+    const scaledPoints = node
+      .points()
+      .map((value, index) => (index % 2 === 0 ? value * scaleX : value * scaleY));
+    node.points(scaledPoints);
+    node.scale({ x: 1, y: 1 });
+  }
+
+  function applyTextTransform(node: Konva.Text, object: BoardObject) {
+    const scaleX = node.scaleX() || 1;
+    const scaleY = node.scaleY() || 1;
+    const width = Math.max(TEXT_MIN_WIDTH, node.width() * scaleX || object.width * scaleX);
+    const height = Math.max(TEXT_MIN_HEIGHT, node.height() * scaleY || object.height * scaleY);
+    const nextFontSize = Math.max(
+      10,
+      (object.fontSize || TEXT_DEFAULT_FONT_SIZE) * Math.min(scaleX, scaleY),
+    );
+
+    node.width(width);
+    node.height(height);
+    node.fontSize(nextFontSize);
+    node.scale({ x: 1, y: 1 });
+  }
+
+  function applyFrameTransform(node: Konva.Group, object: BoardObject) {
+    const scaleX = node.scaleX() || 1;
+    const scaleY = node.scaleY() || 1;
+    const width = Math.max(FRAME_MIN_WIDTH, object.width * scaleX);
+    const height = Math.max(FRAME_MIN_HEIGHT, object.height * scaleY);
+    const body = node.findOne('.frame-body') as Konva.Rect | null;
+    const title = node.findOne('.frame-title') as Konva.Text | null;
+
+    body?.setAttrs({ width, height });
+    title?.setAttrs({ width: Math.max(60, width - 20) });
+    node.scale({ x: 1, y: 1 });
+  }
+
+  function getConnectorPoints(connector: BoardObject): [number, number, number, number] {
+    const points = connector.points || [connector.x, connector.y, connector.x + connector.width, connector.y];
+    return [points[0] || 0, points[1] || 0, points[2] || 0, points[3] || 0];
+  }
+
+  function findClosestAnchorForObject(
+    entry: BoardObject,
+    point: { x: number; y: number },
+  ): ConnectorAttachmentCandidate | null {
+    const candidates = getObjectAnchorCandidates(entry);
+    if (candidates.length === 0) {
+      return null;
+    }
+
+    let best: ConnectorAttachmentCandidate | null = null;
+    candidates.forEach((candidate) => {
+      const distance = Math.hypot(point.x - candidate.x, point.y - candidate.y);
+      if (!best || distance < best.distance) {
+        best = {
+          objectId: entry.id,
+          x: candidate.x,
+          y: candidate.y,
+          anchorX: candidate.anchorX,
+          anchorY: candidate.anchorY,
+          distance,
+        };
+      }
+    });
+
+    return best;
+  }
+
+  function isSameConnectorAnchor(
+    anchorA: ConnectorAnchorIgnore,
+    anchorB: ConnectorAnchorIgnore,
+  ): boolean {
+    return (
+      anchorA.objectId === anchorB.objectId &&
+      Math.abs(anchorA.anchorX - anchorB.anchorX) <= SHAPE_ANCHOR_MATCH_EPSILON &&
+      Math.abs(anchorA.anchorY - anchorB.anchorY) <= SHAPE_ANCHOR_MATCH_EPSILON
+    );
+  }
+
+  function findConnectorAttachment(
+    worldPosition: { x: number; y: number },
+    connectorId: string,
+    ignoreAnchor?: ConnectorAnchorIgnore,
+    currentAnchor?: ConnectorAnchorIgnore,
+  ): ConnectorAttachmentResult | null {
+    const stageScale = stageRef.current?.scaleX() || 1;
+    const snapDistance = CONNECTOR_SNAP_DISTANCE_PX / Math.max(0.1, stageScale);
+    const snapReleaseDistance =
+      (CONNECTOR_SNAP_DISTANCE_PX + CONNECTOR_SNAP_RELEASE_BUFFER_PX) / Math.max(0.1, stageScale);
+
+    if (
+      currentAnchor &&
+      (!ignoreAnchor || !isSameConnectorAnchor(currentAnchor, ignoreAnchor))
+    ) {
+      const currentObject = objectsRef.current.get(currentAnchor.objectId);
+      if (currentObject && currentObject.type !== 'connector') {
+        const currentPoint = resolveObjectAnchorPoint(
+          currentObject,
+          currentAnchor.anchorX,
+          currentAnchor.anchorY,
+        );
+        const distance = Math.hypot(
+          worldPosition.x - currentPoint.x,
+          worldPosition.y - currentPoint.y,
+        );
+        if (distance <= snapReleaseDistance) {
+          return {
+            objectId: currentAnchor.objectId,
+            x: currentPoint.x,
+            y: currentPoint.y,
+            anchorX: currentAnchor.anchorX,
+            anchorY: currentAnchor.anchorY,
+          };
+        }
+      }
+    }
+
+    let bestMatch: ConnectorAttachmentCandidate | null = null;
+
+    objectsRef.current.forEach((entry) => {
+      if (entry.id === connectorId || entry.type === 'connector') {
+        return;
+      }
+
+      const candidate = findClosestAnchorForObject(entry, worldPosition);
+      if (!candidate || candidate.distance > snapDistance) {
+        return;
+      }
+
+      if (
+        ignoreAnchor &&
+        isSameConnectorAnchor(ignoreAnchor, {
+          objectId: candidate.objectId,
+          anchorX: candidate.anchorX,
+          anchorY: candidate.anchorY,
+        })
+      ) {
+        return;
+      }
+
+      if (!bestMatch || candidate.distance < bestMatch.distance) {
+        bestMatch = candidate;
+      }
+    });
+
+    if (!bestMatch) {
+      return null;
+    }
+
+    const { objectId, x, y, anchorX, anchorY } = bestMatch;
+    return { objectId, x, y, anchorX, anchorY };
+  }
+
+  function updateConnectorEndpoint(
+    connectorId: string,
+    endpoint: ConnectorEndpoint,
+    worldPosition: { x: number; y: number },
+    persist: boolean,
+    emitRealtime = persist,
+    options?: { detachFromCurrentAnchor?: boolean; snapDuringDrag?: boolean },
+  ) {
+    const current = objectsRef.current.get(connectorId);
+    if (!current || current.type !== 'connector') {
+      return;
+    }
+
+    const [startX, startY, endX, endY] = getConnectorPoints(current);
+    const next: BoardObject = {
+      ...current,
+      updatedAt: persist ? new Date().toISOString() : current.updatedAt,
+    };
+    const currentAnchorX = endpoint === 'from' ? current.fromAnchorX : current.toAnchorX;
+    const currentAnchorY = endpoint === 'from' ? current.fromAnchorY : current.toAnchorY;
+    const currentObjectId = endpoint === 'from' ? current.fromId : current.toId;
+    const currentAnchor =
+      currentObjectId &&
+      Number.isFinite(currentAnchorX) &&
+      Number.isFinite(currentAnchorY)
+        ? {
+            objectId: currentObjectId,
+            anchorX: Number(currentAnchorX),
+            anchorY: Number(currentAnchorY),
+          }
+        : undefined;
+    const ignoredAnchor =
+      options?.detachFromCurrentAnchor && currentAnchor
+        ? currentAnchor
+        : undefined;
+    const shouldSnap = options?.snapDuringDrag !== false;
+    const attachment = shouldSnap
+      ? findConnectorAttachment(worldPosition, connectorId, ignoredAnchor, currentAnchor)
+      : null;
+
+    if (endpoint === 'from') {
+      if (attachment) {
+        next.fromId = attachment.objectId;
+        next.fromAnchorX = attachment.anchorX;
+        next.fromAnchorY = attachment.anchorY;
+      } else {
+        next.fromId = '';
+        next.fromAnchorX = undefined;
+        next.fromAnchorY = undefined;
+      }
+    } else if (attachment) {
+      next.toId = attachment.objectId;
+      next.toAnchorX = attachment.anchorX;
+      next.toAnchorY = attachment.anchorY;
+    } else {
+      next.toId = '';
+      next.toAnchorX = undefined;
+      next.toAnchorY = undefined;
+    }
+
+    const fallbackPoints =
+      endpoint === 'from'
+        ? [attachment?.x ?? worldPosition.x, attachment?.y ?? worldPosition.y, endX, endY]
+        : [startX, startY, attachment?.x ?? worldPosition.x, attachment?.y ?? worldPosition.y];
+
+    const from = next.fromId ? objectsRef.current.get(next.fromId) : undefined;
+    const to = next.toId ? objectsRef.current.get(next.toId) : undefined;
+    const resolvedPoints = resolveConnectorPoints({
+      from,
+      to,
+      fromAnchorX: next.fromAnchorX,
+      fromAnchorY: next.fromAnchorY,
+      toAnchorX: next.toAnchorX,
+      toAnchorY: next.toAnchorY,
+      fallback: fallbackPoints,
+    });
+
+    const nextObject: BoardObject = {
+      ...next,
+      x: 0,
+      y: 0,
+      points: resolvedPoints,
+      width: Math.max(1, Math.abs((resolvedPoints[2] || 0) - (resolvedPoints[0] || 0))),
+      height: Math.max(1, Math.abs((resolvedPoints[3] || 0) - (resolvedPoints[1] || 0))),
+    };
+
+    objectsRef.current.set(connectorId, nextObject);
+    const node = stageRef.current?.findOne(`#${connectorId}`);
+    if (node instanceof Konva.Line || node instanceof Konva.Arrow) {
+      node.points(resolvedPoints);
+      if (nextObject.style === 'dashed') {
+        node.dash([10, 6]);
+      } else {
+        node.dash([]);
+      }
+    }
+
+    objectsLayerRef.current?.batchDraw();
+    setBoardRevision((value) => value + 1);
+    if (emitRealtime) {
+      emitObjectUpdate(nextObject, persist);
+    }
+    if (persist) {
+      aiExecutor.invalidateUndo();
+      scheduleBoardSave();
+    }
+  }
+
+  function syncConnectedConnectors(changedObjectId: string, persist: boolean, emitRealtime: boolean) {
+    const relatedConnectors = Array.from(objectsRef.current.values()).filter(
+      (entry) =>
+        entry.type === 'connector' &&
+        (entry.fromId === changedObjectId || entry.toId === changedObjectId),
+    );
+
+    if (relatedConnectors.length === 0) {
+      return;
+    }
+
+    relatedConnectors.forEach((connector) => {
+      const from = connector.fromId ? objectsRef.current.get(connector.fromId) : undefined;
+      const to = connector.toId ? objectsRef.current.get(connector.toId) : undefined;
+      const nextPoints = resolveConnectorPoints({
+        from,
+        to,
+        fromAnchorX: connector.fromAnchorX,
+        fromAnchorY: connector.fromAnchorY,
+        toAnchorX: connector.toAnchorX,
+        toAnchorY: connector.toAnchorY,
+        fallback: connector.points || [connector.x, connector.y, connector.x + connector.width, connector.y],
+      });
+
+      const nextObject: BoardObject = {
+        ...connector,
+        points: nextPoints,
+        x: 0,
+        y: 0,
+        width: Math.abs((nextPoints[2] || 0) - (nextPoints[0] || 0)),
+        height: Math.abs((nextPoints[3] || 0) - (nextPoints[1] || 0)),
+        updatedAt: persist ? new Date().toISOString() : connector.updatedAt,
+      };
+      objectsRef.current.set(nextObject.id, nextObject);
+
+      const node = stageRef.current?.findOne(`#${nextObject.id}`);
+      if (node instanceof Konva.Line || node instanceof Konva.Arrow) {
+        node.points(nextPoints);
+        if (nextObject.style === 'dashed') {
+          node.dash([10, 6]);
+        } else {
+          node.dash([]);
+        }
+      }
+
+      if (emitRealtime) {
+        emitObjectUpdate(nextObject, persist);
+      }
+    });
+    objectsLayerRef.current?.batchDraw();
+  }
+
   function syncObjectFromNode(
     objectId: string,
     persist: boolean,
@@ -1122,6 +1747,10 @@ export function Board() {
 
     let width = current.width;
     let height = current.height;
+    let points = current.points;
+    let fontSize = current.fontSize;
+    let text = current.text;
+    let title = current.title;
 
     if (current.type === 'sticky' && node instanceof Konva.Group) {
       const body = node.findOne('.sticky-body') as Konva.Rect | null;
@@ -1131,9 +1760,48 @@ export function Board() {
       }
     }
 
-    if (current.type === 'rect' && node instanceof Konva.Rect) {
+    if ((current.type === 'rect' || current.type === 'circle') && node instanceof Konva.Rect) {
       width = node.width();
       height = node.height();
+      if (current.type === 'circle') {
+        const size = Math.max(RECT_MIN_SIZE, Math.max(width, height));
+        const centerX = node.x() + width / 2;
+        const centerY = node.y() + height / 2;
+        node.position({
+          x: centerX - size / 2,
+          y: centerY - size / 2,
+        });
+        node.width(size);
+        node.height(size);
+        node.cornerRadius(size / 2);
+        width = size;
+        height = size;
+      }
+    }
+
+    if (current.type === 'line' && (node instanceof Konva.Line || node instanceof Konva.Arrow)) {
+      points = node.points();
+      width = Math.abs((points[2] || 0) - (points[0] || 0));
+      height = Math.abs((points[3] || 0) - (points[1] || 0));
+    }
+
+    if (current.type === 'text' && node instanceof Konva.Text) {
+      width = node.width();
+      height = node.height();
+      text = node.text();
+      fontSize = node.fontSize();
+    }
+
+    if (current.type === 'frame' && node instanceof Konva.Group) {
+      const body = node.findOne('.frame-body') as Konva.Rect | null;
+      const frameTitle = node.findOne('.frame-title') as Konva.Text | null;
+      if (body) {
+        width = body.width();
+        height = body.height();
+      }
+      if (frameTitle) {
+        title = frameTitle.text();
+      }
     }
 
     const nextObject: BoardObject = {
@@ -1143,10 +1811,17 @@ export function Board() {
       rotation: node.rotation(),
       width,
       height,
+      points,
+      fontSize,
+      text,
+      title,
       updatedAt: persist ? new Date().toISOString() : current.updatedAt,
     };
 
     objectsRef.current.set(objectId, nextObject);
+    if (current.type !== 'connector') {
+      syncConnectedConnectors(objectId, persist, emitRealtime);
+    }
 
     if (bumpRevision) {
       setBoardRevision((value) => value + 1);
@@ -1155,24 +1830,29 @@ export function Board() {
       emitObjectUpdate(nextObject, persist);
     }
     if (persist) {
+      aiExecutor.invalidateUndo();
       scheduleBoardSave();
     }
   }
 
   function openTextEditor(objectId: string) {
     const object = objectsRef.current.get(objectId);
-    if (!object || object.type !== 'sticky') {
+    if (!object || (object.type !== 'sticky' && object.type !== 'text')) {
       return;
     }
 
     setEditingText({
       id: objectId,
-      value: isPlaceholderStickyText(object.text) ? '' : object.text || '',
+      value: object.type === 'sticky' ? (isPlaceholderStickyText(object.text) ? '' : object.text || '') : object.text || '',
     });
   }
 
   function handleObjectSelection(event: Konva.KonvaEventObject<MouseEvent | TouchEvent>, objectId: string) {
     event.cancelBubble = true;
+    if (activeTool === 'connector') {
+      return;
+    }
+
     const nativeEvent = event.evt as MouseEvent;
     const isShift = Boolean(nativeEvent?.shiftKey);
 
@@ -1187,6 +1867,16 @@ export function Board() {
 
       return [...previous, objectId];
     });
+  }
+
+  function handleObjectDragStart(objectId: string) {
+    if (activeTool !== 'select') {
+      return;
+    }
+
+    setSelectedIds((previous) =>
+      previous.length === 1 && previous[0] === objectId ? previous : [objectId],
+    );
   }
 
   function createStickyNode(object: BoardObject): Konva.Group {
@@ -1230,6 +1920,9 @@ export function Board() {
 
     group.on('click tap', (event) => {
       handleObjectSelection(event, object.id);
+    });
+    group.on('dragstart', () => {
+      handleObjectDragStart(object.id);
     });
     group.on('dragmove', () => {
       syncObjectFromNode(object.id, false, true, false);
@@ -1276,6 +1969,9 @@ export function Board() {
     rect.on('click tap', (event) => {
       handleObjectSelection(event, object.id);
     });
+    rect.on('dragstart', () => {
+      handleObjectDragStart(object.id);
+    });
     rect.on('dragmove', () => {
       syncObjectFromNode(object.id, false, true, false);
       const worldPosition = getWorldPointerPosition();
@@ -1300,20 +1996,273 @@ export function Board() {
     return rect;
   }
 
+  function createCircleNode(object: BoardObject): Konva.Rect {
+    const circle = new Konva.Rect({
+      id: object.id,
+      name: 'board-object circle-object',
+      x: object.x,
+      y: object.y,
+      width: object.width,
+      height: object.height,
+      fill: object.color,
+      stroke: object.stroke || RECT_DEFAULT_STROKE,
+      strokeWidth: object.strokeWidth || RECT_DEFAULT_STROKE_WIDTH,
+      cornerRadius: Math.min(object.width, object.height) / 2,
+      rotation: object.rotation,
+      draggable: false,
+    });
+
+    circle.on('click tap', (event) => {
+      handleObjectSelection(event, object.id);
+    });
+    circle.on('dragstart', () => {
+      handleObjectDragStart(object.id);
+    });
+    circle.on('dragmove', () => {
+      syncObjectFromNode(object.id, false, true, false);
+      const worldPosition = getWorldPointerPosition();
+      if (worldPosition) {
+        publishCursor(worldPosition);
+      }
+    });
+    circle.on('dragend', () => {
+      syncObjectFromNode(object.id, true);
+    });
+    circle.on('transformend', () => {
+      const existing = objectsRef.current.get(object.id);
+      if (!existing) {
+        return;
+      }
+
+      applyCircleTransform(circle, existing);
+      syncObjectFromNode(object.id, true);
+      objectsLayerRef.current?.batchDraw();
+    });
+
+    return circle;
+  }
+
+  function createLineNode(object: BoardObject): Konva.Line {
+    const line = new Konva.Line({
+      id: object.id,
+      name: 'board-object line-object',
+      x: object.x,
+      y: object.y,
+      points: object.points || [0, 0, object.width, object.height],
+      stroke: object.color || '#0f172a',
+      strokeWidth: object.strokeWidth || 2,
+      lineCap: 'round',
+      lineJoin: 'round',
+      draggable: false,
+      rotation: object.rotation,
+    });
+
+    line.on('click tap', (event) => {
+      handleObjectSelection(event, object.id);
+    });
+    line.on('dragstart', () => {
+      handleObjectDragStart(object.id);
+    });
+    line.on('dragmove', () => {
+      syncObjectFromNode(object.id, false, true, false);
+      const worldPosition = getWorldPointerPosition();
+      if (worldPosition) {
+        publishCursor(worldPosition);
+      }
+    });
+    line.on('dragend', () => {
+      syncObjectFromNode(object.id, true);
+    });
+    line.on('transformend', () => {
+      applyLineTransform(line);
+      syncObjectFromNode(object.id, true);
+      objectsLayerRef.current?.batchDraw();
+    });
+
+    return line;
+  }
+
+  function createTextNode(object: BoardObject): Konva.Text {
+    const textNode = new Konva.Text({
+      id: object.id,
+      name: 'board-object text-object',
+      x: object.x,
+      y: object.y,
+      text: object.text || 'Text',
+      width: object.width,
+      height: object.height,
+      fill: object.color || TEXT_DEFAULT_COLOR,
+      fontSize: object.fontSize || TEXT_DEFAULT_FONT_SIZE,
+      fontFamily: 'Segoe UI, sans-serif',
+      align: 'left',
+      verticalAlign: 'top',
+      padding: 6,
+      draggable: false,
+      rotation: object.rotation,
+    });
+
+    textNode.on('click tap', (event) => {
+      handleObjectSelection(event, object.id);
+    });
+    textNode.on('dragstart', () => {
+      handleObjectDragStart(object.id);
+    });
+    textNode.on('dragmove', () => {
+      syncObjectFromNode(object.id, false, true, false);
+      const worldPosition = getWorldPointerPosition();
+      if (worldPosition) {
+        publishCursor(worldPosition);
+      }
+    });
+    textNode.on('dragend', () => {
+      syncObjectFromNode(object.id, true);
+    });
+    textNode.on('transformend', () => {
+      const existing = objectsRef.current.get(object.id);
+      if (!existing) {
+        return;
+      }
+      applyTextTransform(textNode, existing);
+      syncObjectFromNode(object.id, true);
+      objectsLayerRef.current?.batchDraw();
+    });
+    textNode.on('dblclick dbltap', () => {
+      openTextEditor(object.id);
+    });
+
+    return textNode;
+  }
+
+  function createFrameNode(object: BoardObject): Konva.Group {
+    const group = new Konva.Group({
+      id: object.id,
+      name: 'board-object frame-object',
+      x: object.x,
+      y: object.y,
+      rotation: object.rotation,
+      draggable: false,
+    });
+
+    const body = new Konva.Rect({
+      name: 'frame-body',
+      width: object.width,
+      height: object.height,
+      fill: object.color || '#fff',
+      stroke: object.stroke || FRAME_DEFAULT_STROKE,
+      strokeWidth: object.strokeWidth || 2,
+      cornerRadius: 8,
+      dash: [6, 4],
+    });
+
+    const title = new Konva.Text({
+      name: 'frame-title',
+      x: 10,
+      y: 8,
+      width: Math.max(60, object.width - 20),
+      text: object.title || 'Frame',
+      fill: '#1f2937',
+      fontSize: 14,
+      fontStyle: 'bold',
+      fontFamily: 'Segoe UI, sans-serif',
+    });
+
+    group.add(body);
+    group.add(title);
+    group.on('click tap', (event) => {
+      handleObjectSelection(event, object.id);
+    });
+    group.on('dragstart', () => {
+      handleObjectDragStart(object.id);
+    });
+    group.on('dragmove', () => {
+      syncObjectFromNode(object.id, false, true, false);
+      const worldPosition = getWorldPointerPosition();
+      if (worldPosition) {
+        publishCursor(worldPosition);
+      }
+    });
+    group.on('dragend', () => {
+      syncObjectFromNode(object.id, true);
+    });
+    group.on('transformend', () => {
+      const existing = objectsRef.current.get(object.id);
+      if (!existing) {
+        return;
+      }
+      applyFrameTransform(group, existing);
+      syncObjectFromNode(object.id, true);
+      objectsLayerRef.current?.batchDraw();
+    });
+
+    return group;
+  }
+
+  function createConnectorNode(object: BoardObject): Konva.Line | Konva.Arrow {
+    const points = object.points || [0, 0, object.width, object.height];
+    const common = {
+      id: object.id,
+      name: 'board-object connector-object',
+      points,
+      stroke: object.color || '#64748b',
+      strokeWidth: object.strokeWidth || 2,
+      hitStrokeWidth: 20,
+      lineCap: 'round' as const,
+      lineJoin: 'round' as const,
+      listening: true,
+      draggable: false,
+    };
+
+    const connector =
+      object.style === 'arrow'
+        ? new Konva.Arrow({
+            ...common,
+            pointerLength: 8,
+            pointerWidth: 8,
+          })
+        : new Konva.Line({
+            ...common,
+            dash: object.style === 'dashed' ? [10, 6] : [],
+          });
+
+    connector.on('click tap', (event) => {
+      handleObjectSelection(event, object.id);
+    });
+
+    return connector;
+  }
+
   function createNodeForObject(object: BoardObject): BoardCanvasNode {
-    return object.type === 'sticky' ? createStickyNode(object) : createRectNode(object);
+    switch (object.type) {
+      case 'sticky':
+        return createStickyNode(object);
+      case 'rect':
+        return createRectNode(object);
+      case 'circle':
+        return createCircleNode(object);
+      case 'line':
+        return createLineNode(object);
+      case 'text':
+        return createTextNode(object);
+      case 'frame':
+        return createFrameNode(object);
+      case 'connector':
+        return createConnectorNode(object);
+      default:
+        return createRectNode(object);
+    }
   }
 
   function insertObject(object: BoardObject, persist: boolean) {
     objectsRef.current.set(object.id, object);
     const node = createNodeForObject(object);
     objectsLayerRef.current?.add(node);
-    node.zIndex(object.zIndex);
+    syncObjectsLayerZOrder();
     objectsLayerRef.current?.batchDraw();
     setObjectCount(objectsRef.current.size);
     setBoardRevision((value) => value + 1);
 
     if (persist) {
+      aiExecutor.invalidateUndo();
       emitObjectCreate(object);
       scheduleBoardSave();
     }
@@ -1331,6 +2280,7 @@ export function Board() {
       objectsRef.current.delete(objectId);
     });
 
+    syncObjectsLayerZOrder();
     objectsLayerRef.current?.batchDraw();
     setSelectedIds((previous) => previous.filter((entry) => !removeSet.has(entry)));
     setObjectCount(objectsRef.current.size);
@@ -1338,6 +2288,7 @@ export function Board() {
     setBoardRevision((value) => value + 1);
 
     if (persist) {
+      aiExecutor.invalidateUndo();
       objectIds.forEach((objectId) => {
         emitObjectDelete(objectId);
       });
@@ -1351,13 +2302,15 @@ export function Board() {
     }
 
     const current = objectsRef.current.get(editingText.id);
-    if (!current || current.type !== 'sticky') {
+    if (!current || (current.type !== 'sticky' && current.type !== 'text')) {
       setEditingText(null);
       return;
     }
 
-    const group = stageRef.current?.findOne(`#${editingText.id}`) as Konva.Group | null;
-    const label = group?.findOne('.sticky-label') as Konva.Text | null;
+    const node = stageRef.current?.findOne(`#${editingText.id}`);
+    const stickyLabel =
+      node instanceof Konva.Group ? ((node.findOne('.sticky-label') as Konva.Text | null) ?? null) : null;
+    const textNode = node instanceof Konva.Text ? node : null;
     const text = editingText.value;
     const normalizedText = text.replace(/\r\n/g, '\n');
     const nextText = saveChanges ? normalizedText : current.text || '';
@@ -1370,104 +2323,302 @@ export function Board() {
 
     objectsRef.current.set(editingText.id, nextObject);
 
-    label?.text(getStickyRenderText(nextText));
-    label?.fill(getStickyRenderColor(nextText));
+    if (current.type === 'sticky') {
+      stickyLabel?.text(getStickyRenderText(nextText));
+      stickyLabel?.fill(getStickyRenderColor(nextText));
+    } else {
+      textNode?.text(nextText || 'Text');
+    }
     objectsLayerRef.current?.batchDraw();
     setEditingText(null);
     setBoardRevision((value) => value + 1);
 
     if (saveChanges) {
+      aiExecutor.invalidateUndo();
       emitObjectUpdate(nextObject, true);
       scheduleBoardSave();
     }
   }
 
   function createStickyAt(worldPosition: { x: number; y: number }) {
-    const object: BoardObject = {
-      id: crypto.randomUUID(),
-      type: 'sticky',
+    const object = createDefaultObject('sticky', {
       x: worldPosition.x,
       y: worldPosition.y,
-      width: STICKY_DEFAULT_WIDTH,
-      height: STICKY_DEFAULT_HEIGHT,
-      rotation: 0,
-      text: '',
-      color: STICKY_DEFAULT_COLOR,
-      fontSize: 14,
       zIndex: getNextZIndex(),
       createdBy: user?.uid || 'guest',
-      updatedAt: new Date().toISOString(),
-    };
+      text: '',
+      color: STICKY_DEFAULT_COLOR,
+      width: STICKY_DEFAULT_WIDTH,
+      height: STICKY_DEFAULT_HEIGHT,
+    });
 
     insertObject(object, true);
     setSelectedIds([object.id]);
     setActiveTool('select');
   }
 
-  function beginRectDraft(worldPosition: { x: number; y: number }) {
-    const object: BoardObject = {
-      id: crypto.randomUUID(),
-      type: 'rect',
+  function createTextAt(worldPosition: { x: number; y: number }) {
+    const object = createDefaultObject('text', {
       x: worldPosition.x,
       y: worldPosition.y,
-      width: 1,
-      height: 1,
-      rotation: 0,
-      color: RECT_DEFAULT_COLOR,
-      stroke: RECT_DEFAULT_STROKE,
-      strokeWidth: RECT_DEFAULT_STROKE_WIDTH,
+      text: 'Text',
       zIndex: getNextZIndex(),
       createdBy: user?.uid || 'guest',
+    });
+
+    insertObject(object, true);
+    setSelectedIds([object.id]);
+    openTextEditor(object.id);
+    setActiveTool('select');
+  }
+
+  function createFrameAt(worldPosition: { x: number; y: number }) {
+    const object = createDefaultObject('frame', {
+      x: worldPosition.x,
+      y: worldPosition.y,
+      title: 'Frame',
+      zIndex: getNextZIndex(),
+      createdBy: user?.uid || 'guest',
+    });
+
+    insertObject(object, true);
+    setSelectedIds([object.id]);
+    setActiveTool('select');
+  }
+
+  function beginConnectorDraft(
+    worldPosition: { x: number; y: number },
+    startAttachment?: ConnectorAttachmentResult,
+  ) {
+    if (connectorDraftRef.current) {
+      return;
+    }
+
+    const initialAttachment = startAttachment || findConnectorAttachment(worldPosition, '');
+    const start = initialAttachment || {
+      x: worldPosition.x,
+      y: worldPosition.y,
+    };
+    const startX = start.x;
+    const startY = start.y;
+    const object = createDefaultObject('connector', {
+      x: 0,
+      y: 0,
+      points: [startX, startY, startX + 1, startY],
+      fromId: initialAttachment?.objectId || '',
+      fromAnchorX: initialAttachment?.anchorX,
+      fromAnchorY: initialAttachment?.anchorY,
+      toId: '',
+      toAnchorX: undefined,
+      toAnchorY: undefined,
+      zIndex: getNextZIndex(),
+      createdBy: user?.uid || 'guest',
+    });
+
+    insertObject(object, false);
+    connectorDraftRef.current = {
+      id: object.id,
+      startX: start.x,
+      startY: start.y,
+    };
+    setIsDrawingConnector(true);
+    setSelectedIds([object.id]);
+  }
+
+  function updateConnectorDraft(worldPosition: { x: number; y: number }) {
+    const draft = connectorDraftRef.current;
+    if (!draft) {
+      return;
+    }
+
+    updateConnectorEndpoint(draft.id, 'to', worldPosition, false, false, {
+      snapDuringDrag: false,
+    });
+  }
+
+  function finalizeConnectorDraft() {
+    const draft = connectorDraftRef.current;
+    if (!draft) {
+      return;
+    }
+
+    const current = objectsRef.current.get(draft.id);
+    const node = stageRef.current?.findOne(`#${draft.id}`);
+    if (!current || current.type !== 'connector' || !(node instanceof Konva.Line || node instanceof Konva.Arrow)) {
+      connectorDraftRef.current = null;
+      setIsDrawingConnector(false);
+      return;
+    }
+
+    const points = node.points();
+    const startX = points[0] || draft.startX;
+    const startY = points[1] || draft.startY;
+    const endX = points[2] || startX;
+    const endY = points[3] || startY;
+    const length = Math.hypot(endX - startX, endY - startY);
+
+    let nextObject = current;
+    if (length < RECT_CLICK_DRAG_THRESHOLD) {
+      const clickPoints = [startX, startY, startX + LINE_CLICK_DEFAULT_WIDTH, startY];
+      node.points(clickPoints);
+      nextObject = {
+        ...current,
+        points: clickPoints,
+        toId: '',
+        toAnchorX: undefined,
+        toAnchorY: undefined,
+        width: LINE_CLICK_DEFAULT_WIDTH,
+        height: 1,
+      };
+    } else {
+      updateConnectorEndpoint(
+        draft.id,
+        'to',
+        { x: endX, y: endY },
+        false,
+        false,
+        { snapDuringDrag: true },
+      );
+      const snapped = objectsRef.current.get(draft.id);
+      const snappedNode = stageRef.current?.findOne(`#${draft.id}`);
+      const snappedPoints =
+        snappedNode instanceof Konva.Line || snappedNode instanceof Konva.Arrow
+          ? snappedNode.points()
+          : points;
+      const snappedStartX = snappedPoints[0] || startX;
+      const snappedStartY = snappedPoints[1] || startY;
+      const snappedEndX = snappedPoints[2] || endX;
+      const snappedEndY = snappedPoints[3] || endY;
+      nextObject = {
+        ...(snapped?.type === 'connector' ? snapped : current),
+        points: snappedPoints,
+        width: Math.max(1, Math.abs(snappedEndX - snappedStartX)),
+        height: Math.max(1, Math.abs(snappedEndY - snappedStartY)),
+      };
+    }
+
+    nextObject = {
+      ...nextObject,
       updatedAt: new Date().toISOString(),
     };
+
+    objectsRef.current.set(nextObject.id, nextObject);
+    connectorDraftRef.current = null;
+    setIsDrawingConnector(false);
+    setActiveTool('select');
+    setSelectedIds([nextObject.id]);
+    setBoardRevision((value) => value + 1);
+    aiExecutor.invalidateUndo();
+    emitObjectCreate(nextObject);
+    scheduleBoardSave();
+    objectsLayerRef.current?.batchDraw();
+    setCanvasNotice(null);
+  }
+
+  function beginShapeDraft(worldPosition: { x: number; y: number }, type: 'rect' | 'circle' | 'line') {
+    const object =
+      type === 'line'
+        ? createDefaultObject('line', {
+            x: worldPosition.x,
+            y: worldPosition.y,
+            points: [0, 0, 1, 1],
+            width: 1,
+            height: 1,
+            zIndex: getNextZIndex(),
+            createdBy: user?.uid || 'guest',
+          })
+        : createDefaultObject(type, {
+            x: worldPosition.x,
+            y: worldPosition.y,
+            width: 1,
+            height: 1,
+            zIndex: getNextZIndex(),
+            createdBy: user?.uid || 'guest',
+          });
 
     insertObject(object, false);
     rectDraftRef.current = {
       id: object.id,
       startX: worldPosition.x,
       startY: worldPosition.y,
+      type,
     };
     setIsDrawingRect(true);
     setSelectedIds([object.id]);
   }
 
-  function updateRectDraft(worldPosition: { x: number; y: number }) {
+  function updateShapeDraft(worldPosition: { x: number; y: number }) {
     const draft = rectDraftRef.current;
     if (!draft) {
       return;
     }
 
     const current = objectsRef.current.get(draft.id);
-    const rectNode = stageRef.current?.findOne(`#${draft.id}`) as Konva.Rect | null;
-    if (!current || !rectNode) {
+    const node = stageRef.current?.findOne(`#${draft.id}`);
+    if (!current || !node) {
       return;
     }
 
-    const x = Math.min(draft.startX, worldPosition.x);
-    const y = Math.min(draft.startY, worldPosition.y);
-    const width = Math.max(1, Math.abs(worldPosition.x - draft.startX));
-    const height = Math.max(1, Math.abs(worldPosition.y - draft.startY));
-
-    rectNode.setAttrs({ x, y, width, height });
-    objectsRef.current.set(draft.id, {
-      ...current,
-      x,
-      y,
-      width,
-      height,
-    });
+    if (draft.type === 'line' && (node instanceof Konva.Line || node instanceof Konva.Arrow)) {
+      const dx = worldPosition.x - draft.startX;
+      const dy = worldPosition.y - draft.startY;
+      const points = [0, 0, dx, dy];
+      node.setAttrs({
+        x: draft.startX,
+        y: draft.startY,
+        points,
+      });
+      objectsRef.current.set(draft.id, {
+        ...current,
+        x: draft.startX,
+        y: draft.startY,
+        points,
+        width: Math.max(1, Math.abs(dx)),
+        height: Math.max(1, Math.abs(dy)),
+      });
+    } else if (node instanceof Konva.Rect) {
+      if (draft.type === 'circle') {
+        const dx = worldPosition.x - draft.startX;
+        const dy = worldPosition.y - draft.startY;
+        const size = Math.max(1, Math.abs(dx), Math.abs(dy));
+        const x = dx < 0 ? draft.startX - size : draft.startX;
+        const y = dy < 0 ? draft.startY - size : draft.startY;
+        node.setAttrs({ x, y, width: size, height: size, cornerRadius: size / 2 });
+        objectsRef.current.set(draft.id, {
+          ...current,
+          x,
+          y,
+          width: size,
+          height: size,
+          radius: size / 2,
+        });
+      } else {
+        const x = Math.min(draft.startX, worldPosition.x);
+        const y = Math.min(draft.startY, worldPosition.y);
+        const width = Math.max(1, Math.abs(worldPosition.x - draft.startX));
+        const height = Math.max(1, Math.abs(worldPosition.y - draft.startY));
+        node.setAttrs({ x, y, width, height });
+        objectsRef.current.set(draft.id, {
+          ...current,
+          x,
+          y,
+          width,
+          height,
+        });
+      }
+    }
     objectsLayerRef.current?.batchDraw();
   }
 
-  function finalizeRectDraft() {
+  function finalizeShapeDraft() {
     const draft = rectDraftRef.current;
     if (!draft) {
       return;
     }
 
     const current = objectsRef.current.get(draft.id);
-    const rectNode = stageRef.current?.findOne(`#${draft.id}`) as Konva.Rect | null;
-    if (!current || !rectNode) {
+    const node = stageRef.current?.findOne(`#${draft.id}`);
+    if (!current || !node) {
       rectDraftRef.current = null;
       setIsDrawingRect(false);
       return;
@@ -1475,16 +2626,48 @@ export function Board() {
 
     const isClickCreate =
       current.width < RECT_CLICK_DRAG_THRESHOLD && current.height < RECT_CLICK_DRAG_THRESHOLD;
-    const width = isClickCreate ? RECT_CLICK_DEFAULT_WIDTH : Math.max(RECT_MIN_SIZE, current.width);
-    const height = isClickCreate
-      ? RECT_CLICK_DEFAULT_HEIGHT
-      : Math.max(RECT_MIN_SIZE, current.height);
-    rectNode.setAttrs({ width, height });
+    let width = current.width;
+    let height = current.height;
+    let points = current.points;
+
+    if (draft.type === 'line' && (node instanceof Konva.Line || node instanceof Konva.Arrow)) {
+      if (isClickCreate) {
+        points = [0, 0, LINE_CLICK_DEFAULT_WIDTH, 0];
+        node.points(points);
+        width = LINE_CLICK_DEFAULT_WIDTH;
+        height = 1;
+      } else {
+        points = node.points();
+        width = Math.max(1, Math.abs((points[2] || 0) - (points[0] || 0)));
+        height = Math.max(1, Math.abs((points[3] || 0) - (points[1] || 0)));
+      }
+    } else if (node instanceof Konva.Rect) {
+      width = isClickCreate
+        ? draft.type === 'circle'
+          ? CIRCLE_CLICK_DEFAULT_SIZE
+          : RECT_CLICK_DEFAULT_WIDTH
+        : Math.max(RECT_MIN_SIZE, current.width);
+      height = isClickCreate
+        ? draft.type === 'circle'
+          ? CIRCLE_CLICK_DEFAULT_SIZE
+          : RECT_CLICK_DEFAULT_HEIGHT
+        : Math.max(RECT_MIN_SIZE, current.height);
+      if (draft.type === 'circle') {
+        const size = Math.max(width, height);
+        width = size;
+        height = size;
+        node.setAttrs({ width: size, height: size, cornerRadius: size / 2 });
+      } else {
+        node.setAttrs({ width, height });
+      }
+    }
 
     const finalizedObject: BoardObject = {
       ...current,
       width,
       height,
+      points,
+      radius: draft.type === 'circle' ? Math.min(width, height) / 2 : current.radius,
       updatedAt: new Date().toISOString(),
     };
     objectsRef.current.set(draft.id, finalizedObject);
@@ -1494,6 +2677,7 @@ export function Board() {
     setActiveTool('select');
     setSelectedIds([draft.id]);
     setBoardRevision((value) => value + 1);
+    aiExecutor.invalidateUndo();
     emitObjectCreate(finalizedObject);
     scheduleBoardSave();
     objectsLayerRef.current?.batchDraw();
@@ -1545,12 +2729,7 @@ export function Board() {
     const nextSelected: string[] = [];
 
     objectsRef.current.forEach((entry) => {
-      const objectBounds: Bounds = {
-        x: entry.x,
-        y: entry.y,
-        width: entry.width,
-        height: entry.height,
-      };
+      const objectBounds = getObjectBounds(entry);
 
       if (intersects(bounds, objectBounds)) {
         nextSelected.push(entry.id);
@@ -1578,6 +2757,11 @@ export function Board() {
       return;
     }
 
+    if (activeTool === 'connector') {
+      beginConnectorDraft(worldPosition);
+      return;
+    }
+
     const backgroundTarget = isBackgroundTarget(target, stage);
     if (!backgroundTarget) {
       return;
@@ -1588,8 +2772,18 @@ export function Board() {
       return;
     }
 
-    if (activeTool === 'rect') {
-      beginRectDraft(worldPosition);
+    if (activeTool === 'text') {
+      createTextAt(worldPosition);
+      return;
+    }
+
+    if (activeTool === 'frame') {
+      createFrameAt(worldPosition);
+      return;
+    }
+
+    if (activeTool === 'rect' || activeTool === 'circle' || activeTool === 'line') {
+      beginShapeDraft(worldPosition, activeTool);
       return;
     }
 
@@ -1608,7 +2802,11 @@ export function Board() {
     publishCursor(worldPosition);
 
     if (rectDraftRef.current) {
-      updateRectDraft(worldPosition);
+      updateShapeDraft(worldPosition);
+    }
+
+    if (connectorDraftRef.current) {
+      updateConnectorDraft(worldPosition);
     }
 
     if (selectionDraftRef.current) {
@@ -1617,8 +2815,12 @@ export function Board() {
   }
 
   function handleStageMouseUp() {
+    if (connectorDraftRef.current) {
+      finalizeConnectorDraft();
+    }
+
     if (rectDraftRef.current) {
-      finalizeRectDraft();
+      finalizeShapeDraft();
     }
 
     if (selectionDraftRef.current) {
@@ -1629,13 +2831,91 @@ export function Board() {
   function handleStageMouseLeave() {
     publishCursorHide();
 
+    if (connectorDraftRef.current) {
+      finalizeConnectorDraft();
+    }
+
     if (rectDraftRef.current) {
-      finalizeRectDraft();
+      finalizeShapeDraft();
     }
 
     if (selectionDraftRef.current) {
       finalizeSelection();
     }
+  }
+
+  function getSelectedConnectorHandle(endpoint: ConnectorEndpoint): { x: number; y: number } | null {
+    if (!selectedConnector) {
+      return null;
+    }
+
+    const connectorNode = stageRef.current?.findOne(`#${selectedConnector.id}`);
+    const livePoints =
+      connectorNode instanceof Konva.Line || connectorNode instanceof Konva.Arrow
+        ? connectorNode.points()
+        : selectedConnector.points;
+    const points = livePoints && livePoints.length >= 4 ? livePoints : getConnectorPoints(selectedConnector);
+    const [startX, startY, endX, endY] = [points[0] || 0, points[1] || 0, points[2] || 0, points[3] || 0];
+    if (endpoint === 'from') {
+      return { x: startX, y: startY };
+    }
+
+    return { x: endX, y: endY };
+  }
+
+  function handleConnectorHandleDragStart(event: Konva.KonvaEventObject<MouseEvent | TouchEvent>) {
+    event.cancelBubble = true;
+    setIsDraggingConnectorHandle(true);
+  }
+
+  function handleConnectorHandleDragMove(
+    endpoint: ConnectorEndpoint,
+    event: Konva.KonvaEventObject<MouseEvent | TouchEvent>,
+  ) {
+    event.cancelBubble = true;
+    if (!selectedConnector) {
+      return;
+    }
+
+    const target = event.target;
+    const nextPosition = { x: target.x(), y: target.y() };
+    updateConnectorEndpoint(
+      selectedConnector.id,
+      endpoint,
+      nextPosition,
+      false,
+      true,
+      { detachFromCurrentAnchor: true, snapDuringDrag: false },
+    );
+    const worldPosition = getWorldPointerPosition();
+    if (worldPosition) {
+      publishCursor(worldPosition);
+    } else {
+      publishCursor(nextPosition);
+    }
+  }
+
+  function handleConnectorHandleDragEnd(
+    endpoint: ConnectorEndpoint,
+    event: Konva.KonvaEventObject<MouseEvent | TouchEvent>,
+  ) {
+    event.cancelBubble = true;
+    const connector = selectedConnector;
+    setIsDraggingConnectorHandle(false);
+    if (!connector) {
+      return;
+    }
+
+    const target = event.target;
+    const nextPosition = { x: target.x(), y: target.y() };
+    updateConnectorEndpoint(
+      connector.id,
+      endpoint,
+      nextPosition,
+      true,
+      true,
+      { detachFromCurrentAnchor: true, snapDuringDrag: true },
+    );
   }
 
   function handleStageClick(
@@ -1695,7 +2975,12 @@ export function Board() {
 
     stage.batchDraw();
     setZoomPercent(Math.round(newScale * 100));
+    scheduleViewportSave();
     setBoardRevision((value) => value + 1);
+  }
+
+  function handleStageDragEnd() {
+    scheduleViewportSave();
   }
 
   const handleSaveTitle = async () => {
@@ -1795,8 +3080,12 @@ export function Board() {
         : 'is-disconnected';
 
   const detailsMessage =
-    canvasNotice || titleError || 'Use V/S/R shortcuts for Select, Sticky, and Rect.';
+    canvasNotice ||
+    titleError ||
+    'Select a tool from the left rail to start adding objects.';
   const gridCellSize = Math.max(8, Math.min(72, 24 * (zoomPercent / 100)));
+  const connectorFromHandle = getSelectedConnectorHandle('from');
+  const connectorToHandle = getSelectedConnectorHandle('to');
 
   return (
     <main className="figma-board-root">
@@ -1914,10 +3203,39 @@ export function Board() {
           >
             ○
           </button>
-          <button className="rail-btn" disabled aria-label="Text tool">
+          <button
+            className={`rail-btn ${activeTool === 'circle' ? 'active' : ''}`}
+            aria-label="Circle tool"
+            onClick={() => setActiveTool('circle')}
+          >
+            ◯
+          </button>
+          <button
+            className={`rail-btn ${activeTool === 'line' ? 'active' : ''}`}
+            aria-label="Line tool"
+            onClick={() => setActiveTool('line')}
+          >
+            ／
+          </button>
+          <button
+            className={`rail-btn ${activeTool === 'text' ? 'active' : ''}`}
+            aria-label="Text tool"
+            onClick={() => setActiveTool('text')}
+          >
             T
           </button>
-          <button className="rail-btn" disabled aria-label="Connector tool">
+          <button
+            className={`rail-btn ${activeTool === 'frame' ? 'active' : ''}`}
+            aria-label="Frame tool"
+            onClick={() => setActiveTool('frame')}
+          >
+            ⌗
+          </button>
+          <button
+            className={`rail-btn ${activeTool === 'connector' ? 'active' : ''}`}
+            aria-label="Connector tool"
+            onClick={() => setActiveTool('connector')}
+          >
             ↔
           </button>
         </aside>
@@ -1937,7 +3255,14 @@ export function Board() {
               width={canvasSize.width}
               height={canvasSize.height}
               className="cursor-stage"
-              draggable={activeTool === 'select' && !editingText && !isDrawingRect && !isSelecting}
+              draggable={
+                activeTool === 'select' &&
+                !editingText &&
+                !isDrawingRect &&
+                !isDrawingConnector &&
+                !isSelecting &&
+                !isDraggingConnectorHandle
+              }
               onMouseDown={handleStageMouseDown}
               onTouchStart={handleStageMouseDown}
               onMouseMove={handleStageMouseMove}
@@ -1948,6 +3273,7 @@ export function Board() {
               onTouchCancel={handleStageMouseLeave}
               onClick={handleStageClick}
               onTap={handleStageClick}
+              onDragEnd={handleStageDragEnd}
               onWheel={handleStageWheel}
             >
               <Layer listening={false}>
@@ -1965,6 +3291,93 @@ export function Board() {
 
               <Layer ref={selectionLayerRef}>
                 <Transformer ref={transformerRef} rotateEnabled />
+                {connectorShapeAnchors
+                  .filter((anchor) => anchor.endpoint === null)
+                  .map((anchor) => (
+                    <KonvaCircleShape
+                      key={anchor.key}
+                      x={anchor.x}
+                      y={anchor.y}
+                      radius={canStartConnectorFromAnchor ? SHAPE_ANCHOR_RADIUS + 1 : SHAPE_ANCHOR_RADIUS}
+                      fill="#ffffff"
+                      stroke="#93c5fd"
+                      strokeWidth={1.5}
+                      listening={canStartConnectorFromAnchor}
+                      hitStrokeWidth={canStartConnectorFromAnchor ? 16 : 0}
+                      onMouseDown={(event) => {
+                        if (!canStartConnectorFromAnchor) {
+                          return;
+                        }
+                        event.cancelBubble = true;
+                        beginConnectorDraft(
+                          { x: anchor.x, y: anchor.y },
+                          {
+                            objectId: anchor.objectId,
+                            x: anchor.x,
+                            y: anchor.y,
+                            anchorX: anchor.anchorX,
+                            anchorY: anchor.anchorY,
+                          },
+                        );
+                      }}
+                      onTouchStart={(event) => {
+                        if (!canStartConnectorFromAnchor) {
+                          return;
+                        }
+                        event.cancelBubble = true;
+                        beginConnectorDraft(
+                          { x: anchor.x, y: anchor.y },
+                          {
+                            objectId: anchor.objectId,
+                            x: anchor.x,
+                            y: anchor.y,
+                            anchorX: anchor.anchorX,
+                            anchorY: anchor.anchorY,
+                          },
+                        );
+                      }}
+                    />
+                  ))}
+                {selectedConnector && connectorFromHandle ? (
+                  <KonvaCircleShape
+                    x={connectorFromHandle.x}
+                    y={connectorFromHandle.y}
+                    radius={CONNECTOR_HANDLE_RADIUS}
+                    fill={selectedConnector.fromId ? CONNECTOR_HANDLE_STROKE : '#ffffff'}
+                    stroke={CONNECTOR_HANDLE_STROKE}
+                    strokeWidth={2}
+                    draggable={activeTool === 'select'}
+                    onMouseDown={(event) => {
+                      event.cancelBubble = true;
+                    }}
+                    onTouchStart={(event) => {
+                      event.cancelBubble = true;
+                    }}
+                    onDragStart={handleConnectorHandleDragStart}
+                    onDragMove={(event) => handleConnectorHandleDragMove('from', event)}
+                    onDragEnd={(event) => handleConnectorHandleDragEnd('from', event)}
+                  />
+                ) : null}
+                {selectedConnector && connectorToHandle ? (
+                  <KonvaCircleShape
+                    x={connectorToHandle.x}
+                    y={connectorToHandle.y}
+                    radius={CONNECTOR_HANDLE_RADIUS}
+                    fill={selectedConnector.toId ? CONNECTOR_HANDLE_STROKE : '#ffffff'}
+                    stroke={CONNECTOR_HANDLE_STROKE}
+                    strokeWidth={2}
+                    draggable={activeTool === 'select'}
+                    onMouseDown={(event) => {
+                      event.cancelBubble = true;
+                    }}
+                    onTouchStart={(event) => {
+                      event.cancelBubble = true;
+                    }}
+                    onDragStart={handleConnectorHandleDragStart}
+                    onDragMove={(event) => handleConnectorHandleDragMove('to', event)}
+                    onDragEnd={(event) => handleConnectorHandleDragEnd('to', event)}
+                  />
+                ) : null}
                 <KonvaRectShape
                   ref={selectionRectRef}
                   visible={false}
@@ -1989,7 +3402,11 @@ export function Board() {
                   fontSize: textEditorLayout.fontSize,
                 }}
                 value={editingText.value}
-                placeholder={STICKY_PLACEHOLDER_TEXT}
+                placeholder={
+                  objectsRef.current.get(editingText.id)?.type === 'text'
+                    ? 'Text'
+                    : STICKY_PLACEHOLDER_TEXT
+                }
                 autoFocus
                 onChange={(event) => {
                   setEditingText((previous) =>
@@ -2027,73 +3444,126 @@ export function Board() {
         </section>
 
         <aside className="figma-right-panel">
-          <h3>Properties</h3>
-          {selectedIds.length === 0 ? (
-            <>
-              <div className="property-row">
-                <span>Selection</span>
-                <strong>None</strong>
-              </div>
-              <div className="property-row">
-                <span>Zoom</span>
-                <strong>{zoomPercent}%</strong>
-              </div>
-              <div className="property-row">
-                <span>Grid</span>
-                <strong>On</strong>
-              </div>
-            </>
-          ) : selectedIds.length > 1 ? (
-            <>
-              <div className="property-row">
-                <span>Selection</span>
-                <strong>{selectedIds.length} objects</strong>
-              </div>
-              <button className="danger-btn property-delete-btn" onClick={() => removeObjects(selectedIds, true)}>
-                Delete Selected
-              </button>
-            </>
-          ) : selectedObject ? (
-            <>
-              <div className="property-row">
-                <span>Selection</span>
-                <strong>{selectedObject.type === 'sticky' ? 'Sticky Note' : 'Rectangle'}</strong>
-              </div>
-              <div className="property-row">
-                <span>X</span>
-                <strong>{Math.round(selectedObject.x)}</strong>
-              </div>
-              <div className="property-row">
-                <span>Y</span>
-                <strong>{Math.round(selectedObject.y)}</strong>
-              </div>
-              <div className="property-row">
-                <span>W</span>
-                <strong>{Math.round(selectedObject.width)}</strong>
-              </div>
-              <div className="property-row">
-                <span>H</span>
-                <strong>{Math.round(selectedObject.height)}</strong>
-              </div>
-              <div className="property-row">
-                <span>Rotation</span>
-                <strong>{Math.round(selectedObject.rotation)}°</strong>
-              </div>
-              <div className="property-row">
-                <span>Color</span>
-                <strong className="property-color-value">
-                  <span className="property-color-dot" style={{ background: selectedObject.color }} />
-                  {selectedObject.color}
-                </strong>
-              </div>
-              <button
-                className="danger-btn property-delete-btn"
-                onClick={() => removeObjects([selectedObject.id], true)}
-              >
-                Delete
-              </button>
-            </>
-          ) : null}
+          <AICommandCenter
+            state={{
+              prompt: aiCommandCenter.prompt,
+              mode: aiCommandCenter.mode,
+              loading: aiCommandCenter.loading,
+              error: aiCommandCenter.error,
+              message: aiCommandCenter.message,
+              actions: aiCommandCenter.actions,
+              applying: aiExecutor.applying,
+              applyDisabled:
+                aiExecutor.applying ||
+                aiCommandCenter.loading ||
+                aiCommandCenter.actions.length === 0,
+              canUndo: aiExecutor.canUndo,
+              executionError: aiExecutor.error,
+              executionMessage: aiExecutor.message,
+            }}
+            onPromptChange={aiCommandCenter.setPrompt}
+            onModeChange={aiCommandCenter.setMode}
+            onSubmit={() => {
+              void handleSubmitAI();
+            }}
+            onApply={() => {
+              void handleApplyAIPlan();
+            }}
+            onUndo={() => {
+              void handleUndoAI();
+            }}
+            onRetry={() => {
+              void handleRetryAI();
+            }}
+            onClear={aiCommandCenter.clearResult}
+          />
+
+          <section className="properties-panel">
+            <h3>Properties</h3>
+            {selectedIds.length === 0 ? (
+              <>
+                <div className="property-row">
+                  <span>Selection</span>
+                  <strong>None</strong>
+                </div>
+                <div className="property-row">
+                  <span>Zoom</span>
+                  <strong>{zoomPercent}%</strong>
+                </div>
+                <div className="property-row">
+                  <span>Grid</span>
+                  <strong>On</strong>
+                </div>
+              </>
+            ) : selectedIds.length > 1 ? (
+              <>
+                <div className="property-row">
+                  <span>Selection</span>
+                  <strong>{selectedIds.length} objects</strong>
+                </div>
+                <button
+                  className="danger-btn property-delete-btn"
+                  onClick={() => removeObjects(selectedIds, true)}
+                >
+                  Delete Selected
+                </button>
+              </>
+            ) : selectedObject ? (
+              <>
+                <div className="property-row">
+                  <span>Selection</span>
+                  <strong>
+                    {selectedObject.type === 'sticky'
+                      ? 'Sticky Note'
+                      : selectedObject.type === 'rect'
+                        ? 'Rectangle'
+                        : selectedObject.type === 'circle'
+                          ? 'Circle'
+                          : selectedObject.type === 'line'
+                            ? 'Line'
+                            : selectedObject.type === 'text'
+                              ? 'Text'
+                              : selectedObject.type === 'frame'
+                                ? 'Frame'
+                                : 'Connector'}
+                  </strong>
+                </div>
+                <div className="property-row">
+                  <span>X</span>
+                  <strong>{Math.round(selectedObject.x)}</strong>
+                </div>
+                <div className="property-row">
+                  <span>Y</span>
+                  <strong>{Math.round(selectedObject.y)}</strong>
+                </div>
+                <div className="property-row">
+                  <span>W</span>
+                  <strong>{Math.round(selectedObject.width)}</strong>
+                </div>
+                <div className="property-row">
+                  <span>H</span>
+                  <strong>{Math.round(selectedObject.height)}</strong>
+                </div>
+                <div className="property-row">
+                  <span>Rotation</span>
+                  <strong>{Math.round(selectedObject.rotation)}°</strong>
+                </div>
+                <div className="property-row">
+                  <span>Color</span>
+                  <strong className="property-color-value">
+                    <span className="property-color-dot" style={{ background: selectedObject.color }} />
+                    {selectedObject.color}
+                  </strong>
+                </div>
+                <button
+                  className="danger-btn property-delete-btn"
+                  onClick={() => removeObjects([selectedObject.id], true)}
+                >
+                  Delete
+                </button>
+              </>
+            ) : null}
+          </section>
         </aside>
       </section>
     </main>

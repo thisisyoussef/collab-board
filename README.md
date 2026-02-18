@@ -114,3 +114,5 @@ docs/
 - [Pre-Search Decisions](docs/pre-search.md)
 - [Product Requirements](docs/prd.md)
 - [MCP Setup Guide](docs/mcp-setup.md)
+- [Developer Guide](docs/dev-guide.md)
+- [Testing Playbook](docs/testing-playbook.md)

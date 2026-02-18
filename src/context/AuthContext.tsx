@@ -38,6 +38,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       await signInWithPopup(auth, googleProvider);
     } catch (err: unknown) {
       const maybeFirebaseError = err as { code?: string };
+      // Surface common popup issues with actionable copy instead of generic failures.
       if (maybeFirebaseError.code === 'auth/popup-closed-by-user') {
         setError('Sign-in was cancelled.');
         return;

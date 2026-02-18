@@ -18,11 +18,12 @@ Real-time collaborative whiteboard (Miro-like) with AI agent. One-week sprint, h
 - **Deployment:** Vercel (frontend static + serverless functions, $0 cost)
 - **Metrics:** Custom overlay + stats.js (FPS) + timestamp-based latency
 
-## Architecture (no traditional backend)
+## Architecture
 
 ```
-Client-side: React + Konva (canvas), Socket.IO SDK (sync), Firestore SDK (persistence), Firebase Auth
-Serverless:  /api/ai/generate.ts only (protects Anthropic API key)
+Client-side:  React + Konva (canvas), Socket.IO client (sync), Firestore SDK (persistence), Firebase Auth
+Socket server: server/index.js — Socket.IO + Firebase Admin auth, deployed on Render (free tier)
+Serverless:    /api/ai/generate.ts — Vercel function, protects Anthropic API key
 ```
 
 ---
@@ -118,22 +119,26 @@ Use React state ONLY for:
 collab-board/
 ├── src/
 │   ├── components/   # Canvas.tsx, Toolbar.tsx, ShareButton.tsx, MetricsOverlay.tsx
-│   ├── hooks/        # useSocketRealtime.ts, useFirestore.ts, useCanvas.ts
-│   ├── lib/          # socket.ts, firebase.ts, utils.ts
+│   ├── hooks/        # useSocket.ts, useRealtimeBoard.ts, useCursors.ts, usePresence.ts
+│   ├── lib/          # firebase.ts, firestore-client.ts, utils.ts
 │   ├── pages/        # Dashboard.tsx, Board.tsx, Landing.tsx
+│   ├── context/      # AuthContext.tsx, auth-context.ts
 │   └── main.tsx
+├── server/           # Socket.IO server (deployed to Render)
+│   ├── index.js      # Server entry: HTTP + Socket.IO + Firebase Admin auth
+│   └── package.json  # Server-specific deps (socket.io, firebase-admin)
 ├── api/              # Vercel serverless functions
 │   └── ai/
 │       └── generate.ts
 ├── public/
-├── docs/             # PRD, pre-search, AI dev log, cost analysis
+├── docs/             # PRD, user stories, pre-search, AI dev log, cost analysis
 └── vercel.json
 ```
 
 ## Naming Conventions
 
 - **Components:** PascalCase (`Canvas.tsx`, `ShareButton.tsx`)
-- **Hooks:** camelCase with `use` prefix (`useSocketRealtime.ts`, `useRealTimeSync.ts`)
+- **Hooks:** camelCase with `use` prefix (`useSocket.ts`, `useRealtimeBoard.ts`, `useCursors.ts`)
 - **Utilities:** camelCase (`generateBoardId.ts`, `debounce.ts`)
 - **Constants:** UPPER_SNAKE_CASE (`MAX_OBJECTS = 500`, `CURSOR_UPDATE_THROTTLE = 50`)
 
@@ -342,39 +347,44 @@ Socket.IO handles real-time; Firestore handles durability. Never block UI on Fir
 
 ### Data Ownership
 
-| Data                    | Owner                         | Persist?                      |
-| ----------------------- | ----------------------------- | ----------------------------- |
-| Cursor positions        | Socket.IO broadcast                | NO                            |
-| Object live updates     | Socket.IO broadcast                | Debounced to Firestore (3s)   |
-| Board state on load     | Firestore                     | YES (source of truth on join) |
-| Presence (who's online) | Socket.IO Presence API             | NO                            |
-| User metadata           | Firestore (via Firebase Auth) | YES                           |
+| Data                    | Owner                              | Persist?                      |
+| ----------------------- | ---------------------------------- | ----------------------------- |
+| Cursor positions        | Socket.IO volatile broadcast       | NO                            |
+| Object live updates     | Socket.IO reliable broadcast       | Debounced to Firestore (3s)   |
+| Board state on load     | Firestore                          | YES (source of truth on join) |
+| Presence (who's online) | Socket.IO server-side room tracker | NO                            |
+| User metadata           | Firestore (via Firebase Auth)      | YES                           |
 
-### Socket.IO Channels
+### Socket.IO Rooms
 
-- **Board channel** (`board:{boardId}`) — object CRUD events + cursor positions.
-- Socket.IO **Presence** on the same channel — who's online, join/leave.
+- **Board room** (`board:{boardId}`) — client joins on `board:join`, leaves on `board:leave` or disconnect.
+- Server broadcasts object CRUD events + cursor positions to the room (excluding sender).
+- **Presence** is tracked server-side per room — server emits `presence:update`, `user:joined`, `user:left`.
 
 ### Cursor Sync
 
-- Throttle cursor broadcasts to **16ms** (60fps) using `requestAnimationFrame`.
-- Payload: `{ userId, x, y, color, name, sentAt: Date.now() }` in world coordinates.
+- Throttle cursor broadcasts to **50ms** (20fps) via `throttle`, or **16ms** (60fps) via `requestAnimationFrame`.
+- Use `socket.volatile.emit("cursor:move", ...)` — dropped cursor messages are acceptable.
+- Payload: `{ boardId, x, y, _ts: Date.now() }` in world coordinates.
+- Server rebroadcasts to room via `socket.volatile.to(room).emit(...)` (excluding sender).
 - Remote cursors: interpolate/tween position for smoothness.
-- Measure latency: `Date.now() - msg.data.sentAt` must be **<50ms**.
+- Measure latency: `Date.now() - data._ts` must be **<50ms**.
 
 ### Object Sync
 
 - Events: `object:create`, `object:update`, `object:delete`.
 - Payload: full object state (not diffs). Simplicity > bandwidth.
-- Flow: local Konva update (optimistic) → Socket.IO publish → other clients receive → update their Konva stage via refs.
+- Use reliable emit (`socket.emit(...)`) — object events must not be dropped.
+- Server rebroadcasts to room via `socket.to(room).emit(...)` (excluding sender).
+- Flow: local Konva update (optimistic) → `socket.emit()` → server broadcasts to room → other clients receive → update their Konva stage via refs.
 - Debounced Firestore write every 2-5 seconds (not per-event).
 
 ### Persistence Strategy
 
 ```
-User action → Update Konva via ref → Publish to Socket.IO → Debounced write to Firestore
-On join     → Load full board from Firestore doc → Render on Konva → Subscribe to Socket.IO
-On reconnect→ Re-subscribe to Socket.IO → Fetch latest from Firestore → Merge
+User action → Update Konva via ref → socket.emit() to server → Debounced write to Firestore
+On join     → Load full board from Firestore doc → Render on Konva → socket.emit("board:join")
+On reconnect→ Socket.IO auto-reconnects → Re-emit "board:join" → Fetch latest from Firestore → Merge
 ```
 
 ### Conflict Resolution
@@ -394,20 +404,23 @@ function resolveConflict(localObj, remoteObj) {
 
 ### Disconnect/Reconnect
 
-- Socket.IO auto-reconnects with exponential backoff.
+- Socket.IO auto-reconnects with exponential backoff (configured in `useSocket.ts`).
 - Show "Reconnecting..." banner on disconnect.
-- On reconnect: Socket.IO presence auto-restores; fetch full board from Firestore to reconcile.
-- Socket.IO presence cleans up stale users after 15s timeout.
+- On reconnect: re-join the board room, fetch full board from Firestore to reconcile.
+- Server tracks connected users per room; stale users are cleaned up on socket disconnect.
 
 ```javascript
-getSocket.IOClient().connection.on("connected", async () => {
+socket.on("connect", async () => {
+  // Re-join the board room after reconnect
+  socket.emit("board:join", { boardId });
+  // Reconcile state from Firestore
   const boardDoc = await getDoc(doc(db, "boards", boardId));
   if (boardDoc.exists()) {
     renderFullBoard(stageRef, boardDoc.data().objects);
   }
 });
 
-getSocket.IOClient().connection.on("disconnected", () => {
+socket.on("disconnect", () => {
   showReconnectBanner();
 });
 ```
@@ -415,9 +428,7 @@ getSocket.IOClient().connection.on("disconnected", () => {
 ### useRealtimeBoard Hook
 
 ```javascript
-function useRealtimeBoard(boardId, userId, stageRef) {
-  const channelRef = useRef(null);
-
+function useRealtimeBoard(boardId, socketRef, stageRef) {
   const debouncedSave = useRef(
     debounce((objects) => {
       updateDoc(doc(db, "boards", boardId), {
@@ -428,54 +439,54 @@ function useRealtimeBoard(boardId, userId, stageRef) {
   ).current;
 
   useEffect(() => {
-    const channel = getSocket.IOClient().channels.get(`board:${boardId}`);
-    channelRef.current = channel;
+    const socket = socketRef.current;
+    if (!socket) return;
 
-    channel.subscribe("object:create", (msg) => {
-      if (msg.clientId === getSocket.IOClient().auth.clientId) return;
-      addObjectToCanvas(stageRef, msg.data);
+    // Join the board room
+    socket.emit("board:join", { boardId });
+
+    socket.on("object:create", (data) => {
+      addObjectToCanvas(stageRef, data);
     });
 
-    channel.subscribe("object:update", (msg) => {
-      if (msg.clientId === getSocket.IOClient().auth.clientId) return;
-      const shape = stageRef.current.findOne(`#${msg.data.id}`);
+    socket.on("object:update", (data) => {
+      const shape = stageRef.current.findOne(`#${data.id}`);
       if (shape) {
-        shape.setAttrs(msg.data.attrs);
+        shape.setAttrs(data.attrs);
         shape.getLayer().batchDraw();
       }
     });
 
-    channel.subscribe("object:delete", (msg) => {
-      if (msg.clientId === getSocket.IOClient().auth.clientId) return;
-      const shape = stageRef.current.findOne(`#${msg.data.id}`);
+    socket.on("object:delete", (data) => {
+      const shape = stageRef.current.findOne(`#${data.id}`);
       if (shape) {
         shape.destroy();
         shape.getLayer().batchDraw();
       }
     });
 
-    channel.presence.enter({ name: userName, color: userColor });
-
     return () => {
-      channel.presence.leave();
-      channel.unsubscribe();
+      socket.emit("board:leave", { boardId });
+      socket.off("object:create");
+      socket.off("object:update");
+      socket.off("object:delete");
     };
-  }, [boardId]);
+  }, [boardId, socketRef]);
 
   const publishObjectUpdate = useCallback((id, attrs) => {
-    channelRef.current?.publish("object:update", { id, attrs, _ts: Date.now() });
+    socketRef.current?.emit("object:update", { boardId, id, attrs, _ts: Date.now() });
     debouncedSave(getAllObjectsFromCanvas(stageRef));
-  }, []);
+  }, [boardId]);
 
   const publishObjectCreate = useCallback((object) => {
-    channelRef.current?.publish("object:create", object);
+    socketRef.current?.emit("object:create", { boardId, ...object });
     debouncedSave(getAllObjectsFromCanvas(stageRef));
-  }, []);
+  }, [boardId]);
 
   const publishObjectDelete = useCallback((id) => {
-    channelRef.current?.publish("object:delete", { id });
+    socketRef.current?.emit("object:delete", { boardId, id });
     debouncedSave(getAllObjectsFromCanvas(stageRef));
-  }, []);
+  }, [boardId]);
 
   return { publishObjectUpdate, publishObjectCreate, publishObjectDelete };
 }
@@ -484,13 +495,14 @@ function useRealtimeBoard(boardId, userId, stageRef) {
 ### useCursors Hook
 
 ```javascript
-function useCursors(boardId) {
-  const channelRef = useRef(null);
+function useCursors(boardId, socketRef) {
   const [remoteCursors, setRemoteCursors] = useState(new Map());
 
   const throttledPublish = useRef(
     throttle((position) => {
-      channelRef.current?.publish("cursor:move", {
+      // Use volatile emit — dropped cursor messages are OK (next one arrives in ~16ms)
+      socketRef.current?.volatile.emit("cursor:move", {
+        boardId,
         x: position.x,
         y: position.y,
         _ts: Date.now(),
@@ -499,28 +511,30 @@ function useCursors(boardId) {
   ).current;
 
   useEffect(() => {
-    const channel = getSocket.IOClient().channels.get(`board:${boardId}`);
-    channelRef.current = channel;
+    const socket = socketRef.current;
+    if (!socket) return;
 
-    channel.subscribe("cursor:move", (msg) => {
-      if (msg.clientId === getSocket.IOClient().auth.clientId) return;
+    socket.on("cursor:move", (data) => {
       setRemoteCursors((prev) => {
         const next = new Map(prev);
-        next.set(msg.clientId, { x: msg.data.x, y: msg.data.y, _ts: msg.data._ts });
+        next.set(data.userId, { x: data.x, y: data.y, _ts: data._ts });
         return next;
       });
     });
 
-    channel.presence.subscribe("leave", (member) => {
+    socket.on("user:left", (data) => {
       setRemoteCursors((prev) => {
         const next = new Map(prev);
-        next.delete(member.clientId);
+        next.delete(data.userId);
         return next;
       });
     });
 
-    return () => channel.unsubscribe();
-  }, [boardId]);
+    return () => {
+      socket.off("cursor:move");
+      socket.off("user:left");
+    };
+  }, [boardId, socketRef]);
 
   return { remoteCursors, publishCursor: throttledPublish };
 }
@@ -529,24 +543,32 @@ function useCursors(boardId) {
 ### usePresence Hook
 
 ```javascript
-function usePresence(boardId) {
+function usePresence(boardId, socketRef) {
   const [members, setMembers] = useState([]);
 
   useEffect(() => {
-    const channel = getSocket.IOClient().channels.get(`board:${boardId}`);
+    const socket = socketRef.current;
+    if (!socket) return;
 
-    const updateMembers = async () => {
-      const present = await channel.presence.get();
-      setMembers(present.map((m) => ({ clientId: m.clientId, ...m.data })));
+    // Server sends full presence list on join and on changes
+    socket.on("presence:update", (data) => {
+      setMembers(data.members); // [{ userId, displayName, photoURL, color }]
+    });
+
+    socket.on("user:joined", (data) => {
+      setMembers((prev) => [...prev.filter((m) => m.userId !== data.userId), data]);
+    });
+
+    socket.on("user:left", (data) => {
+      setMembers((prev) => prev.filter((m) => m.userId !== data.userId));
+    });
+
+    return () => {
+      socket.off("presence:update");
+      socket.off("user:joined");
+      socket.off("user:left");
     };
-
-    channel.presence.subscribe("enter", updateMembers);
-    channel.presence.subscribe("leave", updateMembers);
-    channel.presence.subscribe("update", updateMembers);
-    updateMembers();
-
-    return () => channel.presence.unsubscribe();
-  }, [boardId]);
+  }, [boardId, socketRef]);
 
   return members;
 }
@@ -559,11 +581,14 @@ function usePresence(boardId) {
 | 6,000 Firestore writes/min | ~20 writes/min       |
 | Hits free tier limits fast | Stays in free tier   |
 
-### Socket.IO Free Tier Budget
+### Socket.IO Server (Self-Hosted on Render)
 
-- 6M messages/month
-- 5 concurrent connections (sufficient for showcase testing)
-- 200 peak connections/sec
+- No message limits — self-hosted, not a managed service.
+- Free Render tier: 750 hours/month, 15-min idle spin-down, cold start ~30s.
+- Server located at `server/index.js`, deployed as a Render Web Service.
+- Auth: Firebase Admin SDK verifies ID tokens in Socket.IO middleware.
+- Rooms: clients join `board:{boardId}` room; server broadcasts within room.
+- Volatile emit for cursors (`socket.volatile.to(room)`), reliable emit for objects.
 
 ### Anti-Patterns
 
@@ -693,9 +718,9 @@ Never expose `ANTHROPIC_API_KEY` to the client. AI calls route through `/api/ai/
 ### Cost Targets
 
 - Total project cost: $0-5
-- Socket.IO: free tier (6M messages/month)
-- Firebase: free tier
-- Vercel: free tier (100GB bandwidth)
+- Socket.IO on Render: free tier (750 hrs/month, spins down after 15min idle)
+- Firebase: free tier (Firestore, Auth)
+- Vercel: free tier (100GB bandwidth, serverless functions)
 - Anthropic Claude: ~$5 for dev + demos
 
 ---
@@ -726,28 +751,27 @@ For a 1-week sprint, **performance benchmarks that prove requirements** are more
 ### Latency Validation (run early — hours 1-4)
 
 ```javascript
-async function validateSocketLatency(channel) {
+async function validateSocketLatency(socket) {
   const results = { cursor: [], object: [] };
 
   for (let i = 0; i < 100; i++) {
     await new Promise((resolve) => {
       const start = Date.now();
-      const testId = `test-${i}`;
+      const testId = `echo-${i}`;
 
-      channel.subscribe(testId, () => {
+      socket.once(testId, () => {
         results.cursor.push(Date.now() - start);
-        channel.unsubscribe(testId);
         resolve();
       });
 
-      channel.publish(testId, { sentAt: start });
+      socket.emit("echo", { testId, sentAt: start });
     });
   }
 
   const avg = (arr) => arr.reduce((a, b) => a + b, 0) / arr.length;
   const max = (arr) => Math.max(...arr);
 
-  console.log(`Cursor latency — avg: ${avg(results.cursor).toFixed(1)}ms, max: ${max(results.cursor)}ms`);
+  console.log(`Round-trip latency — avg: ${avg(results.cursor).toFixed(1)}ms, max: ${max(results.cursor)}ms`);
   console.assert(avg(results.cursor) < 50, "FAIL: Cursor latency exceeds 50ms target");
   return results;
 }
@@ -756,14 +780,13 @@ async function validateSocketLatency(channel) {
 ### Latency Measurement
 
 ```javascript
-const measureLatency = (channel, eventName, data) => {
-  const sent = Date.now();
-  channel.publish(eventName, { _ts: sent, ...data });
-};
+// Embed _ts in every emitted event for latency tracking
+socket.emit("cursor:move", { boardId, x, y, _ts: Date.now() });
 
-channel.subscribe(eventName, (msg) => {
-  const latency = Date.now() - msg.data._ts;
-  if (latency > 100) console.warn(`[PERF] High latency: ${eventName} ${latency}ms`);
+// On the receiving end, compute latency from the timestamp
+socket.on("cursor:move", (data) => {
+  const latency = Date.now() - data._ts;
+  if (latency > 50) console.warn(`[PERF] High cursor latency: ${latency}ms`);
 });
 ```
 

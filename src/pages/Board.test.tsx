@@ -43,6 +43,9 @@ vi.mock('konva', () => ({
     Layer: class {},
     Group: class {},
     Rect: class {},
+    Circle: class {},
+    Arrow: class {},
+    Line: class {},
     Transformer: class {},
     Text: class {},
   },
@@ -54,7 +57,9 @@ vi.mock('react-konva', () => ({
   Transformer: () => <div data-testid="konva-transformer" />,
   Group: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Line: () => <div />,
+  Arrow: () => <div />,
   Rect: () => <div />,
+  Circle: () => <div />,
   Text: () => <div />,
 }));
 
@@ -80,6 +85,9 @@ vi.mock('../lib/firestore-client', () => ({
 
 const mockNavigate = vi.fn();
 const mockClipboardWriteText = vi.fn().mockResolvedValue(undefined);
+const mockGetIdToken = vi.fn().mockResolvedValue('mock-firebase-id-token');
+const mockFetch = vi.fn();
+
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual('react-router-dom');
   return { ...actual, useNavigate: () => mockNavigate };
@@ -92,6 +100,7 @@ const mockUser = {
   uid: 'user-123',
   displayName: 'Test User',
   email: 'test@example.com',
+  getIdToken: mockGetIdToken,
 } as AuthContextValue['user'];
 
 const baseAuth: AuthContextValue = {
@@ -122,6 +131,15 @@ async function renderBoardReady(boardId = 'board-abc', authOverrides: Partial<Au
 describe('Board', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubGlobal('fetch', mockFetch);
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({
+        message: 'Plan ready.',
+        toolCalls: [],
+      }),
+    } as Response);
     Object.defineProperty(navigator, 'clipboard', {
       value: {
         writeText: mockClipboardWriteText,
@@ -136,6 +154,7 @@ describe('Board', () => {
     // Verify layout elements
     expect(screen.getByText('CollabBoard')).toBeInTheDocument();
     expect(screen.getByText('Properties')).toBeInTheDocument();
+    expect(screen.getByText('AI Command Center')).toBeInTheDocument();
     expect(screen.getByTestId('konva-stage')).toBeInTheDocument();
   });
 
@@ -162,9 +181,12 @@ describe('Board', () => {
     expect(screen.getByText('↖')).toBeInTheDocument();
     expect(screen.getByText('□')).toBeInTheDocument();
     expect(screen.getByText('○')).toBeInTheDocument();
-    // "T" appears in both rail and avatar, verify rail has it
+    expect(screen.getByText('◯')).toBeInTheDocument();
+    expect(screen.getByText('／')).toBeInTheDocument();
+    expect(screen.getByText('T')).toBeInTheDocument();
+    expect(screen.getByText('⌗')).toBeInTheDocument();
     const railButtons = document.querySelectorAll('.rail-btn');
-    expect(railButtons.length).toBe(5);
+    expect(railButtons.length).toBe(8);
     expect(screen.getByText('↔')).toBeInTheDocument();
   });
 
@@ -235,6 +257,52 @@ describe('Board', () => {
         `${window.location.origin}/board/board-share-test`,
       );
     });
-    expect(screen.getByText('Copied')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText('Copied')).toBeInTheDocument();
+    });
+  });
+
+  it('submits an AI prompt and renders returned action preview', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({
+        message: 'Created a starting idea.',
+        toolCalls: [
+          {
+            id: 'tool-1',
+            name: 'createStickyNote',
+            input: {
+              text: 'Kickoff',
+              x: 120,
+              y: 160,
+              color: '#FFEB3B',
+            },
+          },
+        ],
+      }),
+    } as Response);
+
+    await renderBoardReady('board-ai-test');
+
+    fireEvent.change(screen.getByLabelText('AI prompt'), {
+      target: { value: 'Create a kickoff sticky note' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Generate Plan' }));
+
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/ai/generate',
+        expect.objectContaining({
+          method: 'POST',
+        }),
+      );
+    });
+
+    await screen.findByText('Created a starting idea.');
+    expect(screen.getByText('createStickyNote')).toBeInTheDocument();
+    expect(screen.getByText(/Preview mode requires manual Apply./i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Apply changes' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Undo last AI apply' })).toBeDisabled();
   });
 });

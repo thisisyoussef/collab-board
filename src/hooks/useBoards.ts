@@ -72,6 +72,8 @@ async function queryBoardsByField(userId: string, field: 'ownerId' | 'createdBy'
     );
     return { snapshot, error: null as unknown };
   } catch (err) {
+    // We query both fields during migration from createdBy -> ownerId.
+    // If one path fails, the caller can still fall back to the other result.
     return { snapshot: null, error: err };
   }
 }
@@ -153,6 +155,7 @@ export function useBoards(userId: string | undefined) {
       const now = Date.now();
       const cleanedTitle = title.trim() || 'Untitled board';
 
+      // Optimistic insert keeps dashboard creation instant while write commits.
       setBoards((prev) =>
         sortBoards([
           {
@@ -191,16 +194,16 @@ export function useBoards(userId: string | undefined) {
       throw new Error('Board name cannot be empty');
     }
 
-    let previousTitle: string | null = null;
+    const previousBoard = boards.find((board) => board.id === boardId) || null;
     const optimisticUpdatedAt = Date.now();
 
     setBoards((prev) =>
       sortBoards(
-        prev.map((board) => {
-          if (board.id !== boardId) return board;
-          previousTitle = board.title;
-          return { ...board, title: cleaned, updatedAtMs: optimisticUpdatedAt };
-        }),
+        prev.map((board) =>
+          board.id === boardId
+            ? { ...board, title: cleaned, updatedAtMs: optimisticUpdatedAt }
+            : board,
+        ),
       ),
     );
 
@@ -213,11 +216,17 @@ export function useBoards(userId: string | undefined) {
         }),
       );
     } catch (err) {
-      if (previousTitle !== null) {
+      if (previousBoard) {
         setBoards((prev) =>
           sortBoards(
             prev.map((board) =>
-              board.id === boardId ? { ...board, title: previousTitle as string } : board,
+              board.id === boardId
+                ? {
+                    ...board,
+                    title: previousBoard.title,
+                    updatedAtMs: previousBoard.updatedAtMs,
+                  }
+                : board,
             ),
           ),
         );
@@ -225,29 +234,23 @@ export function useBoards(userId: string | undefined) {
 
       throw new Error(toFirestoreUserMessage('Failed to rename board.', err));
     }
-  }, []);
+  }, [boards]);
 
   const removeBoard = useCallback(async (boardId: string) => {
-    let removed: BoardSummary | null = null;
+    const removedBoard = boards.find((board) => board.id === boardId) || null;
 
-    setBoards((prev) => {
-      const next = prev.filter((board) => {
-        if (board.id !== boardId) return true;
-        removed = board;
-        return false;
-      });
-      return next;
-    });
+    // Optimistic delete keeps UI responsive; failed deletes restore the record.
+    setBoards((prev) => prev.filter((board) => board.id !== boardId));
 
     try {
       await withFirestoreTimeout('Deleting board', deleteDoc(doc(db, 'boards', boardId)));
     } catch (err) {
-      if (removed) {
-        setBoards((prev) => sortBoards([removed as BoardSummary, ...prev]));
+      if (removedBoard) {
+        setBoards((prev) => sortBoards([removedBoard, ...prev]));
       }
       throw new Error(toFirestoreUserMessage('Failed to delete board.', err));
     }
-  }, []);
+  }, [boards]);
 
   return useMemo(
     () => ({

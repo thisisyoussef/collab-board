@@ -10,10 +10,12 @@ export function App() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
+          {/* Public marketing/login entrypoint */}
           <Route path="/" element={<Landing />} />
           <Route
             path="/dashboard"
             element={
+              // Dashboard is owner workspace and always requires auth.
               <ProtectedRoute>
                 <Dashboard />
               </ProtectedRoute>
@@ -21,6 +23,7 @@ export function App() {
           />
           <Route
             path="/board/:id"
+            // Board route stays shareable so guests can join collaboration links.
             element={<Board />}
           />
           <Route path="*" element={<Navigate to="/" replace />} />

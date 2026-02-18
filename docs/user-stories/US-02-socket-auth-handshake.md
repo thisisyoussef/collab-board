@@ -350,9 +350,9 @@ The existing `presence-pill` in `Board.tsx` currently shows static "Live" text. 
 ## Checkpoint Result
 
 - Production Frontend URL: https://collab-board-iota.vercel.app
-- Production Socket URL: Pending (set after Render service is live)
+- Production Socket URL: https://collab-board-0948.onrender.com
 - User Validation: Pending
 - Notes:
   Frontend US-02 connection state UI is deployed.
   Server code is implemented under `server/` and locally validated (`/health` and auth failure path).
-  Remaining gate is provisioning a live Render Web Service and wiring `VITE_SOCKET_SERVER_URL`.
+  Render service URL is live; remaining gate is ensuring Render Firebase Admin env vars are correctly set for token verification.
