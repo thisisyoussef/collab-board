@@ -2,7 +2,7 @@
 
 ## Status
 
-- State: In Progress (Implemented, Awaiting User Validation)
+- State: In Progress (Deployed, Awaiting User Validation)
 - Owner: Codex
 - Depends on: US-04 Approved
 
@@ -382,4 +382,5 @@ function updateObject(id: string, attrs: Partial<BoardObject>) {
   Implemented local board object model (`sticky` + `rect`) using Konva refs (`objectsRef`) and imperative node updates, with debounced Firestore persistence (`3s`) and load-on-mount hydration from board documents.  
   Added full interaction flow: tool rail actions, create/move/resize/rotate, inline sticky text editing, delete via keyboard/properties, shift+click + marquee selection, and pan/zoom with world-coordinate cursor publishing compatibility.  
   Updated metrics overlay to include object count and expanded board/page test support for Konva mocks and updated UI structure.  
-  Local validation on February 18, 2026: `npm run lint`, `npm run test -- --run`, and `npm run build` passing.
+  Local validation on February 18, 2026: `npm run lint`, `npm run test -- --run`, and `npm run build` passing.  
+  Vercel production deployment completed on February 18, 2026, and verified on `https://collab-board-iota.vercel.app` (bundle hash includes `index-ljYJuHw0.css` and updated object metric text).
