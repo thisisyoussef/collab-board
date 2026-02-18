@@ -2,7 +2,7 @@
 
 ## Status
 
-- State: Awaiting User Validation
+- State: Approved
 - Owner: Codex
 - Depends on: US-00 Approved
 
@@ -69,7 +69,7 @@ Collection: `boards`
 3. Authentication → Settings → Authorized domains include:
    - `localhost`
    - `collab-board-iota.vercel.app` (your Vercel production domain)
-4. Firestore rules deployed (via `firebase deploy --only firestore:rules` or Firebase Console):
+4. Firestore rules deployed (via `firebase deploy --only firestore:rules` or Firebase Console).
 
 ### Client Environment Variables (Vercel + local `.env`)
 
@@ -87,7 +87,7 @@ All `VITE_` prefixed vars are exposed to the browser — this is intentional for
 
 ### Firestore Security Rules
 
-4. Firestore rules allow authenticated CRUD on `boards`:
+5. Firestore rules allow authenticated CRUD on `boards`:
 
 ```rules
 rules_version = '2';
@@ -193,20 +193,20 @@ The dashboard (`Dashboard.tsx`) uses a 2-column layout:
 
 ## Acceptance Criteria
 
-- [ ] User can sign in with Google on `/`.
-- [ ] After sign-in, user lands on `/dashboard`.
-- [ ] Dashboard lists only user-owned boards.
-- [ ] User can create a board from dashboard and is immediately navigated to that new board.
-- [ ] User can rename a board from dashboard and persist the change.
-- [ ] User can rename a board while the board page is open.
-- [ ] User can delete a board with confirmation.
-- [ ] User can open a board (`/board/:id`) from dashboard.
-- [ ] Board ID is not visibly displayed in the board UI.
-- [ ] Board create/rename/delete flows never remain in infinite loading states.
-- [ ] If Firestore transport is blocked, UI shows a clear remediation hint.
-- [ ] Signed-out user cannot access `/dashboard` or `/board/:id`.
-- [ ] Sign out returns user to `/`.
-- [ ] `npm run build` and `npm run lint` pass.
+- [x] User can sign in with Google on `/`.
+- [x] After sign-in, user lands on `/dashboard`.
+- [x] Dashboard lists only user-owned boards.
+- [x] User can create a board from dashboard and is immediately navigated to that new board.
+- [x] User can rename a board from dashboard and persist the change.
+- [x] User can rename a board while the board page is open.
+- [x] User can delete a board with confirmation.
+- [x] User can open a board (`/board/:id`) from dashboard.
+- [x] Board ID is not visibly displayed in the board UI.
+- [x] Board create/rename/delete flows never remain in infinite loading states.
+- [x] If Firestore transport is blocked, UI shows a clear remediation hint.
+- [x] Signed-out user cannot access `/dashboard` or `/board/:id`.
+- [x] Sign out returns user to `/`.
+- [x] `npm run build` and `npm run lint` pass.
 
 ## Checkpoint Test (User)
 
@@ -222,6 +222,8 @@ The dashboard (`Dashboard.tsx`) uses a 2-column layout:
 ## Checkpoint Result
 
 - Production Frontend URL: https://collab-board-iota.vercel.app
-- User Validation: Pending
-- Notes: Expanded US-01 scope to full dashboard-based product flow with board CRUD, responsive rename interactions, in-board title editing, and Firestore timeout/blocker resilience.
+- User Validation: Passed on February 17, 2026
+- Notes:
+  Expanded US-01 scope to full dashboard-based product flow with board CRUD, responsive rename interactions, in-board title editing, and Firestore timeout/blocker resilience.
   Current implementation uses Firestore Lite REST calls for board CRUD to avoid blocked WebChannel transport in extension-heavy browsers.
+  Firestore was enabled in project `collab-board-c15b8`, rules were published, and authorized domain `collab-board-iota.vercel.app` was added.

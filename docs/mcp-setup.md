@@ -8,7 +8,7 @@ This document covers which MCPs to use during AI-first development of CollabBoar
 
 ### 1. Context7 MCP — Library Documentation
 
-**Why:** Fetches up-to-date docs for Ably, react-konva, Firebase, and Anthropic SDK. Prevents AI from hallucinating deprecated APIs.
+**Why:** Fetches up-to-date docs for Socket.IO, react-konva, Firebase, and Anthropic SDK. Prevents AI from hallucinating deprecated APIs.
 
 **Setup in Cursor:**
 
@@ -24,11 +24,11 @@ This document covers which MCPs to use during AI-first development of CollabBoar
 }
 ```
 
-**Usage:** When asking Cursor about Ably channels, Konva transforms, or Firebase Firestore queries, Context7 provides grounded, current API documentation.
+**Usage:** When asking Cursor about Socket.IO rooms/events, Konva transforms, or Firebase Firestore queries, Context7 provides grounded, current API documentation.
 
 **Key libraries to query:**
 
-- `ably` — Realtime channels, presence, connection lifecycle
+- `socket.io` / `socket.io-client` — rooms, events, auth handshake, connection lifecycle
 - `konva` / `react-konva` — Stage, Layer, shapes, Transformer, refs
 - `firebase` — Firestore, Auth, security rules
 - `@anthropic-ai/sdk` — Messages API, tool use / function calling
@@ -124,7 +124,7 @@ Create `.cursor/mcp.json` in the collab-board project root:
 
 | MCP          | Why Skip                                                                    |
 | ------------ | --------------------------------------------------------------------------- |
-| Supabase MCP | Not using Supabase (chose Firebase + Ably)                                  |
+| Supabase MCP | Not using Supabase (chose Firebase + Socket.IO)                             |
 | Vercel MCP   | Auto-deploy via git push; no need for MCP control                           |
 | Firebase MCP | No official Firebase MCP yet; use Firebase Console + Firestore SDK directly |
 | Memory MCP   | 1-week project; Cursor rules + skill provide sufficient context             |

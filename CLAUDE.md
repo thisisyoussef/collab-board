@@ -10,7 +10,7 @@ Real-time collaborative whiteboard (Miro-like) with AI agent. One-week sprint, h
 
 ## Tech Stack
 
-- **Real-time sync:** Ably (managed WebSocket, <50ms cursors, <100ms objects)
+- **Real-time sync:** Socket.IO (self-hosted WebSocket, <50ms cursors, <100ms objects target)
 - **Database:** Firebase Firestore (one document per board, embedded objects)
 - **Auth:** Firebase Auth (Google Sign-In only)
 - **Frontend:** Vite + React + react-konva (canvas rendering)
@@ -21,7 +21,7 @@ Real-time collaborative whiteboard (Miro-like) with AI agent. One-week sprint, h
 ## Architecture (no traditional backend)
 
 ```
-Client-side: React + Konva (canvas), Ably SDK (sync), Firestore SDK (persistence), Firebase Auth
+Client-side: React + Konva (canvas), Socket.IO SDK (sync), Firestore SDK (persistence), Firebase Auth
 Serverless:  /api/ai/generate.ts only (protects Anthropic API key)
 ```
 
@@ -104,7 +104,7 @@ const updateObject = (id, attrs) => {
 Use React state ONLY for:
 
 - UI components (toolbar, panels, dialogs) — these re-render infrequently
-- Remote cursor list (updated via Ably, debounced)
+- Remote cursor list (updated via Socket.IO, debounced)
 - Presence list (who's online)
 - Selection state (which objects are selected — small array)
 - Board metadata (title, settings)
@@ -118,8 +118,8 @@ Use React state ONLY for:
 collab-board/
 ├── src/
 │   ├── components/   # Canvas.tsx, Toolbar.tsx, ShareButton.tsx, MetricsOverlay.tsx
-│   ├── hooks/        # useAbly.ts, useFirestore.ts, useCanvas.ts
-│   ├── lib/          # ably.ts, firebase.ts, utils.ts
+│   ├── hooks/        # useSocketRealtime.ts, useFirestore.ts, useCanvas.ts
+│   ├── lib/          # socket.ts, firebase.ts, utils.ts
 │   ├── pages/        # Dashboard.tsx, Board.tsx, Landing.tsx
 │   └── main.tsx
 ├── api/              # Vercel serverless functions
@@ -133,7 +133,7 @@ collab-board/
 ## Naming Conventions
 
 - **Components:** PascalCase (`Canvas.tsx`, `ShareButton.tsx`)
-- **Hooks:** camelCase with `use` prefix (`useAbly.ts`, `useRealTimeSync.ts`)
+- **Hooks:** camelCase with `use` prefix (`useSocketRealtime.ts`, `useRealTimeSync.ts`)
 - **Utilities:** camelCase (`generateBoardId.ts`, `debounce.ts`)
 - **Constants:** UPPER_SNAKE_CASE (`MAX_OBJECTS = 500`, `CURSOR_UPDATE_THROTTLE = 50`)
 
@@ -150,7 +150,7 @@ collab-board/
 - Keep it flat — no deeply nested folders for a 1-week project.
 - Use Prettier defaults, don't bikeshed formatting.
 - No barrel files — import directly from source.
-- Managed services over custom infrastructure (Ably, Firebase, Vercel).
+- Managed services over custom infrastructure (Socket.IO, Firebase, Vercel).
 
 ---
 
@@ -295,7 +295,7 @@ function getVisibleObjects(objects, stagePos, scale, viewportSize) {
   - `listening={false}` on background layer.
   - Virtual rendering: only render objects within viewport bounds.
   - `batchDraw()` instead of individual redraws.
-  - Debounce Ably messages that trigger React state (cursor list, presence).
+  - Debounce Socket.IO messages that trigger React state (cursor list, presence).
   - `React.memo` on toolbar/panel components.
 
 ### FPS Monitoring
@@ -331,29 +331,29 @@ src/components/
 
 ---
 
-## Real-Time Sync Patterns (Ably + Firestore)
+## Real-Time Sync Patterns (Socket.IO + Firestore)
 
 ### Two-Layer Architecture
 
-- **Ably** = fast broadcast layer (cursors + object events, in-memory, <50ms).
+- **Socket.IO** = fast broadcast layer (cursors + object events, in-memory, <50ms).
 - **Firestore** = persistence layer (board state, debounced writes every 2-5s).
 
-Ably handles real-time; Firestore handles durability. Never block UI on Firestore writes.
+Socket.IO handles real-time; Firestore handles durability. Never block UI on Firestore writes.
 
 ### Data Ownership
 
 | Data                    | Owner                         | Persist?                      |
 | ----------------------- | ----------------------------- | ----------------------------- |
-| Cursor positions        | Ably broadcast                | NO                            |
-| Object live updates     | Ably broadcast                | Debounced to Firestore (3s)   |
+| Cursor positions        | Socket.IO broadcast                | NO                            |
+| Object live updates     | Socket.IO broadcast                | Debounced to Firestore (3s)   |
 | Board state on load     | Firestore                     | YES (source of truth on join) |
-| Presence (who's online) | Ably Presence API             | NO                            |
+| Presence (who's online) | Socket.IO Presence API             | NO                            |
 | User metadata           | Firestore (via Firebase Auth) | YES                           |
 
-### Ably Channels
+### Socket.IO Channels
 
 - **Board channel** (`board:{boardId}`) — object CRUD events + cursor positions.
-- Ably **Presence** on the same channel — who's online, join/leave.
+- Socket.IO **Presence** on the same channel — who's online, join/leave.
 
 ### Cursor Sync
 
@@ -366,15 +366,15 @@ Ably handles real-time; Firestore handles durability. Never block UI on Firestor
 
 - Events: `object:create`, `object:update`, `object:delete`.
 - Payload: full object state (not diffs). Simplicity > bandwidth.
-- Flow: local Konva update (optimistic) → Ably publish → other clients receive → update their Konva stage via refs.
+- Flow: local Konva update (optimistic) → Socket.IO publish → other clients receive → update their Konva stage via refs.
 - Debounced Firestore write every 2-5 seconds (not per-event).
 
 ### Persistence Strategy
 
 ```
-User action → Update Konva via ref → Publish to Ably → Debounced write to Firestore
-On join     → Load full board from Firestore doc → Render on Konva → Subscribe to Ably
-On reconnect→ Re-subscribe to Ably → Fetch latest from Firestore → Merge
+User action → Update Konva via ref → Publish to Socket.IO → Debounced write to Firestore
+On join     → Load full board from Firestore doc → Render on Konva → Subscribe to Socket.IO
+On reconnect→ Re-subscribe to Socket.IO → Fetch latest from Firestore → Merge
 ```
 
 ### Conflict Resolution
@@ -394,20 +394,20 @@ function resolveConflict(localObj, remoteObj) {
 
 ### Disconnect/Reconnect
 
-- Ably auto-reconnects with exponential backoff.
+- Socket.IO auto-reconnects with exponential backoff.
 - Show "Reconnecting..." banner on disconnect.
-- On reconnect: Ably presence auto-restores; fetch full board from Firestore to reconcile.
-- Ably presence cleans up stale users after 15s timeout.
+- On reconnect: Socket.IO presence auto-restores; fetch full board from Firestore to reconcile.
+- Socket.IO presence cleans up stale users after 15s timeout.
 
 ```javascript
-getAblyClient().connection.on("connected", async () => {
+getSocket.IOClient().connection.on("connected", async () => {
   const boardDoc = await getDoc(doc(db, "boards", boardId));
   if (boardDoc.exists()) {
     renderFullBoard(stageRef, boardDoc.data().objects);
   }
 });
 
-getAblyClient().connection.on("disconnected", () => {
+getSocket.IOClient().connection.on("disconnected", () => {
   showReconnectBanner();
 });
 ```
@@ -428,16 +428,16 @@ function useRealtimeBoard(boardId, userId, stageRef) {
   ).current;
 
   useEffect(() => {
-    const channel = getAblyClient().channels.get(`board:${boardId}`);
+    const channel = getSocket.IOClient().channels.get(`board:${boardId}`);
     channelRef.current = channel;
 
     channel.subscribe("object:create", (msg) => {
-      if (msg.clientId === getAblyClient().auth.clientId) return;
+      if (msg.clientId === getSocket.IOClient().auth.clientId) return;
       addObjectToCanvas(stageRef, msg.data);
     });
 
     channel.subscribe("object:update", (msg) => {
-      if (msg.clientId === getAblyClient().auth.clientId) return;
+      if (msg.clientId === getSocket.IOClient().auth.clientId) return;
       const shape = stageRef.current.findOne(`#${msg.data.id}`);
       if (shape) {
         shape.setAttrs(msg.data.attrs);
@@ -446,7 +446,7 @@ function useRealtimeBoard(boardId, userId, stageRef) {
     });
 
     channel.subscribe("object:delete", (msg) => {
-      if (msg.clientId === getAblyClient().auth.clientId) return;
+      if (msg.clientId === getSocket.IOClient().auth.clientId) return;
       const shape = stageRef.current.findOne(`#${msg.data.id}`);
       if (shape) {
         shape.destroy();
@@ -499,11 +499,11 @@ function useCursors(boardId) {
   ).current;
 
   useEffect(() => {
-    const channel = getAblyClient().channels.get(`board:${boardId}`);
+    const channel = getSocket.IOClient().channels.get(`board:${boardId}`);
     channelRef.current = channel;
 
     channel.subscribe("cursor:move", (msg) => {
-      if (msg.clientId === getAblyClient().auth.clientId) return;
+      if (msg.clientId === getSocket.IOClient().auth.clientId) return;
       setRemoteCursors((prev) => {
         const next = new Map(prev);
         next.set(msg.clientId, { x: msg.data.x, y: msg.data.y, _ts: msg.data._ts });
@@ -533,7 +533,7 @@ function usePresence(boardId) {
   const [members, setMembers] = useState([]);
 
   useEffect(() => {
-    const channel = getAblyClient().channels.get(`board:${boardId}`);
+    const channel = getSocket.IOClient().channels.get(`board:${boardId}`);
 
     const updateMembers = async () => {
       const present = await channel.presence.get();
@@ -559,7 +559,7 @@ function usePresence(boardId) {
 | 6,000 Firestore writes/min | ~20 writes/min       |
 | Hits free tier limits fast | Stays in free tier   |
 
-### Ably Free Tier Budget
+### Socket.IO Free Tier Budget
 
 - 6M messages/month
 - 5 concurrent connections (sufficient for showcase testing)
@@ -580,7 +580,7 @@ function usePresence(boardId) {
 
 ```
 User chat input → POST /api/ai/generate → Claude function calling → JSON tool calls
-→ Client parses tool calls → Executes on Konva stage → Broadcasts via Ably
+→ Client parses tool calls → Executes on Konva stage → Broadcasts via Socket.IO
 ```
 
 AI calls go through **Vercel serverless function** (`/api/ai/generate.ts`) to protect the Anthropic API key. Never expose `ANTHROPIC_API_KEY` to the client.
@@ -646,7 +646,7 @@ export default async function handler(req, res) {
 
 ### Shared AI State
 
-- AI-generated objects are regular board objects — they sync via Ably to all users.
+- AI-generated objects are regular board objects — they sync via Socket.IO to all users.
 - Multiple users can issue AI commands simultaneously (independent operations).
 - Tag AI objects with `createdBy: 'ai-agent'` in metadata.
 
@@ -659,8 +659,8 @@ export default async function handler(req, res) {
 | Metric              | Target                                |
 | ------------------- | ------------------------------------- |
 | Frame rate          | 60 FPS during pan, zoom, manipulation |
-| Object sync latency | <100ms (Ably broadcast)               |
-| Cursor sync latency | <50ms (Ably broadcast)                |
+| Object sync latency | <100ms (Socket.IO broadcast)               |
+| Cursor sync latency | <50ms (Socket.IO broadcast)                |
 | Object capacity     | 500+ objects without drops            |
 | Concurrent users    | 5+ without degradation                |
 | AI response latency | <2 seconds for single-step commands   |
@@ -672,7 +672,7 @@ export default async function handler(req, res) {
 VITE_FIREBASE_API_KEY=xxx
 VITE_FIREBASE_AUTH_DOMAIN=xxx.firebaseapp.com
 VITE_FIREBASE_PROJECT_ID=xxx
-VITE_ABLY_API_KEY=xxx
+VITE_SOCKET_SERVER_URL=xxx
 
 # Server-side only (Vercel serverless functions)
 ANTHROPIC_API_KEY=sk-ant-xxx
@@ -693,7 +693,7 @@ Never expose `ANTHROPIC_API_KEY` to the client. AI calls route through `/api/ai/
 ### Cost Targets
 
 - Total project cost: $0-5
-- Ably: free tier (6M messages/month)
+- Socket.IO: free tier (6M messages/month)
 - Firebase: free tier
 - Vercel: free tier (100GB bandwidth)
 - Anthropic Claude: ~$5 for dev + demos
@@ -726,7 +726,7 @@ For a 1-week sprint, **performance benchmarks that prove requirements** are more
 ### Latency Validation (run early — hours 1-4)
 
 ```javascript
-async function validateAblyLatency(channel) {
+async function validateSocketLatency(channel) {
   const results = { cursor: [], object: [] };
 
   for (let i = 0; i < 100; i++) {
@@ -856,7 +856,7 @@ Add targeted tests only for complex pure functions:
 
 ## Build Priority (strict order)
 
-1. **Validate Ably latency** (hours 1-4) — echo test, measure <50ms cursors, <100ms objects
+1. **Validate Socket.IO latency** (hours 1-4) — echo test, measure <50ms cursors, <100ms objects
 2. **Cursor sync** — two cursors moving across browsers
 3. **Object sync** — sticky notes appear for all users
 4. **Canvas pan/zoom** — infinite board, smooth navigation

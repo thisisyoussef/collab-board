@@ -2,7 +2,7 @@
 
 ## Status
 
-- State: Not Started
+- State: In Progress (Awaiting Render URL + User Validation)
 - Owner: Codex
 - Depends on: US-01 Approved
 
@@ -327,17 +327,17 @@ The existing `presence-pill` in `Board.tsx` currently shows static "Live" text. 
 
 ## Acceptance Criteria
 
-- [ ] `server/` directory exists with its own `package.json` and `index.js`.
-- [ ] Server verifies Firebase ID token in Socket.IO middleware.
-- [ ] Invalid/missing token is rejected with "Authentication failed" error.
-- [ ] `GET /health` on the server returns 200.
-- [ ] Client connects automatically when the board page mounts.
-- [ ] Presence pill shows connection status: 🟢 Live / 🟡 Connecting... / 🔴 Offline.
-- [ ] Client disconnects cleanly when navigating away from the board.
-- [ ] Client attempts one token refresh on `connect_error` with "Authentication failed".
-- [ ] No visible board ID in the UI — the board is identified by its title only.
+- [x] `server/` directory exists with its own `package.json` and `index.js`.
+- [x] Server verifies Firebase ID token in Socket.IO middleware.
+- [x] Invalid/missing token is rejected with "Authentication failed" error.
+- [x] `GET /health` on the server returns 200.
+- [x] Client connects automatically when the board page mounts.
+- [x] Presence pill shows connection status: 🟢 Live / 🟡 Connecting... / 🔴 Offline.
+- [x] Client disconnects cleanly when navigating away from the board.
+- [x] Client attempts one token refresh on `connect_error` with "Authentication failed".
+- [x] No visible board ID in the UI — the board is identified by its title only.
 - [ ] Server deployed to Render, frontend deployed to Vercel.
-- [ ] `npm run build` and `npm run lint` pass (frontend).
+- [x] `npm run build` and `npm run lint` pass (frontend).
 
 ## Checkpoint Test (User)
 
@@ -349,7 +349,10 @@ The existing `presence-pill` in `Board.tsx` currently shows static "Live" text. 
 
 ## Checkpoint Result
 
-- Production Frontend URL:
-- Production Socket URL:
+- Production Frontend URL: https://collab-board-iota.vercel.app
+- Production Socket URL: Pending (set after Render service is live)
 - User Validation: Pending
 - Notes:
+  Frontend US-02 connection state UI is deployed.
+  Server code is implemented under `server/` and locally validated (`/health` and auth failure path).
+  Remaining gate is provisioning a live Render Web Service and wiring `VITE_SOCKET_SERVER_URL`.
