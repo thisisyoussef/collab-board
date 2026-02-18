@@ -1,20 +1,35 @@
 import { doc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore/lite';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type Konva from 'konva';
+import { Layer, Stage } from 'react-konva';
 import { useNavigate, useParams } from 'react-router-dom';
+import { MetricsOverlay } from '../components/MetricsOverlay';
 import { PresenceAvatars } from '../components/PresenceAvatars';
+import { RemoteCursors } from '../components/RemoteCursors';
 import { useAuth } from '../hooks/useAuth';
+import { useCursors } from '../hooks/useCursors';
 import { usePresence } from '../hooks/usePresence';
 import { useSocket } from '../hooks/useSocket';
 import { toFirestoreUserMessage, withFirestoreTimeout } from '../lib/firestore-client';
 import { db } from '../lib/firebase';
+import { screenToWorld } from '../lib/utils';
 
 export function Board() {
   const { id: boardId } = useParams<{ id: string }>();
   const { user, signOut } = useAuth();
   const { socketRef, status: socketStatus } = useSocket(boardId);
   const { members } = usePresence({ boardId, user, socketRef, socketStatus });
+  const { remoteCursors, averageLatencyMs, publishCursor } = useCursors({
+    boardId,
+    user,
+    socketRef,
+    socketStatus,
+  });
   const navigate = useNavigate();
   const displayName = user?.displayName || user?.email || 'Unknown';
+  const canvasContainerRef = useRef<HTMLDivElement | null>(null);
+  const stageRef = useRef<Konva.Stage | null>(null);
+  const [canvasSize, setCanvasSize] = useState({ width: 960, height: 560 });
   const [boardTitle, setBoardTitle] = useState('Untitled board');
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('Untitled board');
@@ -54,6 +69,59 @@ export function Board() {
       cancelled = true;
     };
   }, [boardId]);
+
+  useEffect(() => {
+    const measure = () => {
+      const container = canvasContainerRef.current;
+      if (!container) {
+        return;
+      }
+
+      const next = {
+        width: Math.max(container.clientWidth, 320),
+        height: Math.max(container.clientHeight, 220),
+      };
+
+      setCanvasSize((previous) =>
+        previous.width === next.width && previous.height === next.height ? previous : next,
+      );
+    };
+
+    const frameId = window.requestAnimationFrame(measure);
+
+    let observer: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(() => {
+        measure();
+      });
+
+      if (canvasContainerRef.current) {
+        observer.observe(canvasContainerRef.current);
+      }
+    }
+
+    window.addEventListener('resize', measure);
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      observer?.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, []);
+
+  const handleStagePointerMove = useCallback(() => {
+    const stage = stageRef.current;
+    if (!stage) {
+      return;
+    }
+
+    const pointer = stage.getPointerPosition();
+    if (!pointer) {
+      return;
+    }
+
+    const worldPosition = screenToWorld(stage, pointer);
+    publishCursor(worldPosition);
+  }, [publishCursor]);
 
   const handleSaveTitle = async () => {
     if (!boardId) return;
@@ -205,12 +273,24 @@ export function Board() {
             <span>User: {displayName}</span>
             <span>{titleError || 'Board name editable from top-left title area'}</span>
           </div>
-          <div className="canvas-grid">
-            <div className="canvas-empty-message">
-              <h2>Board Shell Ready</h2>
-              <p>Figma-like interface scaffold is in place. Realtime layers and canvas tools come next.</p>
+          <div className="canvas-grid cursor-canvas-grid" ref={canvasContainerRef}>
+            <Stage
+              ref={stageRef}
+              width={canvasSize.width}
+              height={canvasSize.height}
+              className="cursor-stage"
+              onMouseMove={handleStagePointerMove}
+              onTouchMove={handleStagePointerMove}
+            >
+              <Layer listening={false} />
+              <RemoteCursors cursors={remoteCursors} />
+            </Stage>
+            <div className="canvas-empty-message is-overlay">
+              <h2>Cursor Sync Live</h2>
+              <p>Move your mouse on the canvas to broadcast your cursor to collaborators in real time.</p>
             </div>
           </div>
+          <MetricsOverlay averageCursorLatencyMs={averageLatencyMs} userCount={members.length} />
         </section>
 
         <aside className="figma-right-panel">

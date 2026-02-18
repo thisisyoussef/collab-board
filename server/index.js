@@ -3,6 +3,7 @@ import admin from 'firebase-admin';
 import { Server } from 'socket.io';
 import {
   boardRoom,
+  buildCursorPayload,
   buildPresenceMember,
   generateColor,
   normalizeNonEmptyString,
@@ -133,6 +134,20 @@ io.on('connection', (socket) => {
       socketId: socket.id,
       userId: socket.data.userId,
     });
+  });
+
+  socket.on('cursor:move', (data) => {
+    const boardId = normalizeNonEmptyString(socket.data.boardId);
+    if (!boardId) {
+      return;
+    }
+
+    const payload = buildCursorPayload(data, socket);
+    if (!payload) {
+      return;
+    }
+
+    socket.volatile.to(boardRoom(boardId)).emit('cursor:move', payload);
   });
 
   socket.on('disconnect', (reason) => {

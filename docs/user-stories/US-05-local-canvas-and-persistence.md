@@ -22,6 +22,15 @@
 
 Build the full local canvas CRUD experience (sticky notes, rectangles) with pan/zoom, selection/transform, and debounced Firestore persistence. This story is single-user — cross-user sync comes in US-06.
 
+## Implementation Protocol (Same Rigor as US-04)
+
+1. Implement only US-05 scope. Do not pull in US-06 behavior early.
+2. Validate locally before deployment: `npm run lint`, `npm run test`, `npm run build`.
+3. Deploy frontend and socket backend to production.
+4. Update this story's checkpoint section and `docs/user-stories/phase1-checkpoint-log.md` with commit SHA, URLs, and exact validation notes.
+5. Pause for user checkpoint approval before starting US-06.
+6. If checkpoint fails, fix-forward on US-05 only and re-validate.
+
 ## Pre-Implementation Audit
 
 Before writing any code, review and cross-reference these project docs:

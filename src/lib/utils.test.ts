@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateColor, getInitials } from './utils';
+import { generateColor, getInitials, screenToWorld, worldToScreen } from './utils';
 
 describe('generateColor', () => {
   it('returns deterministic colors for the same user', () => {
@@ -22,5 +22,21 @@ describe('getInitials', () => {
 
   it('returns fallback for empty input', () => {
     expect(getInitials('   ')).toBe('??');
+  });
+});
+
+describe('coordinate transforms', () => {
+  const stage = {
+    x: () => 50,
+    y: () => 40,
+    scaleX: () => 2,
+  };
+
+  it('converts screen to world coordinates', () => {
+    expect(screenToWorld(stage, { x: 250, y: 140 })).toEqual({ x: 100, y: 50 });
+  });
+
+  it('converts world to screen coordinates', () => {
+    expect(worldToScreen(stage, { x: 100, y: 50 })).toEqual({ x: 250, y: 140 });
   });
 });

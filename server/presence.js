@@ -35,3 +35,27 @@ export function buildPresenceMember(socketLike) {
     color,
   };
 }
+
+export function buildCursorPayload(rawPayload, socketLike) {
+  const x = Number(rawPayload?.x);
+  const y = Number(rawPayload?.y);
+
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    return null;
+  }
+
+  const userId = socketLike?.data?.userId || 'unknown';
+  const displayName = socketLike?.data?.displayName || 'Unknown';
+  const color = socketLike?.data?.color || generateColor(userId);
+  const ts = Number(rawPayload?._ts);
+
+  return {
+    socketId: socketLike.id,
+    userId,
+    displayName,
+    color,
+    x,
+    y,
+    _ts: Number.isFinite(ts) ? ts : Date.now(),
+  };
+}

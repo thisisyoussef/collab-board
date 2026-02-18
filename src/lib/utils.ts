@@ -28,3 +28,31 @@ export function getInitials(value: string): string {
 
   return cleaned.slice(0, 2).toUpperCase();
 }
+
+interface StageTransform {
+  x: () => number;
+  y: () => number;
+  scaleX: () => number;
+}
+
+export function screenToWorld(
+  stage: StageTransform,
+  screenPos: { x: number; y: number },
+): { x: number; y: number } {
+  const scale = stage.scaleX() || 1;
+  return {
+    x: (screenPos.x - stage.x()) / scale,
+    y: (screenPos.y - stage.y()) / scale,
+  };
+}
+
+export function worldToScreen(
+  stage: StageTransform,
+  worldPos: { x: number; y: number },
+): { x: number; y: number } {
+  const scale = stage.scaleX() || 1;
+  return {
+    x: worldPos.x * scale + stage.x(),
+    y: worldPos.y * scale + stage.y(),
+  };
+}

@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { AuthContext, type AuthContextValue } from '../context/auth-context';
@@ -6,9 +7,16 @@ import { AuthContext, type AuthContextValue } from '../context/auth-context';
 // Mock useSocket
 vi.mock('../hooks/useSocket', () => ({
   useSocket: () => ({
-    socket: null,
     socketRef: { current: null },
     status: 'connected' as const,
+  }),
+}));
+
+vi.mock('../hooks/useCursors', () => ({
+  useCursors: () => ({
+    remoteCursors: [],
+    averageLatencyMs: 20,
+    publishCursor: vi.fn(),
   }),
 }));
 
@@ -23,6 +31,15 @@ vi.mock('../hooks/usePresence', () => ({
       },
     ],
   }),
+}));
+
+vi.mock('react-konva', () => ({
+  Stage: ({ children }: { children: ReactNode }) => <div data-testid="konva-stage">{children}</div>,
+  Layer: ({ children }: { children?: ReactNode }) => <div data-testid="konva-layer">{children}</div>,
+  Group: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  Line: () => <div />,
+  Rect: () => <div />,
+  Text: () => <div />,
 }));
 
 // Mock Firestore
@@ -96,13 +113,14 @@ describe('Board', () => {
     // Verify layout elements
     expect(screen.getByText('CollabBoard')).toBeInTheDocument();
     expect(screen.getByText('Properties')).toBeInTheDocument();
+    expect(screen.getByTestId('konva-stage')).toBeInTheDocument();
   });
 
   it('renders the socket status indicator', async () => {
     await renderBoardReady();
 
     // Should show connected status
-    expect(screen.getByText(/Live/)).toBeInTheDocument();
+    expect(screen.getByText('🟢 Live')).toBeInTheDocument();
   });
 
   it('renders the topbar tool buttons', async () => {

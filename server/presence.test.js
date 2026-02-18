@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   boardRoom,
+  buildCursorPayload,
   buildPresenceMember,
   generateColor,
   normalizeNonEmptyString,
@@ -38,5 +39,38 @@ describe('presence helpers', () => {
       displayName: 'Alex Johnson',
       color: 'hsl(10, 65%, 55%)',
     });
+  });
+
+  it('builds cursor payloads from socket data', () => {
+    const payload = buildCursorPayload(
+      { x: 120, y: 240, _ts: 1_700_000_000_000 },
+      {
+        id: 'socket-1',
+        data: {
+          userId: 'user-1',
+          displayName: 'Alex Johnson',
+          color: 'hsl(10, 65%, 55%)',
+        },
+      },
+    );
+
+    expect(payload).toEqual({
+      socketId: 'socket-1',
+      userId: 'user-1',
+      displayName: 'Alex Johnson',
+      color: 'hsl(10, 65%, 55%)',
+      x: 120,
+      y: 240,
+      _ts: 1_700_000_000_000,
+    });
+  });
+
+  it('returns null for invalid cursor coordinates', () => {
+    const payload = buildCursorPayload(
+      { x: 'bad', y: 20, _ts: Date.now() },
+      { id: 'socket-1', data: { userId: 'user-1' } },
+    );
+
+    expect(payload).toBeNull();
   });
 });

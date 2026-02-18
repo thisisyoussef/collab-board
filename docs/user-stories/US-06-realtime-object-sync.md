@@ -22,6 +22,15 @@
 
 Wire up Socket.IO broadcast for object CRUD (create, update, delete) between all users on a board. Implement last-write-wins conflict resolution using `updatedAt` timestamps. Maintain the debounced Firestore persistence from US-05 — now triggered by both local and remote changes.
 
+## Implementation Protocol (Same Rigor as US-04)
+
+1. Implement only US-06 scope on top of approved US-05.
+2. Validate locally before deployment: `npm run lint`, `npm run test`, `npm run build`.
+3. Deploy frontend and socket backend to production.
+4. Update this story's checkpoint section and `docs/user-stories/phase1-checkpoint-log.md` with commit SHA, URLs, latency metrics, and exact validation notes.
+5. Pause for user checkpoint approval before starting US-07.
+6. If checkpoint fails, fix-forward on US-06 only and re-validate.
+
 ## Pre-Implementation Audit
 
 Before writing any code, review and cross-reference these project docs:

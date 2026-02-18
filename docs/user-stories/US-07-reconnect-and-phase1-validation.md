@@ -24,6 +24,15 @@
 
 Implement robust disconnect/reconnect handling with automatic state reconciliation. Then execute the full Phase I validation matrix — 5 scenarios that prove the board meets all performance gates. Document results in the checkpoint log.
 
+## Implementation Protocol (Same Rigor as US-04)
+
+1. Implement only US-07 scope on top of approved US-06.
+2. Validate locally before deployment: `npm run lint`, `npm run test`, `npm run build`.
+3. Deploy frontend and socket backend to production.
+4. Execute full Phase I validation matrix in production and record all pass/fail evidence in this story and `docs/user-stories/phase1-checkpoint-log.md`.
+5. Pause for final Phase I sign-off before any Phase II work.
+6. If any hard gate fails, stop and fix-forward on US-07 only until all gates pass.
+
 ## Pre-Implementation Audit
 
 Before writing any code, review and cross-reference these project docs:

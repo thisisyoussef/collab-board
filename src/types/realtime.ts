@@ -5,6 +5,19 @@ export interface PresenceMember {
   color: string;
 }
 
+export interface CursorData {
+  x: number;
+  y: number;
+  userId: string;
+  displayName: string;
+  color: string;
+  _ts: number;
+}
+
+export interface CursorMovePayload extends CursorData {
+  socketId: string;
+}
+
 export interface JoinBoardPayload {
   boardId: string;
   user: {
@@ -26,11 +39,13 @@ export interface ServerErrorPayload {
 
 export interface ClientToServerEvents {
   'join-board': (payload: JoinBoardPayload) => void;
+  'cursor:move': (payload: CursorData) => void;
 }
 
 export interface ServerToClientEvents {
   'presence:snapshot': (members: PresenceMember[]) => void;
   'user:joined': (member: PresenceMember) => void;
   'user:left': (payload: UserLeftPayload) => void;
+  'cursor:move': (payload: CursorMovePayload) => void;
   'server:error': (payload: ServerErrorPayload) => void;
 }
