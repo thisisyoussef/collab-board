@@ -34,6 +34,58 @@ Before writing any code, review and cross-reference these project docs:
 
 **Be strategic:** This is the most complex story. The canvas MUST use Konva refs for object state, not React state — re-read `CLAUDE.md`'s "Critical Performance Pattern" section. The Transformer modifies `scaleX`/`scaleY`, not `width`/`height` — you MUST reset scale in `onTransformEnd` (see `docs/konva-select-transform.md`). Debounce Firestore writes to 3s. Store objects as a flat map `{ [id]: objectData }` in the Firestore document. Load once on mount with `getDoc`, not `onSnapshot` (real-time sync comes in US-06).
 
+## Setup Prerequisites
+
+### 1. Firestore Rules — Relax for Multiplayer
+
+Before this story, Firestore rules only allow board **owners** to read/update. Since boards will be shared via URL, any authenticated user needs read/update access:
+
+**Update `firestore.rules`:**
+```rules
+match /boards/{boardId} {
+  allow create: if signedIn() && isBoardOwner(request.resource.data);
+  allow read, update: if signedIn();    // ← relaxed for multiplayer
+  allow delete: if signedIn() && isBoardOwner(resource.data);
+}
+```
+
+Deploy rules:
+```bash
+firebase deploy --only firestore:rules
+```
+
+Or update manually in the Firebase Console → Firestore → Rules tab.
+
+### 2. Firestore SDK — Switch from Lite to Full (if needed)
+
+US-01 uses `firebase/firestore/lite` (REST-based) for board CRUD. US-05 continues to use `getDoc` for loading board state on mount — the lite SDK works fine for this.
+
+However, if you later need `onSnapshot` for real-time Firestore listeners (not required for Phase I since Socket.IO handles real-time), you'd switch to `firebase/firestore`. For now, **keep using `firebase/firestore/lite`** — it has a smaller bundle size.
+
+### 3. Dependencies Already Installed
+
+These are already in `package.json` from project setup:
+- `konva` — Canvas rendering engine
+- `react-konva` — React bindings for Konva
+- `firebase` — Firestore SDK (lite)
+
+### 4. Optional: react-konva-utils (for text editing)
+
+For inline text editing on double-click, you may need HTML overlays positioned over Konva shapes. Two approaches:
+
+**Option A:** Install `react-konva-utils` for its `<Html>` component:
+```bash
+npm install react-konva-utils
+```
+
+**Option B:** Manually position a `<textarea>` using the Konva node's absolute position. No extra dependency needed — just CSS positioning relative to the Stage container.
+
+Option B is simpler and avoids an extra dependency.
+
+### 5. Board Document — `objects` Field
+
+Boards created in US-01 already include an empty `objects: {}` field. Verify this in Firestore Console → boards collection → any document. If older documents lack the `objects` field, the load code should handle `undefined` gracefully: `const objects = data.objects || {}`.
+
 ## Screens
 
 ### Screen: Board Page — Canvas with Objects

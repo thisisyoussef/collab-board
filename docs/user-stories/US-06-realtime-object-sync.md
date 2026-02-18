@@ -35,6 +35,16 @@ Before writing any code, review and cross-reference these project docs:
 
 **Be strategic:** The flow is: local Konva update (optimistic) → Socket.IO publish → other clients receive → update their Konva stage via refs. Skip own echoed events by checking `socket.id` against the sender. Use `updatedAt` ISO timestamps on every object for last-write-wins — discard remote updates that are older than local. Debounce Firestore writes to 3s (accumulate all changes, write once). Send full object state, not diffs — simplicity over bandwidth for this scale.
 
+## Setup Prerequisites
+
+**No new infrastructure.** This story wires together the existing pieces:
+
+- **Server:** Add `object:create`, `object:update`, `object:delete` handlers to `server/index.js`. These use `socket.to(room)` (NOT `socket.volatile.to`) — object events must be delivered reliably. Redeploy to Render.
+- **Client:** No new npm dependencies. Uses the existing socket ref (US-02), Konva refs (US-05), and Firestore (US-05).
+- **Firestore:** Uses the same debounced `updateDoc` pattern from US-05. No schema changes — the `objects` map in the board document is already set up.
+- **Firestore write budget:** With 3-second debouncing, active editing produces ~20 writes/min (vs ~6,000 without debouncing). This stays well within the Firestore free tier (50,000 writes/day).
+- **Testing setup:** To test multiplayer sync, open the same board URL in two different browsers (or one regular + one incognito window). Both must be signed in (can be the same or different Google accounts depending on your Firestore rules).
+
 ## Screens
 
 ### Screen: Board Page — Two Users Collaborating

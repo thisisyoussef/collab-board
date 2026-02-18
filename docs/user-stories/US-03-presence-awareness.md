@@ -37,6 +37,15 @@ Before writing any code, review and cross-reference these project docs:
 
 **Be strategic:** Presence is server-side in-memory state, not Firestore. Use `io.in(room).fetchSockets()` to get current members and broadcast a snapshot. The `disconnecting` event (not `disconnect`) is critical — it fires while the socket is still in its rooms, so you can broadcast departure to the right room. Keep the UI simple — avatar circles in the topbar. Don't over-engineer; a `Map<socketId, user>` on the server is sufficient.
 
+## Setup Prerequisites
+
+**No new infrastructure.** This story extends the existing Socket.IO server from US-02 and the existing Board page from US-01.
+
+- **Server:** Extend `server/index.js` with `join-board`, `presence:snapshot`, `user:joined`, `user:left` handlers. Redeploy to Render after changes (`git push` triggers auto-deploy if configured, or manual deploy from Render dashboard).
+- **Client:** No new dependencies. Uses the `socket` ref from `useSocket` (US-02).
+- **Firestore:** Not used for presence. Presence is purely in-memory on the Socket.IO server — ephemeral by design.
+- **Color generation:** The `generateColor(userId)` utility produces deterministic HSL colors from user IDs. This is a pure function — no external setup.
+
 ## Screens
 
 ### Screen: Board Topbar — Presence Avatars

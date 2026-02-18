@@ -34,6 +34,73 @@ Before writing any code, review and cross-reference these project docs:
 
 **Be strategic:** This is the first story that creates the `server/` directory. Plan the folder structure carefully — it needs its own `package.json`, `index.js`, and will be deployed independently to Render. The Socket.IO middleware must verify Firebase ID tokens using either the Admin SDK or lightweight JWT verification (see `docs/firebase-auth.md` for both approaches). The client must pass the token via `socket.auth` and handle `connect_error` for token refresh. Keep the server minimal — no Express routes needed beyond a health check.
 
+## Setup Prerequisites
+
+### 1. Firebase Admin SDK Service Account
+
+The Socket.IO server needs to verify Firebase ID tokens server-side. This requires a Firebase Admin SDK service account:
+
+1. Firebase Console → Project Settings → Service Accounts → **Generate new private key**.
+2. This downloads a JSON file. Extract these three values from it:
+   - `project_id` → `FIREBASE_PROJECT_ID`
+   - `client_email` → `FIREBASE_CLIENT_EMAIL`
+   - `private_key` → `FIREBASE_PRIVATE_KEY` (the full PEM string including `-----BEGIN PRIVATE KEY-----`)
+
+> **Security:** Never commit the service account JSON. These values go into Render's environment variables only.
+
+### 2. Render Web Service
+
+Create a new **Web Service** on [render.com](https://render.com):
+
+1. Connect your GitHub repo.
+2. **Root Directory:** `server` (Render builds from this subfolder).
+3. **Build Command:** `npm install`
+4. **Start Command:** `node index.js`
+5. **Environment:** Node
+6. **Instance Type:** Free (sufficient for development; 15-min idle spin-down is expected).
+
+### 3. Render Environment Variables
+
+Set these in Render's dashboard (Settings → Environment):
+
+```bash
+FIREBASE_PROJECT_ID=your-firebase-project-id
+FIREBASE_CLIENT_EMAIL=firebase-adminsdk-xxx@your-project.iam.gserviceaccount.com
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+SOCKET_CORS_ORIGIN=https://collab-board-iota.vercel.app
+PORT=3001  # Render sets this automatically, but good to have as fallback
+```
+
+> **Note on `FIREBASE_PRIVATE_KEY`:** Render may require you to paste the key with literal `\n` characters (not actual newlines). The server code handles this with `.replace(/\\n/g, '\n')`.
+
+### 4. Client Environment Variable (Vercel + local `.env`)
+
+```bash
+VITE_SOCKET_SERVER_URL=https://your-service-name.onrender.com
+```
+
+Add this to both your local `.env` and Vercel's project environment variables.
+
+### 5. Server Directory Structure
+
+This story creates the `server/` directory from scratch:
+
+```
+server/
+├── package.json    # deps: socket.io, firebase-admin
+└── index.js        # HTTP server + Socket.IO + auth middleware + /health
+```
+
+The server has its own `package.json` independent of the frontend. It is deployed separately to Render.
+
+### 6. Install Client Dependency
+
+The frontend needs the Socket.IO client:
+
+```bash
+npm install socket.io-client
+```
+
 ## Screens
 
 ### Screen: Board Topbar — Connection Status Integrated

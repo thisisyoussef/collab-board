@@ -37,6 +37,36 @@ Before writing any code, review and cross-reference these project docs:
 
 **Be strategic:** On reconnect: (1) re-emit `join-board` to rejoin the room, (2) fetch fresh board state from Firestore with `getDoc`, (3) reconcile with local state (clear and re-render is simplest for Phase I). Show a "Reconnecting..." banner during disconnect. Use Socket.IO's built-in reconnection (exponential backoff). For Phase I validation, test all 5 PRD scenarios: two-user editing, refresh mid-edit, rapid creation, network throttle, 5+ concurrent users. Record latency metrics and FPS in the checkpoint log. This is the gate — if any metric fails, stop and debug before declaring Phase I complete.
 
+## Setup Prerequisites
+
+**No new infrastructure.** This story adds resilience to existing connections and validates the full stack.
+
+- **Server:** No changes needed. Socket.IO's built-in reconnection handles the client side. The server already handles `join-board` re-emission on reconnect.
+- **Client:** No new npm dependencies.
+- **Render free tier behavior:** Be aware that the Render free-tier server spins down after 15 minutes of inactivity. Cold starts take 15-30 seconds. This will trigger the reconnecting banner for all connected clients — this is expected and the reconnect flow should handle it gracefully.
+
+### Validation Testing Setup
+
+The Phase I validation matrix requires:
+
+1. **Multiple browsers:** Open the same board in 2+ browser windows. For distinct users, use one normal Chrome window + one incognito window (each signed in with a different Google account). For same-user multi-tab testing, just open multiple tabs.
+2. **5 concurrent users (Scenario 5):** Open 5 browser windows/tabs. If using the same Google account, each tab creates a separate socket connection (same user, different sockets — acceptable for Phase I).
+3. **Network throttling (Scenario 4):** Chrome DevTools → Network tab → check "Offline" to simulate disconnect. Uncheck to restore.
+4. **Metrics overlay visible:** Ensure `VITE_ENABLE_METRICS=true` in your `.env` (or verify `import.meta.env.DEV` is true in development). The overlay must be visible to record FPS, cursor latency, and object latency.
+5. **500-object stress test:** Run the `stressTest()` function from the browser console. This requires access to the Konva `stage` and `layer` refs — expose them on `window` temporarily during testing, or provide a dev tool button.
+
+### Performance Gate Reminder
+
+These are hard requirements — if any gate fails, stop feature work and debug:
+
+| Metric | Target | Gate |
+|--------|--------|------|
+| Object sync latency | <100ms | HARD |
+| Cursor sync latency | <50ms | HARD |
+| Canvas FPS | >=55 FPS | HARD |
+| Object capacity | 500+ | HARD |
+| Concurrent users | 5+ | HARD |
+
 ## Screens
 
 ### Screen: Board Page — Reconnecting Banner

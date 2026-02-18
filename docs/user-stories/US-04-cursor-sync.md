@@ -33,6 +33,21 @@ Before writing any code, review and cross-reference these project docs:
 
 **Be strategic:** Cursors must use `volatile` emit — dropped cursor messages are fine and this avoids buffering. Throttle client-side broadcasts to ~50ms (not every mousemove). Store remote cursors in React state (it's a small Map, updates are debounced). Render cursors on a dedicated Konva Layer with `listening={false}` so they don't interfere with hit detection. Include `_ts: Date.now()` in every cursor message for latency measurement. Convert pointer positions to world coordinates before broadcasting.
 
+## Setup Prerequisites
+
+**No new infrastructure.** Extends the Socket.IO server (US-02) and the Konva canvas (will be fully built in US-05, but this story adds a cursor layer on top of the existing canvas shell).
+
+- **Server:** Add `cursor:move` handler to `server/index.js`. Uses `socket.volatile.to(room)` — volatile because dropped cursor messages are acceptable. Redeploy to Render.
+- **Client:** No new npm dependencies. Uses `react-konva` (already installed) for cursor rendering.
+- **Metrics overlay:** This story introduces the `MetricsOverlay` component. It is visible when `VITE_ENABLE_METRICS=true` or `import.meta.env.DEV` is true. Set `VITE_ENABLE_METRICS=true` in your local `.env` to see it during development. In production, leave it unset or set to `false` unless you need to demo performance metrics.
+
+```bash
+# Local .env — enable metrics overlay
+VITE_ENABLE_METRICS=true
+```
+
+- **Konva Stage:** This story requires a Konva `Stage` to be mounted inside the canvas shell area (even a minimal one) so `onMouseMove` can capture pointer positions. If implementing before US-05 completes, a minimal Stage with an empty Layer is sufficient.
+
 ## Screens
 
 ### Screen: Board Canvas — Remote Cursors
