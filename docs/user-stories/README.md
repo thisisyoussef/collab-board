@@ -26,6 +26,7 @@ All docs live in `docs/` and should be consulted before each story:
 | `konva-api.md` | Full Konva node API reference |
 | `konva-select-transform.md` | Selection rectangle and transform patterns |
 | `CLAUDE.md` | Critical performance patterns, naming, anti-patterns |
+| `user-stories/post-story-followups.md` | Non-blocking issues discovered in checkpoints that should be fixed after current story delivery |
 
 ## Story Order
 

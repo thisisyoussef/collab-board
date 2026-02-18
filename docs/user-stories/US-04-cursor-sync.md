@@ -218,10 +218,11 @@ function worldToScreen(stage: Konva.Stage, worldPos: { x: number; y: number }) {
 
 - Production Frontend URL: https://collab-board-iota.vercel.app
 - Production Socket URL: https://collab-board-0948.onrender.com
-- User Validation: Pending
+- User Validation: Passed with Follow-Up Notes
 - Notes:
   Implemented `cursor:move` on the Socket.IO server with `socket.volatile.to(room)` broadcasting, plus client-side throttle and latency instrumentation.  
   Added Konva stage wiring in board canvas, dedicated remote cursor layer (`listening={false}`), and a metrics overlay for FPS + cursor latency.  
   Added/updated tests for cursor hook, metrics overlay, board integration, realtime payload helpers, and coordinate utilities.  
   Local validation on February 18, 2026: `npm run lint`, `npm run test`, and `npm run build` all passing.  
-  Vercel production deploy completed and aliased to `https://collab-board-iota.vercel.app` on February 18, 2026.
+  Vercel production deploy completed and aliased to `https://collab-board-iota.vercel.app` on February 18, 2026.  
+  Follow-ups captured in `docs/user-stories/post-story-followups.md`: stale remote cursor when tab loses focus without disconnect, and occasional cursor-latency spikes slightly above 50ms.
