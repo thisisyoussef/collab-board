@@ -110,7 +110,8 @@ export function useSocket(boardId: string | undefined) {
                 guestId: guestIdentity.userId,
                 guestName: guestIdentity.displayName,
               },
-          transports: ['websocket'],
+          // Keep long-polling fallback for cold starts / flaky WS upgrades.
+          transports: ['polling', 'websocket'],
           autoConnect: false,
           reconnection: true,
           reconnectionAttempts: Infinity,

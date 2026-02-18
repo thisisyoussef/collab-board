@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest';
+import { extractRealtimeMeta } from './realtime-meta.js';
 
 // Test the parseAllowedOrigins logic directly (extracted for testability)
 function parseAllowedOrigins(value) {
   return value
     .split(',')
-    .map((item) => item.trim())
+    .map((item) => item.trim().replace(/\/+$/, ''))
     .filter(Boolean);
 }
 
@@ -26,6 +27,11 @@ describe('parseAllowedOrigins', () => {
   it('trims whitespace from origins', () => {
     const result = parseAllowedOrigins('  http://localhost:5173 , https://example.com  ');
     expect(result).toEqual(['http://localhost:5173', 'https://example.com']);
+  });
+
+  it('removes trailing slashes from origins', () => {
+    const result = parseAllowedOrigins('https://example.com/,https://foo.vercel.app///');
+    expect(result).toEqual(['https://example.com', 'https://foo.vercel.app']);
   });
 
   it('filters out empty strings', () => {
@@ -149,5 +155,37 @@ describe('Socket Status Label Logic', () => {
 
   it('returns Offline for unknown status', () => {
     expect(getSocketStatusLabel('unknown')).toBe('🔴 Offline');
+  });
+});
+
+describe('Realtime Metadata Rebroadcast', () => {
+  it('preserves tx metadata from payload when valid', () => {
+    const meta = extractRealtimeMeta(
+      {
+        txId: 'tx-123',
+        source: 'ai',
+        actorUserId: 'user-abc',
+      },
+      'socket-user',
+    );
+
+    expect(meta).toEqual({
+      txId: 'tx-123',
+      source: 'ai',
+      actorUserId: 'user-abc',
+    });
+  });
+
+  it('falls back actorUserId to socket user id and ignores invalid source', () => {
+    const meta = extractRealtimeMeta(
+      {
+        source: 'undo',
+      },
+      'socket-user-2',
+    );
+
+    expect(meta).toEqual({
+      actorUserId: 'socket-user-2',
+    });
   });
 });

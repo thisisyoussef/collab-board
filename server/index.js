@@ -9,6 +9,7 @@ import {
   generateColor,
   normalizeNonEmptyString,
 } from './presence.js';
+import { extractRealtimeMeta } from './realtime-meta.js';
 
 const PORT = Number(process.env.PORT || 3001);
 const SOCKET_CORS_ORIGIN = process.env.SOCKET_CORS_ORIGIN || 'http://localhost:5173';
@@ -16,7 +17,7 @@ const SOCKET_CORS_ORIGIN = process.env.SOCKET_CORS_ORIGIN || 'http://localhost:5
 function parseAllowedOrigins(value) {
   return value
     .split(',')
-    .map((item) => item.trim())
+    .map((item) => item.trim().replace(/\/+$/, ''))
     .filter(Boolean);
 }
 
@@ -61,7 +62,7 @@ const io = new Server(server, {
     origin: allowedOrigins,
     methods: ['GET', 'POST'],
   },
-  transports: ['websocket'],
+  transports: ['polling', 'websocket'],
 });
 
 function applyGuestIdentity(socket) {
@@ -184,9 +185,11 @@ io.on('connection', (socket) => {
     }
 
     const ts = Number(data?._ts);
+    const meta = extractRealtimeMeta(data, socket.data.userId);
     socket.to(boardRoom(boardId)).emit('board:changed', {
       boardId,
       _ts: Number.isFinite(ts) ? ts : Date.now(),
+      ...meta,
     });
   });
 
@@ -207,10 +210,12 @@ io.on('connection', (socket) => {
     }
 
     const ts = Number(data?._ts);
+    const meta = extractRealtimeMeta(data, socket.data.userId);
     socket.to(boardRoom(boardId)).emit('object:create', {
       boardId,
       object,
       _ts: Number.isFinite(ts) ? ts : Date.now(),
+      ...meta,
     });
   });
 
@@ -231,10 +236,12 @@ io.on('connection', (socket) => {
     }
 
     const ts = Number(data?._ts);
+    const meta = extractRealtimeMeta(data, socket.data.userId);
     socket.to(boardRoom(boardId)).emit('object:update', {
       boardId,
       object,
       _ts: Number.isFinite(ts) ? ts : Date.now(),
+      ...meta,
     });
   });
 
@@ -250,10 +257,12 @@ io.on('connection', (socket) => {
     }
 
     const ts = Number(data?._ts);
+    const meta = extractRealtimeMeta(data, socket.data.userId);
     socket.to(boardRoom(boardId)).emit('object:delete', {
       boardId,
       objectId,
       _ts: Number.isFinite(ts) ? ts : Date.now(),
+      ...meta,
     });
   });
 
