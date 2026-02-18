@@ -1,7 +1,9 @@
 import { doc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore/lite';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { PresenceAvatars } from '../components/PresenceAvatars';
 import { useAuth } from '../hooks/useAuth';
+import { usePresence } from '../hooks/usePresence';
 import { useSocket } from '../hooks/useSocket';
 import { toFirestoreUserMessage, withFirestoreTimeout } from '../lib/firestore-client';
 import { db } from '../lib/firebase';
@@ -9,10 +11,10 @@ import { db } from '../lib/firebase';
 export function Board() {
   const { id: boardId } = useParams<{ id: string }>();
   const { user, signOut } = useAuth();
-  const { status: socketStatus } = useSocket(boardId);
+  const { socketRef, status: socketStatus } = useSocket(boardId);
+  const { members } = usePresence({ boardId, user, socketRef, socketStatus });
   const navigate = useNavigate();
   const displayName = user?.displayName || user?.email || 'Unknown';
-  const userInitial = displayName.charAt(0).toUpperCase();
   const [boardTitle, setBoardTitle] = useState('Untitled board');
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('Untitled board');
@@ -88,7 +90,7 @@ export function Board() {
   };
 
   if (!boardId) {
-    return <div className="centered-screen">Missing board ID.</div>;
+    return <div className="centered-screen">Board unavailable.</div>;
   }
 
   const socketStatusLabel =
@@ -176,7 +178,7 @@ export function Board() {
 
         <div className="topbar-cluster right">
           <span className={`presence-pill ${socketStatusClass}`}>{socketStatusLabel}</span>
-          <span className="avatar-badge">{userInitial}</span>
+          <PresenceAvatars members={members} currentUserId={user?.uid ?? null} />
           <button className="secondary-btn" onClick={() => navigate('/dashboard')}>
             Dashboard
           </button>

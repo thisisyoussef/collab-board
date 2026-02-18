@@ -2,7 +2,7 @@
 
 ## Status
 
-- State: Not Started
+- State: In Progress (Implemented, Awaiting Deployment + User Validation)
 - Owner: Codex
 - Depends on: US-02 Approved
 
@@ -220,17 +220,17 @@ Replace the static `avatar-badge` in the topbar right cluster with the dynamic `
 
 ## Acceptance Criteria
 
-- [ ] Client emits `join-board` on board mount with board ID and user info.
-- [ ] Server joins socket to `board:{boardId}` room.
-- [ ] Joining user receives `presence:snapshot` with all currently present users.
-- [ ] Other users receive `user:joined` with the new user's info.
-- [ ] Closing a tab triggers `user:left` for all remaining users within 3 seconds.
-- [ ] Presence avatars render in the topbar right cluster with deterministic colors and initials.
-- [ ] Current user's avatar has a blue ring indicator (`2px solid #2563eb`).
-- [ ] Multiple users shows "N people" count. Single user shows no count.
-- [ ] Avatars animate in (scale-up) and out (fade-out) smoothly.
-- [ ] No visible board ID in the UI anywhere.
-- [ ] `npm run build` and `npm run lint` pass.
+- [x] Client emits `join-board` on board mount with board ID and user info.
+- [x] Server joins socket to `board:{boardId}` room.
+- [x] Joining user receives `presence:snapshot` with all currently present users.
+- [x] Other users receive `user:joined` with the new user's info.
+- [x] Closing a tab triggers `user:left` for all remaining users within 3 seconds.
+- [x] Presence avatars render in the topbar right cluster with deterministic colors and initials.
+- [x] Current user's avatar has a blue ring indicator (`2px solid #2563eb`).
+- [x] Multiple users shows "N people" count. Single user shows no count.
+- [x] Avatars animate in (scale-up) and out (fade-out) smoothly.
+- [x] No visible board ID in the UI anywhere.
+- [x] `npm run build` and `npm run lint` pass.
 
 ## Checkpoint Test (User)
 
@@ -241,7 +241,10 @@ Replace the static `avatar-badge` in the topbar right cluster with the dynamic `
 
 ## Checkpoint Result
 
-- Production Frontend URL:
-- Production Socket URL:
+- Production Frontend URL: https://collab-board-iota.vercel.app
+- Production Socket URL: https://collab-board-0948.onrender.com
 - User Validation: Pending
 - Notes:
+  US-03 presence awareness implemented with Socket.IO room join flow (`join-board`, `presence:snapshot`, `user:joined`, `user:left`) and a new topbar presence UI (deterministic avatar colors, initials, self ring, overflow, and people count).  
+  Added client/server helper and hook tests plus UI tests.  
+  Local validation on February 18, 2026: `npm run lint`, `npm run test`, `npm run build` all passing.

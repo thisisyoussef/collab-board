@@ -67,6 +67,62 @@ button {
   background: linear-gradient(135deg, #0ea5e9, #2563eb);
 }
 
+.presence-cluster {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.presence-stack {
+  display: inline-flex;
+  align-items: center;
+  padding-left: 6px;
+}
+
+.presence-avatar {
+  border: 2px solid #fff;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.16);
+  margin-left: -6px;
+  transform: translateX(0) scale(1);
+  animation: presenceJoin 200ms ease-out;
+  transition: opacity 150ms ease, transform 150ms ease;
+}
+
+.presence-avatar:first-child {
+  margin-left: 0;
+}
+
+.presence-avatar.is-self {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
+
+.presence-avatar.is-leaving {
+  opacity: 0;
+  transform: translateX(4px) scale(0.84);
+}
+
+.presence-overflow {
+  background: #94a3b8 !important;
+}
+
+.presence-count {
+  font-size: 0.78rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+@keyframes presenceJoin {
+  from {
+    opacity: 0;
+    transform: translateX(6px) scale(0);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
 .primary-btn,
 .secondary-btn,
 .chip-btn,

@@ -1,6 +1,12 @@
 import http from 'http';
 import admin from 'firebase-admin';
 import { Server } from 'socket.io';
+import {
+  boardRoom,
+  buildPresenceMember,
+  generateColor,
+  normalizeNonEmptyString,
+} from './presence.js';
 
 const PORT = Number(process.env.PORT || 3001);
 const SOCKET_CORS_ORIGIN = process.env.SOCKET_CORS_ORIGIN || 'http://localhost:5173';
@@ -82,6 +88,52 @@ io.use(async (socket, next) => {
 
 io.on('connection', (socket) => {
   console.log(`[socket] Connected: ${socket.data.displayName} (${socket.id})`);
+  socket.data.color = generateColor(socket.data.userId);
+
+  socket.on('join-board', async (payload) => {
+    const boardId = normalizeNonEmptyString(payload?.boardId);
+    if (!boardId) {
+      socket.emit('server:error', { code: 'INVALID_BOARD_ID', message: 'Invalid board id.' });
+      return;
+    }
+
+    const room = boardRoom(boardId);
+    const previousBoardId = normalizeNonEmptyString(socket.data.boardId);
+
+    if (previousBoardId && previousBoardId !== boardId) {
+      socket.leave(boardRoom(previousBoardId));
+    }
+
+    const requestedName = normalizeNonEmptyString(payload?.user?.displayName);
+    if (requestedName) {
+      socket.data.displayName = requestedName;
+    }
+
+    const requestedColor = normalizeNonEmptyString(payload?.user?.color);
+    if (requestedColor) {
+      socket.data.color = requestedColor;
+    }
+
+    socket.data.boardId = boardId;
+    socket.join(room);
+
+    const sockets = await io.in(room).fetchSockets();
+    const snapshot = sockets.map((entry) => buildPresenceMember(entry));
+    socket.emit('presence:snapshot', snapshot);
+    socket.to(room).emit('user:joined', buildPresenceMember(socket));
+  });
+
+  socket.on('disconnecting', () => {
+    const boardId = normalizeNonEmptyString(socket.data.boardId);
+    if (!boardId) {
+      return;
+    }
+
+    socket.to(boardRoom(boardId)).emit('user:left', {
+      socketId: socket.id,
+      userId: socket.data.userId,
+    });
+  });
 
   socket.on('disconnect', (reason) => {
     console.log(`[socket] Disconnected: ${socket.data.displayName} (${reason})`);

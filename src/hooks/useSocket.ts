@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
+import type { ClientToServerEvents, ServerToClientEvents } from '../types/realtime';
 import { useAuth } from './useAuth';
 
 export type SocketStatus = 'connecting' | 'connected' | 'disconnected';
@@ -8,7 +9,7 @@ const SOCKET_URL = import.meta.env.VITE_SOCKET_SERVER_URL as string | undefined;
 
 export function useSocket(boardId: string | undefined) {
   const { user } = useAuth();
-  const socketRef = useRef<Socket | null>(null);
+  const socketRef = useRef<Socket<ServerToClientEvents, ClientToServerEvents> | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<SocketStatus>('connecting');
   const canConnect = Boolean(user && boardId && SOCKET_URL);
 
@@ -88,7 +89,7 @@ export function useSocket(boardId: string | undefined) {
       }
       socketRef.current = null;
     };
-  }, [canConnect, user]);
+  }, [boardId, canConnect, user]);
 
   return { socketRef, status: canConnect ? connectionStatus : 'disconnected' };
 }

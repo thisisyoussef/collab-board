@@ -1,0 +1,186 @@
+import { fireEvent, render, screen } from '@testing-library/react';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { AuthContext, type AuthContextValue } from '../context/auth-context';
+
+// Mock useSocket
+vi.mock('../hooks/useSocket', () => ({
+  useSocket: () => ({
+    socket: null,
+    socketRef: { current: null },
+    status: 'connected' as const,
+  }),
+}));
+
+vi.mock('../hooks/usePresence', () => ({
+  usePresence: () => ({
+    members: [
+      {
+        socketId: 'socket-1',
+        userId: 'user-123',
+        displayName: 'Test User',
+        color: 'hsl(210, 65%, 55%)',
+      },
+    ],
+  }),
+}));
+
+// Mock Firestore
+vi.mock('firebase/firestore/lite', () => ({
+  doc: vi.fn(),
+  getDoc: vi.fn().mockResolvedValue({
+    exists: () => true,
+    data: () => ({ title: 'Test Board Title' }),
+  }),
+  updateDoc: vi.fn().mockResolvedValue(undefined),
+  serverTimestamp: vi.fn(() => 'mock-timestamp'),
+}));
+
+vi.mock('../lib/firebase', () => ({
+  db: {},
+}));
+
+vi.mock('../lib/firestore-client', () => ({
+  withFirestoreTimeout: (_label: string, promise: Promise<unknown>) => promise,
+  toFirestoreUserMessage: (fallback: string) => fallback,
+}));
+
+const mockNavigate = vi.fn();
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual('react-router-dom');
+  return { ...actual, useNavigate: () => mockNavigate };
+});
+
+// Import after mocking
+const { Board } = await import('./Board');
+
+const mockUser = {
+  uid: 'user-123',
+  displayName: 'Test User',
+  email: 'test@example.com',
+} as AuthContextValue['user'];
+
+const baseAuth: AuthContextValue = {
+  user: mockUser,
+  loading: false,
+  error: null,
+  signInWithGoogle: async () => {},
+  signOut: vi.fn().mockResolvedValue(undefined),
+};
+
+function renderBoard(boardId = 'board-abc', authOverrides: Partial<AuthContextValue> = {}) {
+  render(
+    <AuthContext.Provider value={{ ...baseAuth, ...authOverrides }}>
+      <MemoryRouter initialEntries={[`/board/${boardId}`]}>
+        <Routes>
+          <Route path="/board/:id" element={<Board />} />
+        </Routes>
+      </MemoryRouter>
+    </AuthContext.Provider>,
+  );
+}
+
+async function renderBoardReady(boardId = 'board-abc', authOverrides: Partial<AuthContextValue> = {}) {
+  renderBoard(boardId, authOverrides);
+  await screen.findByText('Test Board Title');
+}
+
+describe('Board', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('renders the Figma-like layout structure', async () => {
+    await renderBoardReady();
+
+    // Verify layout elements
+    expect(screen.getByText('CollabBoard')).toBeInTheDocument();
+    expect(screen.getByText('Properties')).toBeInTheDocument();
+  });
+
+  it('renders the socket status indicator', async () => {
+    await renderBoardReady();
+
+    // Should show connected status
+    expect(screen.getByText(/Live/)).toBeInTheDocument();
+  });
+
+  it('renders the topbar tool buttons', async () => {
+    await renderBoardReady();
+
+    expect(screen.getByText('Move')).toBeInTheDocument();
+    expect(screen.getByText('Frame')).toBeInTheDocument();
+    expect(screen.getByText('Text')).toBeInTheDocument();
+    expect(screen.getByText('Shape')).toBeInTheDocument();
+  });
+
+  it('renders the left rail buttons', async () => {
+    await renderBoardReady();
+
+    // Rail buttons
+    expect(screen.getByText('↖')).toBeInTheDocument();
+    expect(screen.getByText('□')).toBeInTheDocument();
+    expect(screen.getByText('○')).toBeInTheDocument();
+    // "T" appears in both rail and avatar, verify rail has it
+    const railButtons = document.querySelectorAll('.rail-btn');
+    expect(railButtons.length).toBe(5);
+    expect(screen.getByText('↔')).toBeInTheDocument();
+  });
+
+  it('renders the right properties panel', async () => {
+    await renderBoardReady();
+
+    expect(screen.getByText('Properties')).toBeInTheDocument();
+    expect(screen.getByText('Selection')).toBeInTheDocument();
+    expect(screen.getByText('None')).toBeInTheDocument();
+    expect(screen.getByText('Zoom')).toBeInTheDocument();
+    expect(screen.getByText('100%')).toBeInTheDocument();
+  });
+
+  it('shows the presence avatar in the topbar', async () => {
+    await renderBoardReady();
+
+    const avatar = screen.getByLabelText('Test User');
+    expect(avatar).toBeInTheDocument();
+    expect(avatar.textContent).toBe('TU');
+  });
+
+  it('navigates to dashboard when Dashboard button is clicked', async () => {
+    await renderBoardReady();
+
+    fireEvent.click(screen.getByText('Dashboard'));
+    expect(mockNavigate).toHaveBeenCalledWith('/dashboard');
+  });
+
+  it('enters title editing mode when Rename is clicked', async () => {
+    await renderBoardReady();
+
+    fireEvent.click(screen.getByText('Rename'));
+
+    const titleInput = screen.getByDisplayValue('Test Board Title');
+    expect(titleInput).toBeInTheDocument();
+    expect(screen.getByText('Save')).toBeInTheDocument();
+    expect(screen.getByText('Cancel')).toBeInTheDocument();
+  });
+
+  it('cancels title editing when Cancel is clicked', async () => {
+    await renderBoardReady();
+
+    fireEvent.click(screen.getByText('Rename'));
+    fireEvent.click(screen.getByText('Cancel'));
+
+    expect(screen.getByText('Test Board Title')).toBeInTheDocument();
+    expect(screen.queryByDisplayValue('Test Board Title')).not.toBeInTheDocument();
+  });
+
+  it('cancels title editing when Escape is pressed', async () => {
+    await renderBoardReady();
+
+    fireEvent.click(screen.getByText('Rename'));
+    const input = screen.getByDisplayValue('Test Board Title');
+    fireEvent.keyDown(input, { key: 'Escape' });
+
+    expect(screen.getByText('Test Board Title')).toBeInTheDocument();
+    expect(screen.queryByDisplayValue('Test Board Title')).not.toBeInTheDocument();
+  });
+});
