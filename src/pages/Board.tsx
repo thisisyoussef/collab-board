@@ -55,16 +55,17 @@ const STICKY_PLACEHOLDER_TEXT = 'New note';
 const RECT_DEFAULT_COLOR = '#E3F2FD';
 const RECT_DEFAULT_STROKE = '#1565C0';
 const RECT_DEFAULT_STROKE_WIDTH = 2;
-const RECT_MIN_SIZE = 20;
+const RECT_MIN_SIZE = 10;
 const RECT_CLICK_DEFAULT_WIDTH = 180;
 const RECT_CLICK_DEFAULT_HEIGHT = 120;
 const RECT_CLICK_DRAG_THRESHOLD = 8;
-const STICKY_MIN_WIDTH = 80;
-const STICKY_MIN_HEIGHT = 60;
+const STICKY_MIN_WIDTH = 48;
+const STICKY_MIN_HEIGHT = 36;
 const BOARD_SAVE_DEBOUNCE_MS = 300;
 const OBJECT_UPDATE_EMIT_THROTTLE_MS = 45;
 const OBJECT_LATENCY_SAMPLE_WINDOW = 30;
 const OBJECT_LATENCY_UI_UPDATE_MS = 120;
+const SHARE_FEEDBACK_RESET_MS = 2000;
 
 type PendingRemoteObjectEvent =
   | { kind: 'create'; payload: ObjectCreatePayload }
@@ -107,6 +108,32 @@ function getStickyRenderText(value: string | undefined): string {
 
 function getStickyRenderColor(value: string | undefined): string {
   return isPlaceholderStickyText(value) ? '#6b7280' : '#111827';
+}
+
+function fallbackCopyToClipboard(value: string): boolean {
+  if (typeof document === 'undefined') {
+    return false;
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = value;
+  textarea.setAttribute('readonly', 'true');
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  textarea.style.pointerEvents = 'none';
+  document.body.appendChild(textarea);
+  textarea.select();
+  textarea.setSelectionRange(0, value.length);
+
+  let copied = false;
+  try {
+    copied = document.execCommand('copy');
+  } catch {
+    copied = false;
+  }
+
+  textarea.remove();
+  return copied;
 }
 
 function normalizeLoadedObject(raw: unknown, fallbackUserId: string): BoardObject | null {
@@ -242,6 +269,7 @@ export function Board() {
   const pendingRemoteObjectEventsRef = useRef<PendingRemoteObjectEvent[]>([]);
   const objectLatencySamplesRef = useRef<number[]>([]);
   const lastObjectLatencyUiUpdateAtRef = useRef(0);
+  const shareFeedbackTimeoutRef = useRef<number | null>(null);
 
   const [canvasSize, setCanvasSize] = useState({ width: 960, height: 560 });
   const [boardTitle, setBoardTitle] = useState('Untitled board');
@@ -259,6 +287,7 @@ export function Board() {
   const [isDrawingRect, setIsDrawingRect] = useState(false);
   const [isSelecting, setIsSelecting] = useState(false);
   const [averageObjectLatencyMs, setAverageObjectLatencyMs] = useState(0);
+  const [shareState, setShareState] = useState<'idle' | 'copied' | 'error'>('idle');
 
   const selectedObject =
     selectedIds.length === 1 ? objectsRef.current.get(selectedIds[0]) ?? null : null;
@@ -280,8 +309,8 @@ export function Board() {
     return {
       left: point.x,
       top: point.y,
-      width: Math.max(80, object.width * scale),
-      height: Math.max(60, object.height * scale),
+      width: Math.max(STICKY_MIN_WIDTH, object.width * scale),
+      height: Math.max(STICKY_MIN_HEIGHT, object.height * scale),
       fontSize: Math.max(12, (object.fontSize || 14) * scale),
     };
   })();
@@ -293,10 +322,19 @@ export function Board() {
     objectLatencySamplesRef.current = [];
     lastObjectLatencyUiUpdateAtRef.current = 0;
     setAverageObjectLatencyMs(0);
+    if (shareFeedbackTimeoutRef.current) {
+      window.clearTimeout(shareFeedbackTimeoutRef.current);
+      shareFeedbackTimeoutRef.current = null;
+    }
+    setShareState('idle');
   }, [boardId]);
 
   useEffect(
     () => () => {
+      if (shareFeedbackTimeoutRef.current) {
+        window.clearTimeout(shareFeedbackTimeoutRef.current);
+        shareFeedbackTimeoutRef.current = null;
+      }
       clearPersistenceTimer();
       flushBoardSave();
     },
@@ -1696,6 +1734,48 @@ export function Board() {
     }
   };
 
+  const handleShareBoard = async () => {
+    if (!boardId) {
+      return;
+    }
+
+    const shareUrl =
+      typeof window === 'undefined'
+        ? `/board/${boardId}`
+        : new URL(`/board/${boardId}`, window.location.origin).toString();
+
+    let copied = false;
+
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        copied = true;
+      } catch {
+        copied = false;
+      }
+    }
+
+    if (!copied) {
+      copied = fallbackCopyToClipboard(shareUrl);
+    }
+
+    if (copied) {
+      setShareState('copied');
+      setCanvasNotice('Share link copied to clipboard.');
+    } else {
+      setShareState('error');
+      setCanvasNotice('Clipboard access blocked. Copy the URL from your address bar.');
+    }
+
+    if (shareFeedbackTimeoutRef.current) {
+      window.clearTimeout(shareFeedbackTimeoutRef.current);
+    }
+    shareFeedbackTimeoutRef.current = window.setTimeout(() => {
+      setShareState('idle');
+      shareFeedbackTimeoutRef.current = null;
+    }, SHARE_FEEDBACK_RESET_MS);
+  };
+
   if (!boardId) {
     return <div className="centered-screen">Board unavailable.</div>;
   }
@@ -1791,6 +1871,9 @@ export function Board() {
         <div className="topbar-cluster right">
           <span className={`presence-pill ${socketStatusClass}`}>{socketStatusLabel}</span>
           <PresenceAvatars members={members} currentUserId={user?.uid ?? null} />
+          <button className="secondary-btn" onClick={() => void handleShareBoard()}>
+            {shareState === 'copied' ? 'Copied' : shareState === 'error' ? 'Copy failed' : 'Share'}
+          </button>
           {user ? (
             <>
               <button className="secondary-btn" onClick={() => navigate('/dashboard')}>

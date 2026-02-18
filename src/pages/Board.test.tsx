@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
@@ -79,6 +79,7 @@ vi.mock('../lib/firestore-client', () => ({
 }));
 
 const mockNavigate = vi.fn();
+const mockClipboardWriteText = vi.fn().mockResolvedValue(undefined);
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual('react-router-dom');
   return { ...actual, useNavigate: () => mockNavigate };
@@ -121,6 +122,12 @@ async function renderBoardReady(boardId = 'board-abc', authOverrides: Partial<Au
 describe('Board', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    Object.defineProperty(navigator, 'clipboard', {
+      value: {
+        writeText: mockClipboardWriteText,
+      },
+      configurable: true,
+    });
   });
 
   it('renders the Figma-like layout structure', async () => {
@@ -216,5 +223,18 @@ describe('Board', () => {
 
     expect(screen.getByText('Test Board Title')).toBeInTheDocument();
     expect(screen.queryByDisplayValue('Test Board Title')).not.toBeInTheDocument();
+  });
+
+  it('copies the board link when Share is clicked', async () => {
+    await renderBoardReady('board-share-test');
+
+    fireEvent.click(screen.getByText('Share'));
+
+    await waitFor(() => {
+      expect(mockClipboardWriteText).toHaveBeenCalledWith(
+        `${window.location.origin}/board/board-share-test`,
+      );
+    });
+    expect(screen.getByText('Copied')).toBeInTheDocument();
   });
 });
