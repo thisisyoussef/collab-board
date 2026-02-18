@@ -41,43 +41,44 @@ Before writing any code, review and cross-reference these project docs:
 
 ### Screen: Board Page — Reconnecting Banner
 
+The reconnecting banner appears as a full-width bar at the very top of the viewport, pushing the board topbar down. The board remains visible and locally interactive underneath.
+
 ```
-┌──────────────────────────────────────────────────────────────┐
-│  ╔═══════════════════════════════════════════════════════╗    │
-│  ║  ⚠️  Connection lost. Reconnecting...                ║    │
-│  ╚═══════════════════════════════════════════════════════╝    │
-│  CollabBoard   (AJ) (SD) 2 people         🔴 Disconnected   │
-│  Board: abc123                            [ Back ] [ Sign out]│
-├────────┬─────────────────────────────────────────────────────┤
-│Toolbar │                                                      │
-│        │     ┌────────────┐                                   │
-│ 🖱 Sel  │     │ User       │                                   │
-│ 📝 Note │     │ Research   │  ← objects still visible          │
-│ ▢ Rect  │     └────────────┘    (local state preserved)       │
-│ 🗑 Del  │                                                      │
-│        │     Canvas remains interactive for local edits       │
-│        │     (changes queue and sync after reconnect)         │
-└────────┴─────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│  ⚠️  Connection lost. Reconnecting...                                │
+├─────────────────────────────────────────────────────────────────────┤
+│ ≡  ● CollabBoard  Sprint Plan V2 [Rename]  Move Frame Text Shape    │
+│                               🔴 Offline  (AJ)(SD) 2 people [Dash…]│
+├──────┬──────────────────────────────────────────────────────────┬───┤
+│  ↖   │                                                          │ P │
+│  □   │     ┌────────────┐                                       │ r │
+│  ○   │     │ User       │  ← objects still visible              │ o │
+│  T   │     │ Research   │    (local state preserved)            │ p │
+│  ↔   │     └────────────┘                                       │ . │
+│      │                                                          │   │
+│      │     Canvas remains interactive for local edits           │   │
+│      │     (changes queue and sync after reconnect)             │   │
+└──────┴──────────────────────────────────────────────────────────┴───┘
 ```
 
 **Reconnecting banner design:**
-- Position: full-width bar at the very top of the viewport, above the header. `position: fixed`, `top: 0`, `left: 0`, `width: 100%`, `z-index: 10000`.
+- Position: full-width bar at the very top of the viewport, above the topbar. `position: fixed`, `top: 0`, `left: 0`, `width: 100%`, `z-index: 10000`.
 - Background: `#FEF3C7` (warm yellow). Border-bottom: `1px solid #F59E0B`.
 - Text: "Connection lost. Reconnecting..." — `color: #92400E`, `font-size: 14px`, `font-weight: 500`, `text-align: center`, `padding: 8px 16px`.
-- Icon: ⚠️ emoji or a warning icon before the text.
 - Animation: subtle left-right shimmer on the background (CSS `@keyframes`), indicating activity.
-- Dismissal: banner disappears automatically when connection is restored. Replaced briefly by a green "Reconnected" flash (1.5 seconds, then fades out).
+- The topbar presence pill switches to 🔴 Offline simultaneously.
+- Dismissal: banner disappears automatically when connection is restored.
 
 ### Screen: Board Page — Reconnected Flash
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│  ╔═══════════════════════════════════════════════════════╗    │
-│  ║  ✅  Reconnected                                      ║    │
-│  ╚═══════════════════════════════════════════════════════╝    │
-│  CollabBoard   (AJ) (SD) 2 people         🟢 Connected       │
-│  Board: abc123                            [ Back ] [ Sign out]│
-│  ...                                                          │
+┌─────────────────────────────────────────────────────────────────────┐
+│  ✅  Reconnected                                                     │
+├─────────────────────────────────────────────────────────────────────┤
+│ ≡  ● CollabBoard  Sprint Plan V2 [Rename]  Move Frame Text Shape    │
+│                               🟢 Live  (AJ)(SD) 2 people [Dash…]   │
+├──────┬──────────────────────────────────────────────────────────┬───┤
+│  ...                                                                │
 ```
 
 **Reconnected flash design:**
@@ -85,18 +86,18 @@ Before writing any code, review and cross-reference these project docs:
 - Background: `#D1FAE5` (light green). Border-bottom: `1px solid #10B981`.
 - Text: "Reconnected" — `color: #065F46`, `font-size: 14px`, `font-weight: 500`.
 - Duration: visible for 1.5 seconds, then fades out (`opacity: 1 → 0` over 500ms).
+- The topbar presence pill returns to 🟢 Live.
 
 ### Screen: Board Page — Offline Edits Indicator
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│  ╔═══════════════════════════════════════════════════════╗    │
-│  ║  ⚠️  Offline — edits will sync when reconnected      ║    │
-│  ╚═══════════════════════════════════════════════════════╝    │
-│  ...                                                          │
-```
+If disconnected for >5 seconds, the banner text changes to reassure the user:
 
-- If disconnected for >5 seconds, the banner text changes to "Offline — edits will sync when reconnected" to reassure the user that local work isn't lost.
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  ⚠️  Offline — edits will sync when reconnected                     │
+├─────────────────────────────────────────────────────────────────────┤
+│ ...                                                                  │
+```
 
 ### Screen: Metrics Overlay — Full Phase I Metrics
 
@@ -118,13 +119,13 @@ Before writing any code, review and cross-reference these project docs:
 
 ### Happy Path: Clean Reconnect After Brief Disconnect
 
-1. Alex and Sam are collaborating. Both see 🟢 Connected.
+1. Alex and Sam are collaborating. Both see 🟢 Live in the topbar presence pill.
 2. Alex's Wi-Fi drops for 5 seconds.
 3. Immediately:
-   - Alex's connection indicator switches to 🔴 Disconnected.
-   - The yellow "Connection lost. Reconnecting..." banner slides down from the top.
+   - Alex's presence pill switches to 🔴 Offline.
+   - The yellow "Connection lost. Reconnecting..." banner slides down from the top of the viewport.
    - Alex's cursor disappears from Sam's screen (cursor cleanup from US-04 `user:left`).
-   - Sam's presence bar drops to 1 avatar ("Just you") after ~3 seconds.
+   - Sam's presence avatars drop to show only Sam's avatar after ~3 seconds.
 4. Socket.IO's built-in reconnection attempts to reconnect with exponential backoff (1s, 2s, 4s...).
 5. Alex's Wi-Fi returns. Socket reconnects:
    - Client receives `connect` event.
@@ -133,14 +134,14 @@ Before writing any code, review and cross-reference these project docs:
    - Client reconciles: clears the objects layer, re-renders all objects from Firestore data.
    - Updates `objectsRef` with the fresh state.
 6. The banner changes to green "Reconnected" for 1.5 seconds, then fades out.
-7. Connection indicator switches to 🟢 Connected.
-8. Sam's presence bar shows 2 avatars again. Sam sees Alex's cursor reappear.
+7. Presence pill switches to 🟢 Live.
+8. Sam's topbar shows 2 avatars again. Sam sees Alex's cursor reappear.
 9. Both boards are now in sync.
 
 ### Happy Path: Edits During Disconnect
 
 1. Alex is disconnected for 10 seconds.
-2. During that time, Alex creates 2 sticky notes locally. They appear on Alex's canvas (local Konva updates still work).
+2. During that time, Alex creates 2 sticky notes locally (using the left rail tools). They appear on Alex's canvas (local Konva updates still work).
 3. Sam also creates a sticky note during the disconnect.
 4. Alex reconnects:
    - Fetches Firestore state (includes Sam's new sticky, but NOT Alex's 2 local stickies — they weren't saved yet).
@@ -152,31 +153,31 @@ Before writing any code, review and cross-reference these project docs:
 
 1. The Render server restarts (new deploy or free-tier spin-down).
 2. All connected clients disconnect simultaneously.
-3. Each client shows the reconnecting banner.
+3. Each client shows the reconnecting banner and the presence pill switches to 🔴 Offline.
 4. Socket.IO clients auto-retry with backoff.
 5. Render server comes back up (15-30 seconds for free tier cold start).
 6. Clients reconnect, rejoin rooms, resync from Firestore.
-7. All clients converge to the correct state.
+7. All clients converge to the correct state. Banners flash green "Reconnected" then dismiss.
 
 ### Edge: Rapid Reconnect Cycle
 
 1. Sam's internet flickers — 3 disconnects in 1 minute.
-2. Each disconnect shows the banner, each reconnect fetches from Firestore.
+2. Each disconnect shows the banner and 🔴 Offline, each reconnect fetches from Firestore and flashes green.
 3. The metrics overlay "Reconnects" counter increments to 3.
 4. Board state remains correct after each cycle.
 
 ### Edge: User Navigates Away During Disconnect
 
 1. Alex is disconnected. The banner is showing.
-2. Alex clicks "Back" to return to the dashboard.
-3. The socket cleanup runs (no error). The banner does not persist on other pages.
+2. Alex clicks "Dashboard" to return to the dashboard.
+3. The socket cleanup runs (no error). The banner does not persist on the dashboard page.
 4. If Alex returns to the board, a fresh connection is established.
 
 ### Edge: Presence Cleanup After Disconnect
 
 1. Jordan closes their browser tab abruptly (no clean disconnect).
 2. Server fires `disconnecting` → emits `user:left` to the room.
-3. Alex and Sam remove Jordan's cursor and avatar within 3 seconds.
+3. Alex and Sam see Jordan's cursor disappear and avatar removed from the topbar within 3 seconds.
 4. If Jordan reopens the board, they get a fresh `presence:snapshot` and their cursor/avatar reappear.
 
 ## Implementation Details
@@ -189,7 +190,7 @@ Before writing any code, review and cross-reference these project docs:
 | `src/components/ReconnectBanner.tsx` | Yellow/green banner component. Shows based on connection status. Auto-dismisses on reconnect. |
 | `src/hooks/useBoard.ts` | Extended: `resyncFromFirestore()` function — fetch full board via `getDoc`, clear layer, re-render all objects. |
 | `src/components/MetricsOverlay.tsx` | Extended: reconnect count, connection uptime, full Phase I metrics. |
-| `src/pages/Board.tsx` | Wire up ReconnectBanner, trigger resync on reconnect. |
+| `src/pages/Board.tsx` | Wire up ReconnectBanner above the topbar, trigger resync on reconnect. |
 
 ### Reconnection Flow
 
@@ -266,7 +267,7 @@ function ReconnectBanner({ status }: { status: "connecting" | "connected" | "dis
   if (status === "disconnected") {
     return (
       <div className="reconnect-banner warning">
-        ⚠️ Connection lost. Reconnecting...
+        Connection lost. Reconnecting...
       </div>
     );
   }
@@ -274,7 +275,7 @@ function ReconnectBanner({ status }: { status: "connecting" | "connected" | "dis
   if (showReconnected) {
     return (
       <div className="reconnect-banner success">
-        ✅ Reconnected
+        Reconnected
       </div>
     );
   }
@@ -304,8 +305,8 @@ Execute these 5 scenarios and record results in the checkpoint log:
 
 | Step | Action | Expected |
 |------|--------|----------|
-| 1 | Open board in Browser A and B | Both show 🟢, 2 avatars |
-| 2 | A creates 3 stickies | B sees all 3 appear |
+| 1 | Open board in Browser A and B | Both show 🟢 Live, 2 avatars in topbar |
+| 2 | A creates 3 stickies via left rail `□` tool | B sees all 3 appear |
 | 3 | B moves sticky #1 | A sees it move |
 | 4 | A edits sticky #2 text | B sees new text |
 | 5 | B deletes sticky #3 | A sees it disappear |
@@ -318,7 +319,7 @@ Execute these 5 scenarios and record results in the checkpoint log:
 | Step | Action | Expected |
 |------|--------|----------|
 | 1 | A creates 5 objects | Wait 5s for Firestore save |
-| 2 | A refreshes the page | All 5 objects reload |
+| 2 | A refreshes the page | All 5 objects reload from Firestore |
 | 3 | B creates 2 more objects while A is refreshing | A sees them after reconnect |
 
 **Pass criteria:** No data loss after refresh. Objects load from Firestore correctly.
@@ -329,7 +330,7 @@ Execute these 5 scenarios and record results in the checkpoint log:
 |------|--------|----------|
 | 1 | A creates 10 stickies in 5 seconds | All appear on B |
 | 2 | A drags an object rapidly for 5 seconds | B sees movement |
-| 3 | Check FPS in metrics overlay | Should be ≥55 FPS |
+| 3 | Check FPS in metrics overlay | Should be >=55 FPS |
 | 4 | Check object latency in metrics | Should be <100ms avg |
 
 **Pass criteria:** FPS stays above 55. Latency stays under 100ms.
@@ -338,10 +339,10 @@ Execute these 5 scenarios and record results in the checkpoint log:
 
 | Step | Action | Expected |
 |------|--------|----------|
-| 1 | A and B connected with objects on board | Both synced |
-| 2 | Throttle A's network (Chrome DevTools → Offline) | A shows 🔴 + banner |
+| 1 | A and B connected with objects on board | Both synced, 🟢 Live |
+| 2 | Throttle A's network (Chrome DevTools → Offline) | A shows 🔴 Offline + reconnecting banner |
 | 3 | B creates 2 objects while A is offline | B sees them locally |
-| 4 | Restore A's network | A reconnects, banner turns green |
+| 4 | Restore A's network | A reconnects, banner turns green, presence pill → 🟢 Live |
 | 5 | Verify A sees B's 2 new objects | State converges |
 
 **Pass criteria:** Reconnect within 15s of network restore. All objects present after resync.
@@ -350,10 +351,10 @@ Execute these 5 scenarios and record results in the checkpoint log:
 
 | Step | Action | Expected |
 |------|--------|----------|
-| 1 | Open board in 5 browsers/tabs | All show 5 avatars |
+| 1 | Open board in 5 browsers/tabs | All show 5 avatars in topbar |
 | 2 | Each user creates 2 objects | All 5 browsers show 10 objects |
-| 3 | Move cursors in all browsers | Each shows 4 remote cursors |
-| 4 | Check metrics across all browsers | Cursor <50ms, Object <100ms, FPS ≥55 |
+| 3 | Move cursors in all browsers | Each shows 4 remote cursors on canvas |
+| 4 | Check metrics across all browsers | Cursor <50ms, Object <100ms, FPS >=55 |
 
 **Pass criteria:** All 5 users see all objects and cursors. Performance targets met.
 
@@ -379,49 +380,50 @@ function stressTest(stage, layer, count = 500) {
   console.timeEnd("stress-test-create");
 
   // Verify FPS after creation
-  console.log(`Created ${count} objects. Monitor FPS overlay — should be ≥55.`);
+  console.log(`Created ${count} objects. Monitor FPS overlay — should be >=55.`);
   console.log("Try panning and zooming. FPS should stay stable.");
 }
 ```
 
-**Pass criteria:** 500 objects render. FPS ≥55 during pan/zoom. No visible lag.
+**Pass criteria:** 500 objects render. FPS >=55 during pan/zoom. No visible lag.
 
 ## Acceptance Criteria
 
-- [ ] Disconnection shows yellow "Connection lost. Reconnecting..." banner immediately.
+- [ ] Disconnection shows yellow "Connection lost. Reconnecting..." banner immediately above the topbar.
+- [ ] Presence pill in topbar switches to 🔴 Offline on disconnect.
 - [ ] Reconnection shows green "Reconnected" flash for 1.5 seconds.
 - [ ] After >5s disconnect, banner text changes to "Offline — edits will sync when reconnected".
 - [ ] On reconnect: client re-emits `join-board` to rejoin the room.
 - [ ] On reconnect: client fetches fresh board state from Firestore and re-renders all objects.
-- [ ] On reconnect: presence list updates (user reappears in other clients' avatars).
-- [ ] On reconnect: cursor broadcasting resumes.
+- [ ] On reconnect: presence list updates (user reappears in other clients' topbar avatars).
+- [ ] On reconnect: cursor broadcasting resumes on the canvas.
 - [ ] Socket.IO reconnection uses exponential backoff (1s → 2s → 4s... up to 10s cap).
 - [ ] No infinite reconnection loops or memory leaks during rapid disconnect/reconnect.
 - [ ] Metrics overlay shows reconnect count and connection uptime.
 - [ ] **Validation: Scenario 1** — Two-user editing: all CRUD syncs within <100ms.
 - [ ] **Validation: Scenario 2** — Refresh mid-edit: all objects reload from Firestore.
-- [ ] **Validation: Scenario 3** — Rapid creation: FPS ≥55, latency <100ms.
+- [ ] **Validation: Scenario 3** — Rapid creation: FPS >=55, latency <100ms.
 - [ ] **Validation: Scenario 4** — Network throttle: reconnects and converges within 15s.
 - [ ] **Validation: Scenario 5** — 5+ users: all see all objects and cursors, performance targets met.
-- [ ] **Validation: Stress test** — 500+ objects: FPS ≥55 during pan/zoom.
+- [ ] **Validation: Stress test** — 500+ objects: FPS >=55 during pan/zoom.
 - [ ] `npm run build` and `npm run lint` pass.
 
 ## Checkpoint Test (User)
 
 1. Open a board with 5+ objects. Verify everything is synced between 2 browsers.
 2. In Browser A, open Chrome DevTools → Network tab → check "Offline". Verify:
-   - 🔴 Disconnected indicator appears.
-   - Yellow "Connection lost. Reconnecting..." banner appears.
+   - 🔴 Offline appears in the topbar presence pill.
+   - Yellow "Connection lost. Reconnecting..." banner appears above the topbar.
 3. Wait 10 seconds. Verify banner changes to "Offline — edits will sync when reconnected".
 4. In Browser B, create 2 new stickies while A is offline.
 5. In Browser A, uncheck "Offline". Verify:
    - Banner turns green "Reconnected" briefly.
-   - 🟢 Connected indicator returns.
+   - 🟢 Live returns in the topbar presence pill.
    - Browser A now shows the 2 stickies that B created.
-   - Presence and cursors resume.
-6. Open the board in 5 browser windows. Verify all 5 show 5 avatars and can see each other's cursors.
-7. Run the 500-object stress test. Verify FPS stays ≥55 during pan/zoom.
-8. Check the metrics overlay. Verify all metrics are within targets: Cursor <50ms ✅, Object <100ms ✅, FPS ≥55.
+   - Presence avatars and cursors resume.
+6. Open the board in 5 browser windows. Verify all 5 show 5 presence avatars in the topbar and can see each other's cursors on the canvas.
+7. Run the 500-object stress test. Verify FPS stays >=55 during pan/zoom.
+8. Check the metrics overlay. Verify all metrics are within targets: Cursor <50ms, Object <100ms, FPS >=55.
 9. Document all results in the Checkpoint Result below.
 
 ## Checkpoint Result

@@ -8,15 +8,19 @@
 
 ## Persona
 
-**Alex, the Facilitator** — After signing in and creating a board, Alex expects the app to silently establish a WebSocket connection in the background. Alex doesn't think about "sockets" — they just expect the board to feel live. If connection fails, Alex needs a clear visual indicator, not a blank screen.
+**Alex, the Facilitator** — Alex just created a new board and is looking at the empty canvas. Alex doesn't know or care about WebSockets — they just expect the board to feel alive. When teammates open the same link, everything should already be connected. If the connection fails silently, Alex would never know the board isn't multiplayer. That's why Alex expects a small, unobtrusive status indicator that confirms the board is live.
+
+**Jordan, the IT Admin** — Jordan's team uses CollabBoard for standups. Jordan expects that the real-time server authenticates every connection with the same Firebase credentials the app already uses — no separate login, no extra configuration. If a user's session expires, the board should silently refresh the token, not kick them out.
 
 ## User Story
 
-> As Alex, I want the board to automatically connect to the real-time server when I open it so that collaboration features work seamlessly without any manual setup.
+> As Alex, I want the board to automatically connect to the real-time server when I open it so collaboration features work seamlessly — I should never have to think about connectivity.
+
+> As Jordan, I want the real-time server to verify user identity on every connection so unauthenticated clients can't eavesdrop on board data.
 
 ## Goal
 
-Deploy a Socket.IO server on Render with Firebase ID token verification. The client connects automatically on board mount and shows connection status.
+Deploy a Socket.IO server on Render with Firebase ID token verification. The client connects automatically when the board page mounts and shows a subtle connection status indicator in the topbar. This is invisible plumbing — the user should never interact with it directly.
 
 ## Pre-Implementation Audit
 
@@ -32,74 +36,98 @@ Before writing any code, review and cross-reference these project docs:
 
 ## Screens
 
-### Screen: Board Page — Connection States
+### Screen: Board Topbar — Connection Status Integrated
 
-The board header from US-01 gains a **connection status indicator** in the top-right area, near the action buttons.
+The connection status lives inside the existing `presence-pill` area in the board topbar's right cluster. It's a small, unobtrusive indicator — not a separate element.
 
 ```
-Connected state:
-┌──────────────────────────────────────────────────────────┐
-│  Board Shell                         🟢 Connected        │
-│  Board ID: abc-123...                [ Back ] [ Sign out] │
-│  User: Jane Doe                                          │
-└──────────────────────────────────────────────────────────┘
-
-Connecting state:
-┌──────────────────────────────────────────────────────────┐
-│  Board Shell                         🟡 Connecting...    │
-│  Board ID: abc-123...                [ Back ] [ Sign out] │
-└──────────────────────────────────────────────────────────┘
-
-Disconnected state:
-┌──────────────────────────────────────────────────────────┐
-│  Board Shell                         🔴 Disconnected     │
-│  Board ID: abc-123...                [ Back ] [ Sign out] │
-└──────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│ ≡  ● CollabBoard  │ Sprint Plan V2 [Rename]  │ Move Frame Text Shape │
+│                    │                          │                       │
+│                    │              🟢 Live  (AJ)  [Dashboard] [Sign out]│
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-**Indicator design:**
-- Small colored dot (`8px` circle) + text label.
-- Connected: `#22c55e` dot, "Connected" text in `#16a34a`.
-- Connecting: `#eab308` dot, "Connecting..." text in `#a16207`. Dot pulses (CSS animation).
-- Disconnected: `#ef4444` dot, "Disconnected" text in `#dc2626`.
-- Position: right side of header bar, vertically centered with action buttons.
+**Connection states in the presence pill:**
+
+| State | Pill appearance | Text |
+|-------|----------------|------|
+| Connected | Green border, green background | `🟢 Live` |
+| Connecting | Amber border, amber background, pulsing dot | `🟡 Connecting...` |
+| Disconnected | Red border, red background | `🔴 Offline` |
+
+**Design specs:**
+- The presence pill (`presence-pill` class) already exists in the topbar right cluster. Extend it with a dynamic color based on connection state.
+- Connected: `border-color: #86efac`, `color: #166534`, `background: #f0fdf4` (already in CSS — the "Live" state).
+- Connecting: `border-color: #fde68a`, `color: #92400E`, `background: #fffbeb`. Dot uses CSS `animation: pulse 1s infinite`.
+- Disconnected: `border-color: #fca5a5`, `color: #991b1b`, `background: #fef2f2`.
+
+### Screen: Board Page — Full Layout with Connection Indicator
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ ≡  ● CollabBoard  Sprint Plan V2 [Rename]  Move Frame Text Shape    │
+│                                             🟢 Live (AJ) [Dashboard]│
+├──────┬──────────────────────────────────────────┬───────────────────┤
+│  ↖   │                                          │ Properties        │
+│  □   │          (canvas area — future)           │ Selection: None   │
+│  ○   │                                          │ Zoom: 100%        │
+│  T   │                                          │ Grid: On          │
+│  ↔   │                                          │                   │
+└──────┴──────────────────────────────────────────┴───────────────────┘
+```
+
+The connection indicator is always visible but does not demand attention when things are working normally. Users notice it only when the state changes to "Connecting..." or "Offline".
 
 ## UX Script
 
-### Happy Path: Board Opens → Socket Connects
+### Happy Path: Board Opens, Socket Connects Silently
 
-1. Alex signs in and clicks "New Board" (from US-01).
-2. Board page mounts. The connection indicator shows 🟡 "Connecting..." with a pulsing dot.
-3. Behind the scenes:
+1. Alex signs in and opens a board from the dashboard. The board page loads with the Figma-like layout — topbar, left rail, canvas area, right properties panel.
+2. The presence pill shows 🟡 "Connecting..." with a pulsing amber dot.
+3. Behind the scenes (invisible to Alex):
    - Client calls `auth.currentUser.getIdToken()` to get a fresh Firebase JWT.
    - Client creates a Socket.IO connection to `VITE_SOCKET_SERVER_URL` with `auth: { token }`.
-   - Server middleware receives connection, extracts `socket.handshake.auth.token`, verifies it with Firebase Admin SDK.
-   - Server sets `socket.data.userId`, `socket.data.displayName`, `socket.data.email` from the decoded token.
+   - Server middleware receives the connection, extracts `socket.handshake.auth.token`, verifies it against Firebase Admin SDK.
+   - Server populates `socket.data` with `userId`, `displayName`, `email`, `photoURL` from the decoded token.
    - Server calls `next()` — connection accepted.
-4. Client receives `connect` event. Indicator transitions to 🟢 "Connected" within 1-3 seconds.
-5. Alex doesn't notice any of this — the board just feels alive.
+4. Within 1-3 seconds, the pill transitions to 🟢 "Live". Alex doesn't notice — they're already looking at the canvas.
+5. The board is now ready for multiplayer features (presence, cursors, object sync).
+
+### Happy Path: Returning to Board After Idle
+
+1. Alex leaves the board tab open for 30 minutes. Firebase token expires after 1 hour.
+2. Alex returns and moves their mouse. The socket is still connected (Socket.IO heartbeats maintain it).
+3. If the socket does disconnect due to token expiry, the client catches the error, refreshes the token, and reconnects — all within seconds. The pill flickers to "Connecting..." then back to "Live".
 
 ### Error: Invalid/Expired Token
 
-1. Client sends an expired or malformed token.
+1. Client sends an expired or malformed token (e.g., clock skew, corrupted localStorage).
 2. Server middleware calls `next(new Error("Authentication failed"))`.
-3. Client receives `connect_error` event with error message.
-4. Client attempts one token refresh (`getIdToken(true)`) and reconnects.
-5. If refresh fails → indicator stays 🔴 "Disconnected". Alex sees the status and can try refreshing the page.
+3. Client receives `connect_error` with the error message.
+4. Client automatically attempts one token refresh (`getIdToken(true)`) and reconnects.
+5. If refresh succeeds → connection established → 🟢 "Live".
+6. If refresh fails → pill shows 🔴 "Offline". Alex can try refreshing the page.
 
 ### Error: Server Unreachable (Render Cold Start)
 
-1. Alex opens a board. Render server is sleeping (15 min idle).
-2. Indicator shows 🟡 "Connecting..." for up to 30 seconds while Render spins up.
-3. Socket.IO auto-retries with exponential backoff.
-4. Once server is ready → connection establishes → 🟢 "Connected".
-5. If >60 seconds pass → indicator shows 🔴 "Disconnected". Alex can refresh.
+1. Alex opens a board. The Render server is sleeping (free tier: 15 min idle → cold start).
+2. Pill shows 🟡 "Connecting..." for up to 30 seconds while Render spins up.
+3. Socket.IO auto-retries with exponential backoff. No action needed from Alex.
+4. Once the server is ready → connection establishes → 🟢 "Live".
+5. If >60 seconds pass without connection → pill shows 🔴 "Offline". Alex can refresh.
 
-### Edge: Navigation Away
+### Edge: Navigating Away
 
-1. Alex clicks "Back" to return to landing.
+1. Alex clicks "Dashboard" to return to board management.
 2. Board component unmounts. Socket disconnects cleanly (client-initiated).
-3. No error shown on landing page.
+3. No error state, no lingering connections. Clean teardown.
+
+### Edge: Multiple Boards Open
+
+1. Alex opens two boards in two tabs. Each tab creates its own socket connection.
+2. Each connection is independently authenticated and joined to its board room.
+3. Closing one tab doesn't affect the other.
 
 ## Implementation Details
 
@@ -114,8 +142,8 @@ Disconnected state:
 
 | File | Purpose |
 |------|---------|
-| `src/hooks/useSocket.ts` | Socket.IO client connection hook — connect on mount, disconnect on unmount, expose connection status |
-| `src/pages/Board.tsx` | Add `useSocket` hook, display connection indicator in header |
+| `src/hooks/useSocket.ts` | Socket.IO client connection hook — connect on mount, disconnect on unmount, expose connection status and socket ref |
+| `src/pages/Board.tsx` | Add `useSocket` hook, update presence pill to reflect connection status |
 
 ### Server Structure
 
@@ -125,7 +153,6 @@ import http from "http";
 import { Server } from "socket.io";
 import admin from "firebase-admin";
 
-// Firebase Admin init (from env vars, no JSON file)
 admin.initializeApp({
   credential: admin.credential.cert({
     projectId: process.env.FIREBASE_PROJECT_ID,
@@ -135,7 +162,6 @@ admin.initializeApp({
 });
 
 const server = http.createServer((req, res) => {
-  // Health check
   if (req.url === "/health") {
     res.writeHead(200);
     res.end("ok");
@@ -152,7 +178,7 @@ const io = new Server(server, {
   },
 });
 
-// Auth middleware
+// Auth middleware — every connection verified
 io.use(async (socket, next) => {
   try {
     const token = socket.handshake.auth.token;
@@ -220,6 +246,18 @@ function useSocket(boardId: string) {
 }
 ```
 
+### Topbar Integration
+
+The existing `presence-pill` in `Board.tsx` currently shows static "Live" text. After this story, it dynamically reflects connection status:
+
+```tsx
+<span className={`presence-pill ${statusClass}`}>
+  {status === "connected" && "🟢 Live"}
+  {status === "connecting" && "🟡 Connecting..."}
+  {status === "disconnected" && "🔴 Offline"}
+</span>
+```
+
 ## Acceptance Criteria
 
 - [ ] `server/` directory exists with its own `package.json` and `index.js`.
@@ -227,18 +265,19 @@ function useSocket(boardId: string) {
 - [ ] Invalid/missing token is rejected with "Authentication failed" error.
 - [ ] `GET /health` on the server returns 200.
 - [ ] Client connects automatically when the board page mounts.
-- [ ] Connection status indicator shows 🟢 Connected / 🟡 Connecting / 🔴 Disconnected.
+- [ ] Presence pill shows connection status: 🟢 Live / 🟡 Connecting... / 🔴 Offline.
 - [ ] Client disconnects cleanly when navigating away from the board.
-- [ ] Client attempts token refresh on `connect_error` with "Authentication failed".
+- [ ] Client attempts one token refresh on `connect_error` with "Authentication failed".
+- [ ] No visible board ID in the UI — the board is identified by its title only.
 - [ ] Server deployed to Render, frontend deployed to Vercel.
 - [ ] `npm run build` and `npm run lint` pass (frontend).
 
 ## Checkpoint Test (User)
 
-1. Sign in, create a board. Verify the connection indicator shows 🟡 then transitions to 🟢.
+1. Sign in, open a board from the dashboard. Verify the topbar presence pill shows 🟡 then transitions to 🟢 "Live" within a few seconds.
 2. Open browser DevTools → Network → WS tab. Verify a WebSocket connection to the Render server URL.
 3. Check Render dashboard logs — verify the "Connected: {name}" log appears.
-4. Navigate back to landing. Verify no errors; Render logs show "Disconnected".
+4. Click "Dashboard" to navigate back. Verify no errors; Render logs show "Disconnected".
 5. Open the Render health endpoint in browser (`https://your-server.onrender.com/health`). Verify it returns "ok".
 
 ## Checkpoint Result

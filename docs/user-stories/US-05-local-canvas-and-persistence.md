@@ -36,50 +36,80 @@ Before writing any code, review and cross-reference these project docs:
 
 ## Screens
 
-### Screen: Board Page — Full Canvas Layout
+### Screen: Board Page — Canvas with Objects
+
+The canvas replaces the placeholder content inside the `figma-canvas-shell` area. The Konva Stage fills the canvas grid area. The left rail tools become functional, and the right properties panel reflects the current selection.
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│  ┌──────────────────────────────────────────────────────────┐│
-│  │ CollabBoard   [Presence avatars]    🟢 Connected         ││
-│  │ Board: abc123                       [ Back ] [ Sign out] ││
-│  └──────────────────────────────────────────────────────────┘│
-│  ┌────────┐ ┌──────────────────────────────────────────────┐ │
-│  │Toolbar │ │                                              │ │
-│  │        │ │     (infinite canvas — Konva Stage)          │ │
-│  │ 🖱 Select│ │                                              │ │
-│  │ 📝 Sticky│ │    ┌────────────┐                            │ │
-│  │ ▢ Rect  │ │    │ Hello!     │  ← sticky note            │ │
-│  │ 🗑 Delete│ │    └────────────┘                            │ │
-│  │        │ │                ┌──────────────┐              │ │
-│  │        │ │                │              │ ← rectangle  │ │
-│  │        │ │                └──────────────┘              │ │
-│  │        │ │                                              │ │
-│  └────────┘ └──────────────────────────────────────────────┘ │
-│             ┌──────────────────┐                             │
-│             │ FPS: 60          │                             │
-│             │ Cursor: 23ms ✅  │                             │
-│             │ Objects: 5       │                             │
-│             └──────────────────┘                             │
-└──────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│ ≡  ● CollabBoard  Sprint Plan V2 [Rename]  Move Frame Text Shape    │
+│                                  🟢 Live  (AJ)(SD) 2 people [Dash…]│
+├──────┬──────────────────────────────────────────────┬───────────────┤
+│  ↖   │                                              │ Properties    │
+│  □   │     ┌────────────┐                           │               │
+│  ○   │     │ User       │  ← sticky note            │ Selection     │
+│  T   │     │ Research   │                           │ Sticky Note   │
+│  ↔   │     └────────────┘                           │               │
+│      │                ┌──────────────┐              │ X: 200        │
+│      │                │              │ ← rectangle  │ Y: 300        │
+│      │                └──────────────┘              │ W: 150        │
+│      │                                              │ H: 100        │
+│      │                                              │ Color: #FFEB3B│
+└──────┴──────────────────────────────────────────────┴───────────────┘
 ```
 
-### Toolbar (Left Rail)
+### Left Rail — Functional Tools
 
-- Position: fixed left side, `width: 56px`, `height: calc(100vh - header height)`.
-- Background: `#fff`, `border-right: 1px solid #e5e7eb`.
-- Tools arranged vertically, each is a `40px × 40px` button with icon:
-  - **Select** (pointer icon) — default tool. Click to select/move objects.
-  - **Sticky Note** (note icon) — click canvas to place a new sticky.
-  - **Rectangle** (square icon) — click-drag on canvas to draw a rectangle.
-  - **Delete** (trash icon) — click to delete selected object(s). Only enabled when something is selected.
-- Active tool has `background: #eff6ff`, `border: 1px solid #2563eb`, `border-radius: 8px`.
-- Inactive tools: `background: transparent`, hover: `background: #f3f4f6`.
+The existing left rail buttons (`↖`, `□`, `○`, `T`, `↔`) become functional tool selectors:
+
+- **↖ (Select)** — default tool. Click to select/move objects. Active: `background: var(--brand)`, `color: #fff`.
+- **□ (Sticky Note)** — click canvas to place a new sticky at that position.
+- **○ (Rectangle)** — click-drag on canvas to draw a rectangle.
+- **T (Text)** — reserved for future text tool.
+- **↔ (Connector)** — reserved for future connector tool.
+- Active tool has `rail-btn active` class. Only one tool active at a time.
 - Keyboard shortcuts: `V` = select, `S` = sticky, `R` = rectangle, `Delete`/`Backspace` = delete selected.
 
-### Canvas Area
+### Right Properties Panel — Dynamic Content
 
-- **Stage:** fills remaining viewport (`width: 100vw - toolbar width`, `height: 100vh - header height`).
+The existing right properties panel updates to reflect the current selection:
+
+**No selection:**
+```
+│ Properties    │
+│               │
+│ Selection     │
+│ None          │
+│               │
+│ Zoom          │
+│ 100%          │
+│               │
+│ Grid          │
+│ On            │
+```
+
+**Object selected:**
+```
+│ Properties    │
+│               │
+│ Selection     │
+│ Sticky Note   │
+│               │
+│ X: 200        │
+│ Y: 300        │
+│ W: 150        │
+│ H: 100        │
+│ Rotation: 0°  │
+│               │
+│ Color         │
+│ [■ Yellow]    │
+│               │
+│ [Delete]      │
+```
+
+### Canvas Area (Konva Stage)
+
+- **Stage:** fills the `figma-canvas-shell` grid area (between left rail and right panel, below topbar).
 - **Background:** light dot grid pattern (`#e5e7eb` dots, `20px` spacing) on a `#fafafa` background. `listening={false}`.
 - **Pan:** stage is `draggable` (drag on empty canvas area to pan). Cursor changes to grabbing hand while panning.
 - **Zoom:** mouse wheel zooms toward cursor position. Scale clamped `0.1–5`. Smooth zoom.
@@ -111,12 +141,12 @@ Before writing any code, review and cross-reference these project docs:
 
 ### Selection & Transform
 
-- **Single click** on an object → selects it. Konva `Transformer` appears with 8 resize handles + rotation handle.
-- **Click empty canvas** → deselects all. Transformer hides.
+- **Single click** on an object → selects it. Konva `Transformer` appears with 8 resize handles + rotation handle. Right properties panel updates to show object properties.
+- **Click empty canvas** → deselects all. Transformer hides. Right panel reverts to "Selection: None".
 - **Shift+click** → toggle in multi-selection.
 - **Drag on empty canvas** (select tool) → rubber-band selection rectangle (`fill: rgba(37, 99, 235, 0.1)`, `stroke: #2563eb`, `strokeWidth: 1`). On mouse-up, selects all objects intersecting the rectangle.
 - **Transformer handles:** resize (8 corners/edges), rotate (top handle). On transform end: reset scale to 1, compute new width/height.
-- **Delete:** press `Delete` or `Backspace` key, or click toolbar trash icon → removes selected objects from canvas and `objectsRef`.
+- **Delete:** press `Delete` or `Backspace` key, or click the Delete button in the properties panel → removes selected objects from canvas and `objectsRef`.
 
 ### Text Editing Overlay
 
@@ -130,21 +160,22 @@ Before writing any code, review and cross-reference these project docs:
 
 ### Happy Path: Create, Move, Edit, Delete
 
-1. Alex opens the board. Empty canvas with dot grid background.
-2. Alex clicks the "Sticky Note" tool in the toolbar. The tool highlights blue.
-3. Alex clicks on the canvas at position (200, 300). A yellow sticky note appears at that position with placeholder text "New note". Tool auto-switches back to Select.
-4. Alex double-clicks the sticky. A textarea appears over it. Alex types "User Research". Presses Enter. Text commits. Textarea disappears.
-5. Alex drags the sticky to a new position. The note follows the mouse smoothly.
-6. Alex clicks the "Rectangle" tool. Clicks and drags on the canvas from (400, 200) to (600, 350). A light blue rectangle appears.
-7. Alex clicks the sticky note. Transformer handles appear (8 resize + rotation).
-8. Alex drags a corner handle to resize. On release, the sticky note's width/height update (scale resets to 1).
-9. Alex presses `Delete`. The sticky note is removed from the canvas.
-10. Alex refreshes the page. All remaining objects reload from Firestore.
+1. Alex opens the board. The Konva Stage fills the canvas area with a dot grid background. The left rail shows tool buttons. The right panel shows "Selection: None".
+2. Alex clicks the `□` (Sticky Note) tool in the left rail. The button highlights as active.
+3. Alex clicks on the canvas at position (200, 300). A yellow sticky note appears at that position with placeholder text "New note". Tool auto-switches back to Select (↖).
+4. The right panel updates: "Selection: Sticky Note" with position, size, and color fields.
+5. Alex double-clicks the sticky. A textarea appears over it. Alex types "User Research". Presses Enter. Text commits. Textarea disappears.
+6. Alex drags the sticky to a new position. The note follows the mouse smoothly. Right panel X/Y values update.
+7. Alex clicks the `○` (Rectangle) tool. Clicks and drags on the canvas from (400, 200) to (600, 350). A light blue rectangle appears.
+8. Alex clicks the sticky note. Transformer handles appear (8 resize + rotation).
+9. Alex drags a corner handle to resize. On release, the sticky note's width/height update (scale resets to 1). Properties panel reflects new dimensions.
+10. Alex presses `Delete`. The sticky note is removed from the canvas. Right panel reverts to "Selection: None".
+11. Alex refreshes the page. All remaining objects reload from Firestore. The canvas shows the same state.
 
 ### Happy Path: Pan & Zoom
 
 1. Alex holds the mouse on empty canvas and drags → canvas pans. All objects move together.
-2. Alex scrolls the mouse wheel → canvas zooms toward cursor position. Objects scale smoothly.
+2. Alex scrolls the mouse wheel → canvas zooms toward cursor position. Objects scale smoothly. Right panel "Zoom" value updates.
 3. Objects added at zoomed/panned positions are stored in world coordinates — they appear in the correct position regardless of current viewport.
 
 ### Happy Path: Persistence
@@ -164,14 +195,13 @@ Before writing any code, review and cross-reference these project docs:
 
 | File | Purpose |
 |------|---------|
-| `src/components/Canvas.tsx` | Konva Stage + Layers (background, objects, selection, cursors). Pan/zoom handlers. Object creation click handlers. |
-| `src/components/Toolbar.tsx` | Tool selection buttons (select, sticky, rect, delete). Keyboard shortcut listener. |
+| `src/components/Canvas.tsx` | Konva Stage + Layers (background, objects, selection, cursors). Pan/zoom handlers. Object creation click handlers. Fills the `figma-canvas-shell` area. |
 | `src/components/StickyNote.tsx` | Memoized Konva Group (Rect + Text) for a single sticky note. |
 | `src/components/ShapeRect.tsx` | Memoized Konva Rect for rectangle shapes. |
 | `src/components/SelectionManager.tsx` | Konva Transformer + rubber-band selection rect. |
 | `src/components/TextEditor.tsx` | HTML textarea overlay for inline text editing. |
 | `src/hooks/useBoard.ts` | Board object CRUD operations on `objectsRef`. Debounced Firestore save. Load on mount. |
-| `src/pages/Board.tsx` | Orchestrates all components: Canvas, Toolbar, header, presence, cursors, metrics. |
+| `src/pages/Board.tsx` | Orchestrates all components: Canvas in the canvas shell, functional left rail tools, dynamic right properties panel, header, presence, cursors, metrics. |
 
 ### Board Object Schema (stored in Firestore)
 
@@ -200,6 +230,7 @@ interface BoardObject {
 ```
 boards/{boardId}
   title: string
+  ownerId: string
   createdBy: string
   createdAt: Timestamp
   updatedAt: Timestamp
@@ -250,12 +281,12 @@ function updateObject(id: string, attrs: Partial<BoardObject>) {
 
 ## Acceptance Criteria
 
-- [ ] Sticky notes can be created by clicking canvas with sticky tool active.
-- [ ] Rectangles can be created by click-dragging with rect tool active.
-- [ ] Objects can be dragged to new positions (select tool).
+- [ ] Sticky notes can be created by clicking canvas with sticky tool active (left rail `□` button).
+- [ ] Rectangles can be created by click-dragging with rect tool active (left rail `○` button).
+- [ ] Objects can be dragged to new positions (select tool — left rail `↖` button).
 - [ ] Objects can be resized/rotated with Transformer handles. Scale resets to 1 on transform end.
 - [ ] Sticky note text can be edited by double-clicking (inline textarea overlay).
-- [ ] Objects can be deleted with Delete/Backspace key or toolbar button.
+- [ ] Objects can be deleted with Delete/Backspace key or properties panel Delete button.
 - [ ] Canvas supports pan (drag on empty area) and zoom (scroll wheel toward cursor).
 - [ ] Object positions are in world coordinates (correct after pan/zoom).
 - [ ] Board state persists to Firestore via debounced writes (3-second debounce).
@@ -263,20 +294,23 @@ function updateObject(id: string, attrs: Partial<BoardObject>) {
 - [ ] Canvas objects use Konva refs (NOT React state) — verify no `useState` for object arrays.
 - [ ] Rubber-band selection selects objects within the drawn rectangle.
 - [ ] Shift+click toggles objects in multi-selection.
+- [ ] Right properties panel updates to show selected object's properties.
 - [ ] Keyboard shortcuts work: `V` (select), `S` (sticky), `R` (rect), `Delete` (remove).
+- [ ] Konva Stage fills the `figma-canvas-shell` area (between left rail and right panel).
 - [ ] `npm run build` and `npm run lint` pass.
 
 ## Checkpoint Test (User)
 
-1. Open a board. Verify empty canvas with dot grid background.
-2. Click "Sticky Note" tool → click canvas. Verify yellow sticky appears. Double-click it, type text, press Enter. Verify text is saved.
-3. Click "Rectangle" tool → click-drag on canvas. Verify rectangle appears.
-4. Click an object. Verify Transformer handles appear. Drag a handle to resize. Verify object resizes.
-5. Drag an object to a new position. Verify smooth movement.
-6. Select an object, press Delete. Verify it's removed.
-7. Pan the canvas (drag empty area). Zoom with scroll wheel. Verify smooth behavior.
-8. Create 5 objects. Wait 5 seconds. Refresh the page. Verify all 5 objects reload.
-9. Check metrics overlay — "Objects: 5" should appear.
+1. Open a board. Verify the Konva canvas fills the center area between the left rail and right properties panel.
+2. Click `□` (Sticky Note) in the left rail → click canvas. Verify yellow sticky appears. Double-click it, type text, press Enter. Verify text is saved.
+3. Click `○` (Rectangle) in the left rail → click-drag on canvas. Verify rectangle appears.
+4. Click an object. Verify Transformer handles appear and the right properties panel shows the object's details.
+5. Drag a handle to resize. Verify object resizes and properties panel updates.
+6. Drag an object to a new position. Verify smooth movement and properties panel X/Y update.
+7. Select an object, press Delete. Verify it's removed and properties panel reverts to "Selection: None".
+8. Pan the canvas (drag empty area). Zoom with scroll wheel. Verify smooth behavior.
+9. Create 5 objects. Wait 5 seconds. Refresh the page. Verify all 5 objects reload.
+10. Check metrics overlay — "Objects: 5" should appear.
 
 ## Checkpoint Result
 

@@ -39,24 +39,26 @@ Before writing any code, review and cross-reference these project docs:
 
 ### Screen: Board Page — Two Users Collaborating
 
+Both users see the same board through the Figma-like layout. Objects created by either user appear on both canvases in real time.
+
 ```
-┌──────────────────────────────────────────────────────────────┐
-│  CollabBoard   (AJ) (SD) 2 people         🟢 Connected       │
-│  Board: abc123                            [ Back ] [ Sign out]│
-├────────┬─────────────────────────────────────────────────────┤
-│Toolbar │                                                      │
-│        │     ┌────────────┐                                   │
-│ 🖱 Sel  │     │ User       │  ← Alex's sticky (created locally)│
-│ 📝 Note │     │ Research   │                                   │
-│ ▢ Rect  │     └────────────┘                                   │
-│ 🗑 Del  │            ┌────────────┐                            │
-│        │            │ Sam's Idea │  ← Sam's sticky (synced    │
-│        │            │            │    from Socket.IO)          │
-│        │            └────────────┘                             │
-│        │                   ┌──────────────┐                   │
-│        │                   │              │  ← rectangle      │
-│        │                   └──────────────┘    (synced)       │
-└────────┴─────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│ ≡  ● CollabBoard  Sprint Plan V2 [Rename]  Move Frame Text Shape    │
+│                                  🟢 Live  (AJ)(SD) 2 people [Dash…]│
+├──────┬──────────────────────────────────────────────────────────┬───┤
+│  ↖   │                                                          │ P │
+│  □   │     ┌────────────┐                                       │ r │
+│  ○   │     │ User       │  ← Alex's sticky (created locally)   │ o │
+│  T   │     │ Research   │                                       │ p │
+│  ↔   │     └────────────┘                                       │ e │
+│      │            ┌────────────┐                                │ r │
+│      │            │ Sam's Idea │  ← Sam's sticky (synced via    │ t │
+│      │            │            │    Socket.IO — appeared         │ i │
+│      │            └────────────┘    instantly)                   │ e │
+│      │                   ┌──────────────┐                       │ s │
+│      │                   │              │  ← rectangle (synced) │   │
+│      │                   └──────────────┘                       │   │
+└──────┴──────────────────────────────────────────────────────────┴───┘
 ```
 
 Key visual behaviors:
@@ -103,12 +105,12 @@ This is invisible to the user — no dialog, no error. The board just converges.
 
 ### Happy Path: Alex Creates, Sam Sees
 
-1. Alex and Sam both have the board open. Both see 🟢 Connected and 2 avatars.
-2. Alex clicks "Sticky Note" tool, clicks the canvas at (200, 300). A yellow sticky appears on Alex's canvas immediately (optimistic local update).
+1. Alex and Sam both have the board open. Both see 🟢 Live and 2 presence avatars in the topbar.
+2. Alex clicks the `□` (Sticky Note) tool in the left rail, clicks the canvas at (200, 300). A yellow sticky appears on Alex's canvas immediately (optimistic local update).
 3. Behind the scenes:
    - Alex's `addObject()` updates `objectsRef`, adds Konva node to the layer, calls `batchDraw()`.
    - Alex's client emits `object:create` via Socket.IO with the full object data including `updatedAt: new Date().toISOString()`.
-   - Server receives `object:create`, broadcasts to all other sockets in `board:abc123`.
+   - Server receives `object:create`, broadcasts to all other sockets in the board room.
 4. Sam's client receives `object:create`:
    - Checks `socketId !== socket.id` (it's not Sam's own echo) → processes it.
    - Creates a new Konva node on Sam's objects layer with the received attributes.
@@ -119,7 +121,7 @@ This is invisible to the user — no dialog, no error. The board just converges.
 
 ### Happy Path: Sam Moves, Alex Sees
 
-1. Sam clicks Alex's sticky note (select tool). Transformer handles appear.
+1. Sam clicks Alex's sticky note (select tool ↖). Transformer handles appear. Right properties panel shows the sticky's details.
 2. Sam drags the sticky to a new position (400, 500). On each drag frame:
    - Sam's local Konva node updates position (standard Konva drag behavior).
 3. On `dragend`:
@@ -141,7 +143,7 @@ This is invisible to the user — no dialog, no error. The board just converges.
 3. Sam's client receives `object:delete`:
    - Finds Konva node by `#id`, calls `node.destroy()`, `batchDraw()`.
    - Removes from `objectsRef`.
-4. The rectangle disappears from Sam's canvas.
+4. The rectangle disappears from Sam's canvas. If Sam had it selected, the selection clears and the right properties panel reverts to "Selection: None".
 
 ### Edge: Conflicting Edits (Last Write Wins)
 
@@ -162,7 +164,7 @@ This is invisible to the user — no dialog, no error. The board just converges.
 
 1. Sam is typing in a sticky note (text editor open).
 2. Alex deletes that sticky note.
-3. Sam receives `object:delete` → the Konva node is destroyed. If the text editor is open for that object, it should close automatically.
+3. Sam receives `object:delete` → the Konva node is destroyed. If the text editor is open for that object, it closes automatically.
 4. Sam sees the sticky disappear and the text editor close. No crash.
 
 ### Edge: Create Arrives Before Board Load
@@ -405,16 +407,17 @@ With 3s debounce: ~20 writes/min. Stays well within free tier.
 - [ ] Object sync latency is <100ms (measured and displayed in metrics overlay).
 - [ ] Socket.IO object events use reliable delivery (NOT volatile).
 - [ ] Text editor closes gracefully if the underlying object is deleted remotely.
+- [ ] Right properties panel clears selection if the selected object is deleted remotely.
 - [ ] Board state after sync matches between all connected clients.
 - [ ] `npm run build` and `npm run lint` pass.
 
 ## Checkpoint Test (User)
 
-1. Open the same board in two browsers (A and B). Verify both show 🟢 Connected and 2 avatars.
-2. In Browser A, create a sticky note. Verify it appears in Browser B within 1 second.
+1. Open the same board in two browsers (A and B). Verify both show 🟢 Live and 2 presence avatars.
+2. In Browser A, create a sticky note using the left rail `□` tool. Verify it appears in Browser B within 1 second.
 3. In Browser A, drag the sticky to a new position. Verify it moves in Browser B.
 4. In Browser B, double-click the sticky, change text to "Updated by Sam". Verify Browser A shows the new text.
-5. In Browser B, create a rectangle. Verify it appears in Browser A.
+5. In Browser B, create a rectangle using the left rail `○` tool. Verify it appears in Browser A.
 6. In Browser A, select the rectangle and press Delete. Verify it disappears from both browsers.
 7. Simultaneously drag the same object in both browsers. Release. Verify both screens converge to the same position.
 8. Create 5 objects from each browser (10 total). Wait 5 seconds. Refresh Browser A. Verify all 10 objects reload from Firestore.

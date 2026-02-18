@@ -8,19 +8,23 @@
 
 ## Persona
 
-**Alex, the Facilitator** — Alex just shared a board link with two teammates (Sam and Jordan). Alex wants to see who's currently on the board before starting the session. When Sam joins, Alex expects to see their name pop up immediately. When Jordan leaves, Alex expects them to disappear within a couple seconds.
+**Alex, the Facilitator** — Alex just shared a board link in the team Slack channel. Before starting the brainstorming session, Alex wants to glance at the topbar and see who's already on the board. When Sam joins, Alex expects their avatar to appear immediately — not after a refresh, not after a delay. This is how Alex knows the session can begin.
 
-**Sam, the Participant** — Sam clicks Alex's board link. Sam wants immediate confirmation that they're in the right place — seeing Alex's name already on the board reassures them.
+**Sam, the Participant** — Sam clicks the board link from Slack. The board loads and Sam immediately sees Alex's avatar in the topbar — confirmation that Sam is in the right place and that the board is live. Sam doesn't need to send a "I'm here" message; their presence is visible automatically.
+
+**Jordan, the Late Joiner** — Jordan joins 10 minutes into the session. Jordan sees 4 avatars in the topbar and knows the discussion is active. When one teammate leaves, their avatar disappears — Jordan knows who's still around without asking.
 
 ## User Story
 
-> As Alex, I want to see who's currently on my board in real time so I know when my teammates have joined and I can start the session.
+> As Alex, I want to see who's currently on my board in real time so I know when teammates have joined and I can start the session.
 
 > As Sam, I want to see other people on the board when I join so I know I'm in the right place and connected.
 
+> As Jordan, I want presence to update automatically — people appear when they arrive and disappear when they leave — so I always know who's actively on the board.
+
 ## Goal
 
-Show a live presence bar of all users currently on the same board, updated in real time as people join and leave.
+Show a live presence indicator in the board topbar showing all users currently on the same board, updated in real time as people join and leave. The indicator integrates into the existing Figma-like topbar layout.
 
 ## Pre-Implementation Audit
 
@@ -31,88 +35,104 @@ Before writing any code, review and cross-reference these project docs:
 - **Reference:** `CLAUDE.md` — "When React State IS Appropriate" (presence list is a correct use of React state), `usePresence` hook pattern
 - **Check:** Existing server code from US-02 — extend it, don't rewrite. Verify `socket.data` is populated during auth middleware.
 
-**Be strategic:** Presence is server-side in-memory state, not Firestore. Use `io.in(room).fetchSockets()` to get current members and broadcast a snapshot. The `disconnecting` event (not `disconnect`) is critical — it fires while the socket is still in its rooms, so you can broadcast departure to the right room. Keep the UI simple — avatar dots or name chips. Don't over-engineer; a `Map<socketId, user>` on the server is sufficient.
+**Be strategic:** Presence is server-side in-memory state, not Firestore. Use `io.in(room).fetchSockets()` to get current members and broadcast a snapshot. The `disconnecting` event (not `disconnect`) is critical — it fires while the socket is still in its rooms, so you can broadcast departure to the right room. Keep the UI simple — avatar circles in the topbar. Don't over-engineer; a `Map<socketId, user>` on the server is sufficient.
 
 ## Screens
 
-### Screen: Board Page — Presence Bar
+### Screen: Board Topbar — Presence Avatars
 
-The board header gains a presence bar showing colored avatar circles for each online user.
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│  Board Shell                                 🟢 Connected    │
-│  Board ID: abc-123...                   [ Back ] [ Sign out] │
-│                                                              │
-│  Online: (AJ) (SD) (JW)    3 people                         │
-└──────────────────────────────────────────────────────────────┘
-```
-
-**Presence bar design:**
-
-- Position: below the board title/ID, inside the header card. Full width.
-- Label: "Online:" in `color: #6b7280`, `font-size: 0.85rem`.
-- Avatar circles: `28px` diameter, `border-radius: 50%`, each with a unique background color derived from the user's ID (deterministic hash → HSL hue, saturation 65%, lightness 55%).
-- Initials: first letter of first name + first letter of last name (or first two letters of email), `color: #fff`, `font-size: 0.7rem`, `font-weight: 600`, centered.
-- Count: "{N} people" — `color: #6b7280`, `font-size: 0.85rem`, next to the avatar row.
-- Avatars stack horizontally with slight overlap (`margin-left: -4px` after the first), max 8 shown. If >8 users: show 7 avatars + a gray circle "+{N}".
-- New avatar animates in with a subtle scale-up (`transform: scale(0) → scale(1)`, 200ms ease-out).
-- Departing avatar fades out (`opacity: 1 → 0`, 200ms).
-
-**User's own avatar:** slightly different — `2px solid #2563eb` ring around their circle to indicate "this is you."
-
-### Screen: Board Page — Empty (just you)
+Presence avatars live in the topbar's right cluster, between the connection indicator and the action buttons.
 
 ```
-  Online: (AJ)    Just you
+┌─────────────────────────────────────────────────────────────────────┐
+│ ≡  ● CollabBoard  Sprint Plan V2 [Rename]  Move Frame Text Shape    │
+│                                  🟢 Live  (AJ) (SD) (JW)  [Dashboard]│
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-- When only one user is present, show "Just you" instead of "1 people".
+**Avatar design (extends existing `avatar-badge` class):**
+- Size: `30px` diameter, `border-radius: 50%`.
+- Background: deterministic color derived from user ID (hash → HSL: hue from hash, saturation 65%, lightness 55%).
+- Initials: first letter of first name + first letter of last name (or first 2 letters of email), `color: #fff`, `font-size: 0.78rem`, `font-weight: 700`, centered.
+- Stacking: avatars overlap slightly (`margin-left: -6px` after the first). Max 6 visible; if >6, show 5 + a gray circle "+N".
+- Animation: new avatar scales in (`transform: scale(0) → scale(1)`, 200ms ease-out). Departing avatar fades out (`opacity: 1 → 0`, 150ms).
 
-### Screen: Board Page — User Joins
+**Current user's avatar:** has a `2px solid #2563eb` ring (the brand color) around their circle. This is already partially styled as `avatar-badge` in the CSS.
+
+### Screen: Topbar — Solo User
+
+```
+│                                        🟢 Live  (AJ)  [Dashboard]   │
+```
+
+When only Alex is on the board, only their avatar appears. No count label — the presence is self-evident.
+
+### Screen: Topbar — Multiple Users
+
+```
+│                           🟢 Live  (AJ)(SD)(JW) 3 people [Dashboard]│
+```
+
+- When 2+ users are present, a subtle count label appears: "N people" in `color: var(--muted)`, `font-size: 0.78rem`.
+- When exactly 1 user: no count label (implied: "just you").
+
+### Screen: Topbar — User Joins (Animation)
 
 1. Sam opens the board URL.
-2. Alex's presence bar updates: Sam's avatar circle slides in from the right. Count changes from "Just you" to "2 people".
+2. Alex's topbar updates: Sam's avatar circle slides/scales in from the right. Count changes to "2 people".
+3. Transition is smooth (200ms) — not jarring.
 
-### Screen: Board Page — User Leaves
+### Screen: Topbar — User Leaves (Animation)
 
 1. Jordan closes their browser tab.
 2. Within 2-3 seconds, Jordan's avatar fades out. Count decreases.
+3. If only Alex remains, the count label disappears.
 
 ## UX Script
 
 ### Happy Path: Two Users Join the Same Board
 
-1. Alex opens `/board/abc123`. Socket connects (US-02). Client emits `join-board` with `{ boardId: "abc123", user: { id, displayName, color } }`.
+1. Alex opens a board from the dashboard. Socket connects (US-02). Client emits `join-board` with `{ boardId, user: { id, displayName, color } }`.
 2. Server receives `join-board`:
-   - `socket.join("board:abc123")`
-   - Sets `socket.data = { boardId, user }`.
-   - Fetches all sockets in `board:abc123` via `io.in("board:abc123").fetchSockets()`.
-   - Builds a presence list: `[{ id, displayName, color }]` for each socket.
+   - `socket.join("board:{boardId}")`
+   - Sets `socket.data.boardId = boardId`.
+   - Fetches all sockets in the room via `io.in("board:{boardId}").fetchSockets()`.
+   - Builds presence list: `[{ socketId, userId, displayName, color }]` for each socket.
    - Emits `presence:snapshot` to the joining socket (full list).
    - Emits `user:joined` to all other sockets in the room (just the new user).
-3. Alex sees their own avatar. Presence bar shows "Just you".
-4. Sam opens the same URL in another browser. Steps repeat.
-5. Alex receives `user:joined` → adds Sam's avatar. Bar shows "2 people".
-6. Sam receives `presence:snapshot` → sees both Alex and Sam listed.
+3. Alex sees their own avatar in the topbar. No count label — just them.
+4. Sam opens the same board URL. Same flow repeats.
+5. Alex receives `user:joined` → Sam's avatar appears in Alex's topbar. Count shows "2 people".
+6. Sam receives `presence:snapshot` → sees both Alex and Sam in the topbar.
 
-### Edge: User Closes Tab
+### Happy Path: User Returns to Dashboard
 
-1. Jordan closes the browser tab.
-2. Socket.IO fires `disconnecting` on the server (socket is still in rooms).
-3. Server emits `user:left` to `board:abc123` with Jordan's user data.
-4. Server's `disconnect` event fires. Socket auto-leaves all rooms.
-5. Alex and Sam receive `user:left` → remove Jordan's avatar. Count decreases.
+1. Sam clicks "Dashboard" to return to board management.
+2. Board component unmounts → socket disconnects.
+3. Server fires `disconnecting` → emits `user:left` to the room.
+4. Alex's topbar updates: Sam's avatar fades out. Count disappears (back to solo).
+
+### Edge: User Closes Tab (Abrupt Disconnect)
+
+1. Jordan closes the browser tab without clicking "Dashboard".
+2. Socket.IO detects the disconnect. Server fires `disconnecting` (socket still in rooms).
+3. Server emits `user:left` to the room with Jordan's user data.
+4. Alex and Sam receive `user:left` → Jordan's avatar fades out within 2-3 seconds.
 
 ### Edge: Rapid Join/Leave
 
-1. Multiple users join within 1 second. Each triggers `user:joined`.
-2. Client batches UI updates — React state update is async, so rapid `setState` calls merge naturally.
+1. 5 users join within 2 seconds. Each triggers `user:joined`.
+2. React batches state updates naturally — avatars appear smoothly, no flicker.
 
 ### Edge: Same User, Multiple Tabs
 
 1. Alex opens the board in two tabs. Both sockets join the room.
-2. Presence list shows Alex twice (each socket has a unique `socket.id`). This is acceptable for Phase I — deduplication by `userId` is a Phase II enhancement.
+2. Presence shows Alex's avatar twice (each socket has a unique `socket.id`). This is acceptable — deduplication by `userId` is a future enhancement.
+
+### Edge: Board with Many Users
+
+1. 10 users are on the same board.
+2. Topbar shows 5 avatars + a "+5" overflow circle. Hovering the overflow shows a tooltip with all names (future enhancement — for now, just the count).
 
 ## Implementation Details
 
@@ -124,7 +144,7 @@ io.on("connection", (socket) => {
     socket.join(`board:${boardId}`);
     socket.data.boardId = boardId;
 
-    // Send full presence list to the joining user
+    // Full presence snapshot for the joining user
     const sockets = await io.in(`board:${boardId}`).fetchSockets();
     const users = sockets.map((s) => ({
       socketId: s.id,
@@ -134,7 +154,7 @@ io.on("connection", (socket) => {
     }));
     socket.emit("presence:snapshot", users);
 
-    // Notify others
+    // Notify everyone else
     socket.to(`board:${boardId}`).emit("user:joined", {
       socketId: socket.id,
       userId: socket.data.userId,
@@ -159,10 +179,10 @@ io.on("connection", (socket) => {
 
 | File | Purpose |
 |------|---------|
-| `src/hooks/usePresence.ts` | Listens for `presence:snapshot`, `user:joined`, `user:left`. Returns `members` array. |
-| `src/components/PresenceBar.tsx` | Renders avatar circles from the members array. |
+| `src/hooks/usePresence.ts` | Listens for `presence:snapshot`, `user:joined`, `user:left`. Returns `members` array (React state — appropriate here since it's a small list). |
+| `src/components/PresenceAvatars.tsx` | Renders avatar circles in the topbar from the members array. Handles animation, overflow, self-indicator ring. |
 | `src/lib/utils.ts` | `generateColor(userId)` — deterministic HSL from user ID hash. |
-| `src/pages/Board.tsx` | Mounts `usePresence`, renders `PresenceBar` in the header. |
+| `src/pages/Board.tsx` | Mounts `usePresence`, renders `PresenceAvatars` in the topbar right cluster. |
 
 ### Color Generation
 
@@ -177,6 +197,18 @@ function generateColor(userId: string): string {
 }
 ```
 
+### Topbar Integration
+
+Replace the static `avatar-badge` in the topbar right cluster with the dynamic `PresenceAvatars` component:
+
+```tsx
+{/* Before (static) */}
+<span className="avatar-badge">{userInitial}</span>
+
+{/* After (dynamic presence) */}
+<PresenceAvatars members={members} currentUserId={user.uid} />
+```
+
 ## Acceptance Criteria
 
 - [ ] Client emits `join-board` on board mount with board ID and user info.
@@ -184,17 +216,19 @@ function generateColor(userId: string): string {
 - [ ] Joining user receives `presence:snapshot` with all currently present users.
 - [ ] Other users receive `user:joined` with the new user's info.
 - [ ] Closing a tab triggers `user:left` for all remaining users within 3 seconds.
-- [ ] Presence bar renders avatar circles with deterministic colors and initials.
-- [ ] Current user's avatar has a blue ring indicator.
-- [ ] Single user shows "Just you", multiple shows "{N} people".
+- [ ] Presence avatars render in the topbar right cluster with deterministic colors and initials.
+- [ ] Current user's avatar has a blue ring indicator (`2px solid #2563eb`).
+- [ ] Multiple users shows "N people" count. Single user shows no count.
+- [ ] Avatars animate in (scale-up) and out (fade-out) smoothly.
+- [ ] No visible board ID in the UI anywhere.
 - [ ] `npm run build` and `npm run lint` pass.
 
 ## Checkpoint Test (User)
 
-1. Open a board in Browser A. Verify presence bar shows your avatar and "Just you".
-2. Open the same board URL in Browser B (different profile or incognito). Verify Browser A shows 2 avatars and "2 people". Verify Browser B also shows 2 avatars.
-3. Close Browser B. Within 3 seconds, verify Browser A drops back to 1 avatar and "Just you".
-4. Open the same board in 3 browsers. Verify all 3 show 3 avatars.
+1. Open a board from the dashboard. Verify your avatar appears in the topbar right cluster next to the connection indicator.
+2. Open the same board URL in an incognito/different browser. Verify both browsers show 2 avatars and "2 people".
+3. Close the incognito browser. Within 3 seconds, verify the first browser drops back to 1 avatar, count disappears.
+4. Open the same board in 3 browsers. Verify all 3 show 3 avatars and "3 people".
 
 ## Checkpoint Result
 
