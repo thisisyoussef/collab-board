@@ -42,12 +42,17 @@ import {
 import { toFirestoreUserMessage, withFirestoreTimeout } from '../lib/firestore-client';
 import { db } from '../lib/firebase';
 import { loadViewportState, saveViewportState } from '../lib/viewport';
+import {
+  buildRealtimeEventSignature,
+  createRealtimeDedupeCache,
+} from '../lib/realtime-dedupe';
 import { screenToWorld, worldToScreen } from '../lib/utils';
 import type { BoardObject, BoardObjectsRecord } from '../types/board';
 import type { AIActionPreview } from '../types/ai';
 import type {
   ObjectCreatePayload,
   ObjectDeletePayload,
+  RealtimeObjectEventMeta,
   ObjectUpdatePayload,
 } from '../types/realtime';
 
@@ -124,8 +129,11 @@ const BOARD_SAVE_DEBOUNCE_MS = 300;
 const OBJECT_UPDATE_EMIT_THROTTLE_MS = 45;
 const OBJECT_LATENCY_SAMPLE_WINDOW = 30;
 const OBJECT_LATENCY_UI_UPDATE_MS = 120;
+const AI_APPLY_LATENCY_SAMPLE_WINDOW = 20;
 const SHARE_FEEDBACK_RESET_MS = 2000;
 const VIEWPORT_SAVE_DEBOUNCE_MS = 180;
+const REALTIME_DEDUPE_TTL_MS = 30_000;
+const REALTIME_DEDUPE_MAX_ENTRIES = 4_000;
 const CONNECTOR_HANDLE_RADIUS = 7;
 const CONNECTOR_HANDLE_STROKE = '#2563eb';
 const CONNECTOR_SNAP_DISTANCE_PX = 20;
@@ -238,6 +246,13 @@ export function Board() {
   const pendingRemoteObjectEventsRef = useRef<PendingRemoteObjectEvent[]>([]);
   const objectLatencySamplesRef = useRef<number[]>([]);
   const lastObjectLatencyUiUpdateAtRef = useRef(0);
+  const aiApplyLatencySamplesRef = useRef<number[]>([]);
+  const realtimeDedupeRef = useRef(
+    createRealtimeDedupeCache({
+      ttlMs: REALTIME_DEDUPE_TTL_MS,
+      maxEntries: REALTIME_DEDUPE_MAX_ENTRIES,
+    }),
+  );
   const shareFeedbackTimeoutRef = useRef<number | null>(null);
   const viewportSaveTimeoutRef = useRef<number | null>(null);
   const viewportRestoredRef = useRef(false);
@@ -260,6 +275,9 @@ export function Board() {
   const [isSelecting, setIsSelecting] = useState(false);
   const [isDraggingConnectorHandle, setIsDraggingConnectorHandle] = useState(false);
   const [averageObjectLatencyMs, setAverageObjectLatencyMs] = useState(0);
+  const [averageAIApplyLatencyMs, setAverageAIApplyLatencyMs] = useState(0);
+  const [aiApplyCount, setAiApplyCount] = useState(0);
+  const [aiDedupeDrops, setAiDedupeDrops] = useState(0);
   const [shareState, setShareState] = useState<'idle' | 'copied' | 'error'>('idle');
 
   const selectedObject =
@@ -342,8 +360,10 @@ export function Board() {
   });
 
   const handleApplyAIPlan = async (actions: AIActionPreview[] = aiCommandCenter.actions) => {
+    const startedAt = performance.now();
     const applied = await aiExecutor.applyPreviewActions(actions, aiCommandCenter.message);
     if (applied) {
+      recordAIApplyLatency(performance.now() - startedAt);
       setCanvasNotice('AI changes applied.');
     }
   };
@@ -403,7 +423,12 @@ export function Board() {
     pendingRemoteObjectEventsRef.current = [];
     objectLatencySamplesRef.current = [];
     lastObjectLatencyUiUpdateAtRef.current = 0;
+    aiApplyLatencySamplesRef.current = [];
+    realtimeDedupeRef.current.clear();
     setAverageObjectLatencyMs(0);
+    setAverageAIApplyLatencyMs(0);
+    setAiApplyCount(0);
+    setAiDedupeDrops(0);
     if (shareFeedbackTimeoutRef.current) {
       window.clearTimeout(shareFeedbackTimeoutRef.current);
       shareFeedbackTimeoutRef.current = null;
@@ -677,6 +702,11 @@ export function Board() {
         return;
       }
 
+      const objectId = typeof payload?.object?.id === 'string' ? payload.object.id.trim() : '';
+      if (!objectId || !shouldApplyRemoteObjectEvent('object:create', payload, objectId)) {
+        return;
+      }
+
       if (!hasInitialBoardLoadRef.current) {
         enqueueRemoteObjectEvent({ kind: 'create', payload });
         return;
@@ -695,6 +725,11 @@ export function Board() {
       const changedBoardId =
         typeof payload?.boardId === 'string' ? payload.boardId.trim() : '';
       if (!changedBoardId || changedBoardId !== boardId) {
+        return;
+      }
+
+      const objectId = typeof payload?.object?.id === 'string' ? payload.object.id.trim() : '';
+      if (!objectId || !shouldApplyRemoteObjectEvent('object:update', payload, objectId)) {
         return;
       }
 
@@ -719,13 +754,13 @@ export function Board() {
         return;
       }
 
-      if (!hasInitialBoardLoadRef.current) {
-        enqueueRemoteObjectEvent({ kind: 'delete', payload });
+      const objectId = typeof payload?.objectId === 'string' ? payload.objectId.trim() : '';
+      if (!objectId || !shouldApplyRemoteObjectEvent('object:delete', payload, objectId)) {
         return;
       }
 
-      const objectId = typeof payload?.objectId === 'string' ? payload.objectId.trim() : '';
-      if (!objectId) {
+      if (!hasInitialBoardLoadRef.current) {
+        enqueueRemoteObjectEvent({ kind: 'delete', payload });
         return;
       }
 
@@ -893,7 +928,59 @@ export function Board() {
     }
   }
 
-  function emitObjectCreate(object: BoardObject) {
+  function recordAIApplyLatency(durationMs: number) {
+    if (!Number.isFinite(durationMs)) {
+      return;
+    }
+
+    const next = [...aiApplyLatencySamplesRef.current, Math.max(0, Math.round(durationMs))].slice(
+      -AI_APPLY_LATENCY_SAMPLE_WINDOW,
+    );
+    aiApplyLatencySamplesRef.current = next;
+    const average = next.reduce((sum, value) => sum + value, 0) / next.length;
+    setAverageAIApplyLatencyMs(Math.round(average));
+    setAiApplyCount((value) => value + 1);
+  }
+
+  function trackAIDedupeDrop() {
+    setAiDedupeDrops((value) => value + 1);
+  }
+
+  function shouldApplyRemoteObjectEvent(
+    eventType: 'object:create' | 'object:update' | 'object:delete',
+    payload: ObjectCreatePayload | ObjectUpdatePayload | ObjectDeletePayload,
+    objectId: string,
+  ): boolean {
+    const signature = buildRealtimeEventSignature({
+      eventType,
+      boardId: payload.boardId,
+      objectId,
+      txId: payload.txId,
+      source: payload.source,
+      actorUserId: payload.actorUserId,
+      ts: payload._ts,
+    });
+
+    if (!signature) {
+      return true;
+    }
+
+    const shouldApply = realtimeDedupeRef.current.markIfNew(signature);
+    if (!shouldApply && (payload.source === 'ai' || Boolean(payload.txId))) {
+      trackAIDedupeDrop();
+    }
+    return shouldApply;
+  }
+
+  function buildRealtimeObjectMeta(meta?: RealtimeObjectEventMeta): RealtimeObjectEventMeta {
+    return {
+      source: meta?.source === 'ai' ? 'ai' : 'user',
+      ...(meta?.txId ? { txId: meta.txId } : {}),
+      actorUserId: meta?.actorUserId || user?.uid || 'guest',
+    };
+  }
+
+  function emitObjectCreate(object: BoardObject, meta?: RealtimeObjectEventMeta) {
     const liveBoardId = boardIdRef.current;
     const socket = socketRef.current;
     if (!liveBoardId || !socket?.connected) {
@@ -907,10 +994,11 @@ export function Board() {
       boardId: liveBoardId,
       object: payloadObject,
       _ts: now,
+      ...buildRealtimeObjectMeta(meta),
     });
   }
 
-  function emitObjectUpdate(object: BoardObject, force = false) {
+  function emitObjectUpdate(object: BoardObject, force = false, meta?: RealtimeObjectEventMeta) {
     const liveBoardId = boardIdRef.current;
     const socket = socketRef.current;
     if (!liveBoardId || !socket?.connected) {
@@ -930,12 +1018,13 @@ export function Board() {
       boardId: liveBoardId,
       object: payloadObject,
       _ts: now,
+      ...buildRealtimeObjectMeta(meta),
     };
 
     socket.emit('object:update', payload);
   }
 
-  function emitObjectDelete(objectId: string) {
+  function emitObjectDelete(objectId: string, meta?: RealtimeObjectEventMeta) {
     const liveBoardId = boardIdRef.current;
     const socket = socketRef.current;
     if (!liveBoardId || !socket?.connected) {
@@ -947,6 +1036,7 @@ export function Board() {
       boardId: liveBoardId,
       objectId,
       _ts: Date.now(),
+      ...buildRealtimeObjectMeta(meta),
     });
   }
 
@@ -961,21 +1051,26 @@ export function Board() {
   function applyAIBoardStateCommit(nextBoardState: BoardObjectsRecord, meta: AICommitMeta) {
     hydrateBoardObjects(nextBoardState, user?.uid || 'guest');
     setSelectedIds([]);
+    const realtimeMeta: RealtimeObjectEventMeta = {
+      txId: meta.txId,
+      source: 'ai',
+      actorUserId: user?.uid || 'guest',
+    };
 
     meta.diff.createdIds.forEach((objectId) => {
       const object = objectsRef.current.get(objectId);
       if (object) {
-        emitObjectCreate(object);
+        emitObjectCreate(object, realtimeMeta);
       }
     });
     meta.diff.updatedIds.forEach((objectId) => {
       const object = objectsRef.current.get(objectId);
       if (object) {
-        emitObjectUpdate(object, true);
+        emitObjectUpdate(object, true, realtimeMeta);
       }
     });
     meta.diff.deletedIds.forEach((objectId) => {
-      emitObjectDelete(objectId);
+      emitObjectDelete(objectId, realtimeMeta);
     });
 
     scheduleBoardSave();
@@ -1012,6 +1107,8 @@ export function Board() {
         socket.emit('board:changed', {
           boardId: liveBoardId,
           _ts: Date.now(),
+          source: 'user',
+          actorUserId: user?.uid || 'guest',
         });
       }
     } catch (err) {
@@ -3435,6 +3532,9 @@ export function Board() {
           <MetricsOverlay
             averageCursorLatencyMs={averageLatencyMs}
             averageObjectLatencyMs={averageObjectLatencyMs}
+            averageAIApplyLatencyMs={averageAIApplyLatencyMs}
+            aiApplyCount={aiApplyCount}
+            aiDedupeDrops={aiDedupeDrops}
             userCount={members.length}
             objectCount={objectCount}
             reconnectCount={reconnectCount}

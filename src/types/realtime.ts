@@ -29,21 +29,30 @@ export interface CursorHidePayload {
 export interface BoardChangedPayload {
   boardId: string;
   _ts: number;
+  txId?: string;
+  source?: 'user' | 'ai';
+  actorUserId?: string;
 }
 
-export interface ObjectCreatePayload {
+export interface RealtimeObjectEventMeta {
+  txId?: string;
+  source?: 'user' | 'ai';
+  actorUserId?: string;
+}
+
+export interface ObjectCreatePayload extends RealtimeObjectEventMeta {
   boardId: string;
   object: BoardObject;
   _ts: number;
 }
 
-export interface ObjectUpdatePayload {
+export interface ObjectUpdatePayload extends RealtimeObjectEventMeta {
   boardId: string;
   object: BoardObject;
   _ts: number;
 }
 
-export interface ObjectDeletePayload {
+export interface ObjectDeletePayload extends RealtimeObjectEventMeta {
   boardId: string;
   objectId: string;
   _ts: number;

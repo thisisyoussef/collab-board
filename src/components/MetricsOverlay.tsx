@@ -4,6 +4,9 @@ import type { SocketStatus } from '../hooks/useSocket';
 interface MetricsOverlayProps {
   averageCursorLatencyMs: number;
   averageObjectLatencyMs: number;
+  averageAIApplyLatencyMs: number;
+  aiApplyCount: number;
+  aiDedupeDrops: number;
   userCount: number;
   objectCount: number;
   reconnectCount: number;
@@ -18,6 +21,9 @@ const shouldShowMetrics = import.meta.env.DEV || enableMetricsFromEnv;
 export function MetricsOverlay({
   averageCursorLatencyMs,
   averageObjectLatencyMs,
+  averageAIApplyLatencyMs,
+  aiApplyCount,
+  aiDedupeDrops,
   userCount,
   objectCount,
   reconnectCount,
@@ -75,6 +81,10 @@ export function MetricsOverlay({
     () => (averageObjectLatencyMs < 100 ? '✅' : '⚠️'),
     [averageObjectLatencyMs],
   );
+  const aiStatus = useMemo(
+    () => (averageAIApplyLatencyMs < 400 ? '✅' : '⚠️'),
+    [averageAIApplyLatencyMs],
+  );
 
   const statusLabel = useMemo(() => {
     if (connectionStatus !== 'connected') {
@@ -105,6 +115,12 @@ export function MetricsOverlay({
       </p>
       <p>
         Object avg: {averageObjectLatencyMs}ms {objectStatus}
+      </p>
+      <p>
+        AI apply avg: {averageAIApplyLatencyMs}ms {aiStatus}
+      </p>
+      <p>
+        AI applies: {aiApplyCount} | AI dedupe drops: {aiDedupeDrops}
       </p>
       <p>Reconnects: {reconnectCount}</p>
       <p>

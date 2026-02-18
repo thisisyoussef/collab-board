@@ -2,7 +2,7 @@
 
 ## Status
 
-- State: Pending
+- State: Ready for User Checkpoint
 - Owner: Codex
 - Depends on: US2-03 approved
 
@@ -60,6 +60,19 @@ Local sources:
 - cache TTL strategy
 - stale-event resolution policy
 
+### Preparation Notes (Completed February 18, 2026)
+
+Official docs reviewed:
+
+1. https://socket.io/docs/v4/delivery-guarantees/
+2. https://socket.io/docs/v4/tutorial/handling-disconnections
+
+Decisions:
+
+1. Use client-side dedupe signatures with `eventType + boardId + objectId + txId + source + actorUserId + _ts`.
+2. Keep dedupe cache in-memory per board session with TTL eviction (`30s`) and max-entry guard (`4,000`).
+3. Preserve stale-event rejection policy already in object merge path (`updatedAt` and `_ts` last-write-wins checks).
+
 ## Consistency Contract
 
 1. One AI apply corresponds to one `txId`.
@@ -85,13 +98,18 @@ Track and display:
 
 ## Implementation Details
 
-Planned files:
+Implemented files:
 
 1. `/Users/youss/Development/gauntlet/collab-board/src/types/realtime.ts`
 2. `/Users/youss/Development/gauntlet/collab-board/src/lib/realtime-dedupe.ts`
 3. `/Users/youss/Development/gauntlet/collab-board/src/pages/Board.tsx`
 4. `/Users/youss/Development/gauntlet/collab-board/src/components/MetricsOverlay.tsx`
 5. `/Users/youss/Development/gauntlet/collab-board/server/index.js`
+6. `/Users/youss/Development/gauntlet/collab-board/server/realtime-meta.js`
+7. `/Users/youss/Development/gauntlet/collab-board/src/lib/realtime-dedupe.test.ts`
+8. `/Users/youss/Development/gauntlet/collab-board/src/pages/Board.ai-realtime.test.tsx`
+9. `/Users/youss/Development/gauntlet/collab-board/server/index.test.js`
+10. `/Users/youss/Development/gauntlet/collab-board/src/components/MetricsOverlay.test.tsx`
 
 ## TDD Plan
 
@@ -117,17 +135,17 @@ Red -> Green -> Refactor:
 
 ## Acceptance Criteria
 
-- [ ] Metadata fields propagate end-to-end.
-- [ ] Replay/duplicate events do not duplicate board mutations.
-- [ ] Concurrent AI applies converge across clients.
-- [ ] Metrics panel includes AI apply and dedupe metrics.
+- [x] Metadata fields propagate end-to-end.
+- [x] Replay/duplicate events do not duplicate board mutations.
+- [x] Concurrent AI applies converge across clients.
+- [x] Metrics panel includes AI apply and dedupe metrics.
 
 ## Local Validation
 
-1. `npm run lint`
-2. `npm run test -- src/lib/realtime-dedupe.test.ts src/pages/Board.ai-realtime.test.tsx server/index.test.js`
-3. `npm run test`
-4. `npm run build`
+1. `npm run lint` -> pass
+2. `npm run test -- src/lib/realtime-dedupe.test.ts src/pages/Board.ai-realtime.test.tsx server/index.test.js src/components/MetricsOverlay.test.tsx` -> pass
+3. `npm run test` -> pass (30 files, 187 tests)
+4. `npm run build` -> pass (Node 18 warning from Vite recommending Node 20.19+ or 22.12+)
 
 ## User Checkpoint Test
 
@@ -138,7 +156,12 @@ Red -> Green -> Refactor:
 
 ## Checkpoint Result
 
-- Production Frontend URL: Pending
-- Production Socket URL: Pending
+- Production Frontend URL: https://collab-board-iota.vercel.app
+- Production Socket URL: https://collab-board-0948.onrender.com
 - User Validation: Pending
-- Notes: Pending implementation.
+- Notes:
+  - Added shared realtime metadata contract (`txId`, `source`, `actorUserId`) for object and board-change payloads.
+  - Added client dedupe cache (`src/lib/realtime-dedupe.ts`) and board-level duplicate drop guard.
+  - Added AI metrics in overlay: `AI apply avg (ms)`, `AI applies count`, `AI dedupe drops`.
+  - Added server-side metadata extraction helper and rebroadcast preservation for all object events.
+  - Deployed to Vercel production deployment `FdjarYBVFnNfEXgpbTDQD6FsGsDC` (aliased to `https://collab-board-iota.vercel.app`) on February 18, 2026.

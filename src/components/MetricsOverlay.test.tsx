@@ -8,6 +8,9 @@ describe('MetricsOverlay', () => {
       <MetricsOverlay
         averageCursorLatencyMs={24}
         averageObjectLatencyMs={42}
+        averageAIApplyLatencyMs={120}
+        aiApplyCount={3}
+        aiDedupeDrops={1}
         userCount={3}
         objectCount={5}
         reconnectCount={2}
@@ -19,6 +22,8 @@ describe('MetricsOverlay', () => {
     expect(screen.getByLabelText('Realtime metrics overlay')).toBeInTheDocument();
     expect(screen.getByText(/Cursor avg: 24ms/)).toBeInTheDocument();
     expect(screen.getByText(/Object avg: 42ms/)).toBeInTheDocument();
+    expect(screen.getByText(/AI apply avg: 120ms/)).toBeInTheDocument();
+    expect(screen.getByText('AI applies: 3 | AI dedupe drops: 1')).toBeInTheDocument();
     expect(screen.getByText('Reconnects: 2')).toBeInTheDocument();
     expect(screen.getByText('Users: 3 | Objects: 5')).toBeInTheDocument();
     expect(screen.getByText(/Status: Connected/)).toBeInTheDocument();
