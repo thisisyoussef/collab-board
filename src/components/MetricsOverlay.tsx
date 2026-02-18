@@ -3,13 +3,14 @@ import { useEffect, useMemo, useState } from 'react';
 interface MetricsOverlayProps {
   averageCursorLatencyMs: number;
   userCount: number;
+  objectCount: number;
 }
 
 const enableMetricsFromEnv =
   String(import.meta.env.VITE_ENABLE_METRICS || '').toLowerCase() === 'true';
 const shouldShowMetrics = import.meta.env.DEV || enableMetricsFromEnv;
 
-export function MetricsOverlay({ averageCursorLatencyMs, userCount }: MetricsOverlayProps) {
+export function MetricsOverlay({ averageCursorLatencyMs, userCount, objectCount }: MetricsOverlayProps) {
   const [fps, setFps] = useState(60);
 
   useEffect(() => {
@@ -54,7 +55,9 @@ export function MetricsOverlay({ averageCursorLatencyMs, userCount }: MetricsOve
       <p>
         Cursor avg: {averageCursorLatencyMs}ms {cursorStatus}
       </p>
-      <p>Users: {userCount}</p>
+      <p>
+        Users: {userCount} | Objects: {objectCount}
+      </p>
     </aside>
   );
 }

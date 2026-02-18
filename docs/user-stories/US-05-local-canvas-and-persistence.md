@@ -2,7 +2,7 @@
 
 ## Status
 
-- State: Not Started
+- State: In Progress (Implemented, Awaiting User Validation)
 - Owner: Codex
 - Depends on: US-04 Approved
 
@@ -342,23 +342,23 @@ function updateObject(id: string, attrs: Partial<BoardObject>) {
 
 ## Acceptance Criteria
 
-- [ ] Sticky notes can be created by clicking canvas with sticky tool active (left rail `□` button).
-- [ ] Rectangles can be created by click-dragging with rect tool active (left rail `○` button).
-- [ ] Objects can be dragged to new positions (select tool — left rail `↖` button).
-- [ ] Objects can be resized/rotated with Transformer handles. Scale resets to 1 on transform end.
-- [ ] Sticky note text can be edited by double-clicking (inline textarea overlay).
-- [ ] Objects can be deleted with Delete/Backspace key or properties panel Delete button.
-- [ ] Canvas supports pan (drag on empty area) and zoom (scroll wheel toward cursor).
-- [ ] Object positions are in world coordinates (correct after pan/zoom).
-- [ ] Board state persists to Firestore via debounced writes (3-second debounce).
-- [ ] Board loads objects from Firestore on mount.
-- [ ] Canvas objects use Konva refs (NOT React state) — verify no `useState` for object arrays.
-- [ ] Rubber-band selection selects objects within the drawn rectangle.
-- [ ] Shift+click toggles objects in multi-selection.
-- [ ] Right properties panel updates to show selected object's properties.
-- [ ] Keyboard shortcuts work: `V` (select), `S` (sticky), `R` (rect), `Delete` (remove).
-- [ ] Konva Stage fills the `figma-canvas-shell` area (between left rail and right panel).
-- [ ] `npm run build` and `npm run lint` pass.
+- [x] Sticky notes can be created by clicking canvas with sticky tool active (left rail `□` button).
+- [x] Rectangles can be created by click-dragging with rect tool active (left rail `○` button).
+- [x] Objects can be dragged to new positions (select tool — left rail `↖` button).
+- [x] Objects can be resized/rotated with Transformer handles. Scale resets to 1 on transform end.
+- [x] Sticky note text can be edited by double-clicking (inline textarea overlay).
+- [x] Objects can be deleted with Delete/Backspace key or properties panel Delete button.
+- [x] Canvas supports pan (drag on empty area) and zoom (scroll wheel toward cursor).
+- [x] Object positions are in world coordinates (correct after pan/zoom).
+- [x] Board state persists to Firestore via debounced writes (3-second debounce).
+- [x] Board loads objects from Firestore on mount.
+- [x] Canvas objects use Konva refs (NOT React state) — verify no `useState` for object arrays.
+- [x] Rubber-band selection selects objects within the drawn rectangle.
+- [x] Shift+click toggles objects in multi-selection.
+- [x] Right properties panel updates to show selected object's properties.
+- [x] Keyboard shortcuts work: `V` (select), `S` (sticky), `R` (rect), `Delete` (remove).
+- [x] Konva Stage fills the `figma-canvas-shell` area (between left rail and right panel).
+- [x] `npm run build` and `npm run lint` pass.
 
 ## Checkpoint Test (User)
 
@@ -375,6 +375,11 @@ function updateObject(id: string, attrs: Partial<BoardObject>) {
 
 ## Checkpoint Result
 
-- Production Frontend URL:
+- Production Frontend URL: https://collab-board-iota.vercel.app
+- Production Socket URL: https://collab-board-0948.onrender.com
 - User Validation: Pending
 - Notes:
+  Implemented local board object model (`sticky` + `rect`) using Konva refs (`objectsRef`) and imperative node updates, with debounced Firestore persistence (`3s`) and load-on-mount hydration from board documents.  
+  Added full interaction flow: tool rail actions, create/move/resize/rotate, inline sticky text editing, delete via keyboard/properties, shift+click + marquee selection, and pan/zoom with world-coordinate cursor publishing compatibility.  
+  Updated metrics overlay to include object count and expanded board/page test support for Konva mocks and updated UI structure.  
+  Local validation on February 18, 2026: `npm run lint`, `npm run test -- --run`, and `npm run build` passing.

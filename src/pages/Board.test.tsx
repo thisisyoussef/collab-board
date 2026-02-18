@@ -33,9 +33,22 @@ vi.mock('../hooks/usePresence', () => ({
   }),
 }));
 
+vi.mock('konva', () => ({
+  default: {
+    Node: class {},
+    Stage: class {},
+    Layer: class {},
+    Group: class {},
+    Rect: class {},
+    Transformer: class {},
+    Text: class {},
+  },
+}));
+
 vi.mock('react-konva', () => ({
   Stage: ({ children }: { children: ReactNode }) => <div data-testid="konva-stage">{children}</div>,
   Layer: ({ children }: { children?: ReactNode }) => <div data-testid="konva-layer">{children}</div>,
+  Transformer: () => <div data-testid="konva-transformer" />,
   Group: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Line: () => <div />,
   Rect: () => <div />,
