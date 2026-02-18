@@ -55,7 +55,7 @@ const RECT_CLICK_DEFAULT_HEIGHT = 120;
 const RECT_CLICK_DRAG_THRESHOLD = 8;
 const STICKY_MIN_WIDTH = 80;
 const STICKY_MIN_HEIGHT = 60;
-const BOARD_SAVE_DEBOUNCE_MS = 1500;
+const BOARD_SAVE_DEBOUNCE_MS = 750;
 
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) {
@@ -152,6 +152,42 @@ function normalizeLoadedObject(raw: unknown, fallbackUserId: string): BoardObjec
   };
 }
 
+function sanitizeBoardObjectForFirestore(entry: BoardObject): BoardObject {
+  if (entry.type === 'sticky') {
+    return {
+      id: entry.id,
+      type: 'sticky',
+      x: entry.x,
+      y: entry.y,
+      width: entry.width,
+      height: entry.height,
+      rotation: entry.rotation,
+      text: entry.text || '',
+      color: entry.color,
+      fontSize: entry.fontSize || 14,
+      zIndex: entry.zIndex,
+      createdBy: entry.createdBy || 'guest',
+      updatedAt: entry.updatedAt,
+    };
+  }
+
+  return {
+    id: entry.id,
+    type: 'rect',
+    x: entry.x,
+    y: entry.y,
+    width: entry.width,
+    height: entry.height,
+    rotation: entry.rotation,
+    color: entry.color,
+    stroke: entry.stroke || RECT_DEFAULT_STROKE,
+    strokeWidth: entry.strokeWidth || RECT_DEFAULT_STROKE_WIDTH,
+    zIndex: entry.zIndex,
+    createdBy: entry.createdBy || 'guest',
+    updatedAt: entry.updatedAt,
+  };
+}
+
 export function Board() {
   const { id: boardId } = useParams<{ id: string }>();
   const { user, signOut } = useAuth();
@@ -165,7 +201,7 @@ export function Board() {
   });
   const navigate = useNavigate();
 
-  const displayName = user?.displayName || user?.email || 'Unknown';
+  const displayName = user?.displayName || user?.email || 'Guest';
   const canvasContainerRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<Konva.Stage | null>(null);
   const objectsLayerRef = useRef<Konva.Layer | null>(null);
@@ -277,7 +313,7 @@ export function Board() {
   }, [boardId]);
 
   useEffect(() => {
-    if (!boardId || !user) {
+    if (!boardId) {
       return;
     }
 
@@ -304,7 +340,7 @@ export function Board() {
 
         const rawObjects = (snapshot.data() as { objects?: BoardObjectsRecord }).objects || {};
         const normalizedObjects = Object.values(rawObjects)
-          .map((entry) => normalizeLoadedObject(entry, user.uid))
+          .map((entry) => normalizeLoadedObject(entry, user?.uid || 'guest'))
           .filter((entry): entry is BoardObject => Boolean(entry))
           .sort((a, b) => a.zIndex - b.zIndex);
 
@@ -438,7 +474,7 @@ export function Board() {
   }, [selectedIds]);
 
   useEffect(() => {
-    if (!boardId || !user) {
+    if (!boardId) {
       return;
     }
 
@@ -492,7 +528,7 @@ export function Board() {
   function serializeBoardObjects(): BoardObjectsRecord {
     const objectsRecord: BoardObjectsRecord = {};
     objectsRef.current.forEach((entry, id) => {
-      objectsRecord[id] = entry;
+      objectsRecord[id] = sanitizeBoardObjectForFirestore(entry);
     });
     return objectsRecord;
   }
@@ -834,10 +870,6 @@ export function Board() {
   }
 
   function createStickyAt(worldPosition: { x: number; y: number }) {
-    if (!user) {
-      return;
-    }
-
     const object: BoardObject = {
       id: crypto.randomUUID(),
       type: 'sticky',
@@ -850,7 +882,7 @@ export function Board() {
       color: STICKY_DEFAULT_COLOR,
       fontSize: 14,
       zIndex: getNextZIndex(),
-      createdBy: user.uid,
+      createdBy: user?.uid || 'guest',
       updatedAt: new Date().toISOString(),
     };
 
@@ -860,10 +892,6 @@ export function Board() {
   }
 
   function beginRectDraft(worldPosition: { x: number; y: number }) {
-    if (!user) {
-      return;
-    }
-
     const object: BoardObject = {
       id: crypto.randomUUID(),
       type: 'rect',
@@ -876,7 +904,7 @@ export function Board() {
       stroke: RECT_DEFAULT_STROKE,
       strokeWidth: RECT_DEFAULT_STROKE_WIDTH,
       zIndex: getNextZIndex(),
-      createdBy: user.uid,
+      createdBy: user?.uid || 'guest',
       updatedAt: new Date().toISOString(),
     };
 
@@ -1285,12 +1313,20 @@ export function Board() {
         <div className="topbar-cluster right">
           <span className={`presence-pill ${socketStatusClass}`}>{socketStatusLabel}</span>
           <PresenceAvatars members={members} currentUserId={user?.uid ?? null} />
-          <button className="secondary-btn" onClick={() => navigate('/dashboard')}>
-            Dashboard
-          </button>
-          <button className="primary-btn" onClick={() => void signOut().then(() => navigate('/'))}>
-            Sign out
-          </button>
+          {user ? (
+            <>
+              <button className="secondary-btn" onClick={() => navigate('/dashboard')}>
+                Dashboard
+              </button>
+              <button className="primary-btn" onClick={() => void signOut().then(() => navigate('/'))}>
+                Sign out
+              </button>
+            </>
+          ) : (
+            <button className="primary-btn" onClick={() => navigate('/')}>
+              Sign in
+            </button>
+          )}
         </div>
       </header>
 

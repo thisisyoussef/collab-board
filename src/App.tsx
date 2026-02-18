@@ -21,11 +21,7 @@ export function App() {
           />
           <Route
             path="/board/:id"
-            element={
-              <ProtectedRoute>
-                <Board />
-              </ProtectedRoute>
-            }
+            element={<Board />}
           />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
