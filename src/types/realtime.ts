@@ -24,6 +24,11 @@ export interface CursorHidePayload {
   _ts: number;
 }
 
+export interface BoardChangedPayload {
+  boardId: string;
+  _ts: number;
+}
+
 export interface JoinBoardPayload {
   boardId: string;
   user: {
@@ -47,6 +52,7 @@ export interface ClientToServerEvents {
   'join-board': (payload: JoinBoardPayload) => void;
   'cursor:move': (payload: CursorData) => void;
   'cursor:hide': (payload?: { _ts?: number }) => void;
+  'board:changed': (payload: BoardChangedPayload) => void;
 }
 
 export interface ServerToClientEvents {
@@ -55,5 +61,6 @@ export interface ServerToClientEvents {
   'user:left': (payload: UserLeftPayload) => void;
   'cursor:move': (payload: CursorMovePayload) => void;
   'cursor:hide': (payload: CursorHidePayload) => void;
+  'board:changed': (payload: BoardChangedPayload) => void;
   'server:error': (payload: ServerErrorPayload) => void;
 }

@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
+import { getOrCreateGuestIdentity } from '../lib/guest';
 import type { ClientToServerEvents, ServerToClientEvents } from '../types/realtime';
 import { useAuth } from './useAuth';
 
@@ -9,15 +10,16 @@ const SOCKET_URL = import.meta.env.VITE_SOCKET_SERVER_URL as string | undefined;
 
 export function useSocket(boardId: string | undefined) {
   const { user } = useAuth();
+  const guestIdentity = useMemo(() => getOrCreateGuestIdentity(), []);
   const socketRef = useRef<Socket<ServerToClientEvents, ClientToServerEvents> | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<SocketStatus>('connecting');
-  const canConnect = Boolean(user && boardId && SOCKET_URL);
+  const canConnect = Boolean(boardId && SOCKET_URL);
 
   useEffect(() => {
     let cancelled = false;
     let refreshAttempted = false;
 
-    if (!canConnect || !user) {
+    if (!canConnect) {
       socketRef.current?.disconnect();
       socketRef.current = null;
       return;
@@ -26,11 +28,19 @@ export function useSocket(boardId: string | undefined) {
     const connect = async () => {
       try {
         setConnectionStatus('connecting');
-        const token = await user.getIdToken();
-        if (cancelled) return;
+        const token = user ? await user.getIdToken() : null;
+        if (cancelled) {
+          return;
+        }
 
         const socket = io(SOCKET_URL, {
-          auth: { token },
+          auth: token
+            ? { token }
+            : {
+                guest: true,
+                guestId: guestIdentity.userId,
+                guestName: guestIdentity.displayName,
+              },
           transports: ['websocket'],
           autoConnect: false,
           reconnection: true,
@@ -52,7 +62,7 @@ export function useSocket(boardId: string | undefined) {
         socket.on('connect_error', async (err) => {
           setConnectionStatus('disconnected');
 
-          if (refreshAttempted || err.message !== 'Authentication failed') {
+          if (!user || refreshAttempted || err.message !== 'Authentication failed') {
             return;
           }
 
@@ -89,7 +99,7 @@ export function useSocket(boardId: string | undefined) {
       }
       socketRef.current = null;
     };
-  }, [boardId, canConnect, user]);
+  }, [boardId, canConnect, guestIdentity.displayName, guestIdentity.userId, user]);
 
   return { socketRef, status: canConnect ? connectionStatus : 'disconnected' };
 }

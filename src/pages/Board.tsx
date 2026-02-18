@@ -55,7 +55,7 @@ const RECT_CLICK_DEFAULT_HEIGHT = 120;
 const RECT_CLICK_DRAG_THRESHOLD = 8;
 const STICKY_MIN_WIDTH = 80;
 const STICKY_MIN_HEIGHT = 60;
-const BOARD_SAVE_DEBOUNCE_MS = 750;
+const BOARD_SAVE_DEBOUNCE_MS = 300;
 
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) {
@@ -500,6 +500,71 @@ export function Board() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boardId, user]);
 
+  useEffect(() => {
+    const socket = socketRef.current;
+    if (!socket || !boardId || socketStatus !== 'connected') {
+      return;
+    }
+
+    const handleBoardChanged = (payload: { boardId: string }) => {
+      const changedBoardId =
+        typeof payload?.boardId === 'string' ? payload.boardId.trim() : '';
+      if (!changedBoardId || changedBoardId !== boardId) {
+        return;
+      }
+
+      if (
+        hasUnsavedChangesRef.current ||
+        saveInFlightRef.current ||
+        rectDraftRef.current ||
+        selectionDraftRef.current ||
+        editingText
+      ) {
+        return;
+      }
+
+      void (async () => {
+        try {
+          const snapshot = await withFirestoreTimeout(
+            'Loading board objects',
+            getDoc(doc(db, 'boards', boardId)),
+          );
+          if (!snapshot.exists()) {
+            return;
+          }
+
+          const rawObjects = (snapshot.data() as { objects?: BoardObjectsRecord }).objects || {};
+          clearBoardObjects();
+
+          const normalizedObjects = Object.values(rawObjects)
+            .map((entry) => normalizeLoadedObject(entry, user?.uid || 'guest'))
+            .filter((entry): entry is BoardObject => Boolean(entry))
+            .sort((a, b) => a.zIndex - b.zIndex);
+
+          normalizedObjects.forEach((entry) => {
+            objectsRef.current.set(entry.id, entry);
+            const node = createNodeForObject(entry);
+            objectsLayerRef.current?.add(node);
+            node.zIndex(entry.zIndex);
+          });
+
+          objectsLayerRef.current?.batchDraw();
+          setObjectCount(objectsRef.current.size);
+          hasUnsavedChangesRef.current = false;
+          setBoardRevision((value) => value + 1);
+        } catch {
+          // keep local state if background sync fetch fails
+        }
+      })();
+    };
+
+    socket.on('board:changed', handleBoardChanged);
+    return () => {
+      socket.off('board:changed', handleBoardChanged);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [boardId, editingText, socketRef, socketStatus, user]);
+
   function isBackgroundTarget(target: Konva.Node | null, stage: Konva.Stage): boolean {
     return target === stage || Boolean(target?.hasName('board-background'));
   }
@@ -557,6 +622,13 @@ export function Board() {
       );
       hasUnsavedChangesRef.current = false;
       setCanvasNotice(null);
+      const socket = socketRef.current;
+      if (socket?.connected) {
+        socket.emit('board:changed', {
+          boardId: liveBoardId,
+          _ts: Date.now(),
+        });
+      }
     } catch (err) {
       hasUnsavedChangesRef.current = true;
       setCanvasNotice(toFirestoreUserMessage('Unable to save board changes.', err));

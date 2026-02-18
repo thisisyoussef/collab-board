@@ -64,27 +64,37 @@ const io = new Server(server, {
   transports: ['websocket'],
 });
 
+function applyGuestIdentity(socket) {
+  const requestedGuestId = normalizeNonEmptyString(socket.handshake.auth?.guestId);
+  const requestedGuestName = normalizeNonEmptyString(socket.handshake.auth?.guestName);
+  const guestId = requestedGuestId || `guest-${socket.id}`;
+
+  socket.data.userId = guestId;
+  socket.data.displayName = requestedGuestName || `Guest ${guestId.slice(-4)}`;
+  socket.data.email = null;
+  socket.data.photoURL = null;
+  socket.data.isGuest = true;
+}
+
 io.use(async (socket, next) => {
   try {
-    if (!canVerifyFirebaseTokens) {
-      next(new Error('Authentication failed'));
-      return;
-    }
-
     const token = socket.handshake.auth?.token;
-    if (!token || typeof token !== 'string') {
-      next(new Error('Authentication failed'));
+    if (token && typeof token === 'string' && canVerifyFirebaseTokens) {
+      const decoded = await admin.auth().verifyIdToken(token);
+      socket.data.userId = decoded.uid;
+      socket.data.displayName = decoded.name || decoded.email || 'Unknown';
+      socket.data.email = decoded.email || null;
+      socket.data.photoURL = decoded.picture || null;
+      socket.data.isGuest = false;
+      next();
       return;
     }
 
-    const decoded = await admin.auth().verifyIdToken(token);
-    socket.data.userId = decoded.uid;
-    socket.data.displayName = decoded.name || decoded.email || 'Unknown';
-    socket.data.email = decoded.email || null;
-    socket.data.photoURL = decoded.picture || null;
+    applyGuestIdentity(socket);
     next();
   } catch {
-    next(new Error('Authentication failed'));
+    applyGuestIdentity(socket);
+    next();
   }
 });
 
@@ -159,6 +169,21 @@ io.on('connection', (socket) => {
 
     const payload = buildCursorHidePayload(data, socket);
     socket.to(boardRoom(boardId)).emit('cursor:hide', payload);
+  });
+
+  socket.on('board:changed', (data) => {
+    const currentBoardId = normalizeNonEmptyString(socket.data.boardId);
+    const payloadBoardId = normalizeNonEmptyString(data?.boardId);
+    const boardId = payloadBoardId || currentBoardId;
+    if (!boardId) {
+      return;
+    }
+
+    const ts = Number(data?._ts);
+    socket.to(boardRoom(boardId)).emit('board:changed', {
+      boardId,
+      _ts: Number.isFinite(ts) ? ts : Date.now(),
+    });
   });
 
   socket.on('disconnect', (reason) => {

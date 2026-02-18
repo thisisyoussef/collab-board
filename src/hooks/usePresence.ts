@@ -1,7 +1,8 @@
 import type { User } from 'firebase/auth';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { MutableRefObject } from 'react';
 import type { Socket } from 'socket.io-client';
+import { getOrCreateGuestIdentity } from '../lib/guest';
 import { generateColor } from '../lib/utils';
 import type { SocketStatus } from './useSocket';
 import type {
@@ -54,22 +55,24 @@ function sortMembers(items: PresenceMemberWithState[]): PresenceMemberWithState[
 export function usePresence({ boardId, user, socketRef, socketStatus }: UsePresenceParams) {
   const [members, setMembers] = useState<PresenceMemberWithState[]>([]);
   const leaveTimersRef = useRef<Record<string, number>>({});
+  const guestIdentity = useMemo(() => getOrCreateGuestIdentity(), []);
 
   useEffect(() => {
     const socket = socketRef.current;
-    if (!socket || !user || !boardId || socketStatus !== 'connected') {
+    if (!socket || !boardId || socketStatus !== 'connected') {
       return;
     }
 
     const leaveTimers = leaveTimersRef.current;
 
-    const selfDisplayName = user.displayName || user.email || 'Unknown';
+    const selfDisplayName = user?.displayName || user?.email || guestIdentity.displayName;
+    const selfId = user?.uid || guestIdentity.userId;
     const joinPayload: JoinBoardPayload = {
       boardId,
       user: {
-        id: user.uid,
+        id: selfId,
         displayName: selfDisplayName,
-        color: generateColor(user.uid),
+        color: generateColor(selfId),
       },
     };
 
@@ -144,9 +147,9 @@ export function usePresence({ boardId, user, socketRef, socketStatus }: UsePrese
         clearLeaveTimer(socketId);
       });
     };
-  }, [boardId, socketRef, socketStatus, user]);
+  }, [boardId, guestIdentity.displayName, guestIdentity.userId, socketRef, socketStatus, user]);
 
   return {
-    members: boardId && user && socketStatus === 'connected' ? members : [],
+    members: boardId && socketStatus === 'connected' ? members : [],
   };
 }

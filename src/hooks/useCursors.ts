@@ -1,7 +1,8 @@
 import type { User } from 'firebase/auth';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MutableRefObject } from 'react';
 import type { Socket } from 'socket.io-client';
+import { getOrCreateGuestIdentity } from '../lib/guest';
 import { generateColor } from '../lib/utils';
 import type { SocketStatus } from './useSocket';
 import type {
@@ -61,14 +62,24 @@ function toSafeCursor(payload: CursorMovePayload): RemoteCursor | null {
 export function useCursors({ boardId, user, socketRef, socketStatus }: UseCursorsParams) {
   const [remoteCursors, setRemoteCursors] = useState<RemoteCursor[]>([]);
   const [averageLatencyMs, setAverageLatencyMs] = useState(0);
+  const guestIdentity = useMemo(() => getOrCreateGuestIdentity(), []);
   const lastEmitAtRef = useRef(0);
   const lastHideEmitAtRef = useRef(0);
   const latenciesRef = useRef<number[]>([]);
   const cursorTouchedAtRef = useRef<Record<string, number>>({});
 
+  const selfIdentity = useMemo(
+    () => ({
+      userId: user?.uid || guestIdentity.userId,
+      displayName: user?.displayName || user?.email || guestIdentity.displayName,
+      color: generateColor(user?.uid || guestIdentity.userId),
+    }),
+    [guestIdentity.displayName, guestIdentity.userId, user],
+  );
+
   const publishCursor = useCallback(
     (position: { x: number; y: number }) => {
-      if (!boardId || !user || socketStatus !== 'connected') {
+      if (!boardId || socketStatus !== 'connected') {
         return;
       }
 
@@ -92,19 +103,19 @@ export function useCursors({ boardId, user, socketRef, socketStatus }: UseCursor
       const payload: CursorData = {
         x,
         y,
-        userId: user.uid,
-        displayName: user.displayName || user.email || 'Unknown',
-        color: generateColor(user.uid),
+        userId: selfIdentity.userId,
+        displayName: selfIdentity.displayName,
+        color: selfIdentity.color,
         _ts: now,
       };
 
       socket.volatile.emit('cursor:move', payload);
     },
-    [boardId, socketRef, socketStatus, user],
+    [boardId, selfIdentity.color, selfIdentity.displayName, selfIdentity.userId, socketRef, socketStatus],
   );
 
   const publishCursorHide = useCallback(() => {
-    if (!boardId || !user || socketStatus !== 'connected') {
+    if (!boardId || socketStatus !== 'connected') {
       return;
     }
 
@@ -120,11 +131,11 @@ export function useCursors({ boardId, user, socketRef, socketStatus }: UseCursor
 
     lastHideEmitAtRef.current = now;
     socket.emit('cursor:hide', { _ts: now });
-  }, [boardId, socketRef, socketStatus, user]);
+  }, [boardId, socketRef, socketStatus]);
 
   useEffect(() => {
     const socket = socketRef.current;
-    if (!socket || !user || !boardId || socketStatus !== 'connected') {
+    if (!socket || !boardId || socketStatus !== 'connected') {
       return;
     }
 
@@ -180,10 +191,10 @@ export function useCursors({ boardId, user, socketRef, socketStatus }: UseCursor
       socket.off('cursor:hide', handleCursorHide);
       socket.off('user:left', handleUserLeft);
     };
-  }, [boardId, socketRef, socketStatus, user]);
+  }, [boardId, socketRef, socketStatus]);
 
   useEffect(() => {
-    if (!boardId || !user || socketStatus !== 'connected') {
+    if (!boardId || socketStatus !== 'connected') {
       return;
     }
 
@@ -205,10 +216,10 @@ export function useCursors({ boardId, user, socketRef, socketStatus }: UseCursor
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [boardId, socketStatus, user]);
+  }, [boardId, socketStatus]);
 
   useEffect(() => {
-    if (!boardId || !user || socketStatus !== 'connected') {
+    if (!boardId || socketStatus !== 'connected') {
       return;
     }
 
@@ -231,7 +242,7 @@ export function useCursors({ boardId, user, socketRef, socketStatus }: UseCursor
       window.removeEventListener('pagehide', handleWindowBlur);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [boardId, publishCursorHide, socketStatus, user]);
+  }, [boardId, publishCursorHide, socketStatus]);
 
   return {
     remoteCursors: socketStatus === 'connected' ? remoteCursors : [],
