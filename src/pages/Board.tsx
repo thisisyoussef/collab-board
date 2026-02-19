@@ -75,6 +75,12 @@ import {
 import { toFirestoreUserMessage, withFirestoreTimeout } from '../lib/firestore-client';
 import { db } from '../lib/firebase';
 import { logger } from '../lib/logger';
+import {
+  cloneObjects,
+  relinkConnectors,
+  serializeToClipboard,
+  deserializeFromClipboard,
+} from '../lib/board-clipboard';
 import { loadViewportState, saveViewportState } from '../lib/viewport';
 import {
   buildRealtimeEventSignature,
@@ -1202,6 +1208,50 @@ export function Board() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boardId, socketStatus, user]);
+
+  // ── Global keyboard shortcuts for clipboard operations ──────────────
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      // Skip when user is typing in an input, textarea, or contenteditable
+      const tag = (event.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || (event.target as HTMLElement)?.isContentEditable) {
+        return;
+      }
+      // Skip when editing text on canvas
+      if (editingText) {
+        return;
+      }
+
+      const mod = event.metaKey || event.ctrlKey;
+
+      // Ctrl/Cmd + D → Duplicate
+      if (mod && event.key === 'd') {
+        event.preventDefault();
+        handleDuplicate();
+        return;
+      }
+
+      // Ctrl/Cmd + C → Copy
+      if (mod && event.key === 'c') {
+        event.preventDefault();
+        handleCopy();
+        return;
+      }
+
+      // Ctrl/Cmd + V → Paste
+      if (mod && event.key === 'v') {
+        event.preventDefault();
+        handlePaste();
+        return;
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingText, canEditBoard, selectedIds]);
 
   function isBackgroundTarget(target: Konva.Node | null, stage: Konva.Stage): boolean {
     return target === stage || Boolean(target?.hasName('board-background'));
@@ -3185,6 +3235,100 @@ export function Board() {
     }
   }
 
+  // ── Clipboard: Duplicate / Copy / Paste ─────────────────────────────
+
+  function handleDuplicate() {
+    if (!canEditBoard || selectedIds.length === 0) {
+      return;
+    }
+    const originals = selectedIds
+      .map((id) => objectsRef.current.get(id))
+      .filter((obj): obj is BoardObject => obj !== undefined);
+    if (originals.length === 0) {
+      return;
+    }
+    const beforeState = captureManualHistoryBaseline();
+    const clones = cloneObjects(originals, { dx: 20, dy: 20 });
+    relinkConnectors(originals, clones);
+
+    // Assign fresh zIndexes
+    for (const clone of clones) {
+      clone.zIndex = getNextZIndex();
+    }
+
+    for (const clone of clones) {
+      objectsRef.current.set(clone.id, clone);
+      const node = createNodeForObject(clone);
+      objectsLayerRef.current?.add(node);
+      emitObjectCreate(clone);
+    }
+    syncObjectsLayerZOrder();
+    objectsLayerRef.current?.batchDraw();
+    setObjectCount(objectsRef.current.size);
+    setBoardRevision((value) => value + 1);
+    setSelectedIds(clones.map((c) => c.id));
+    aiExecutor.invalidateUndo();
+    scheduleBoardSave();
+    commitBoardHistory('manual', beforeState);
+    logger.info('CANVAS', `Duplicated ${clones.length} object(s)`, {
+      count: clones.length,
+      ids: clones.map((c) => c.id),
+    });
+  }
+
+  function handleCopy() {
+    if (selectedIds.length === 0) {
+      return;
+    }
+    const originals = selectedIds
+      .map((id) => objectsRef.current.get(id))
+      .filter((obj): obj is BoardObject => obj !== undefined);
+    if (originals.length === 0) {
+      return;
+    }
+    serializeToClipboard(originals);
+    logger.info('CANVAS', `Copied ${originals.length} object(s) to clipboard`, {
+      count: originals.length,
+    });
+  }
+
+  function handlePaste() {
+    if (!canEditBoard) {
+      return;
+    }
+    const originals = deserializeFromClipboard();
+    if (!originals || originals.length === 0) {
+      return;
+    }
+    const beforeState = captureManualHistoryBaseline();
+    const clones = cloneObjects(originals, { dx: 20, dy: 20 });
+    relinkConnectors(originals, clones);
+
+    // Assign fresh zIndexes
+    for (const clone of clones) {
+      clone.zIndex = getNextZIndex();
+    }
+
+    for (const clone of clones) {
+      objectsRef.current.set(clone.id, clone);
+      const node = createNodeForObject(clone);
+      objectsLayerRef.current?.add(node);
+      emitObjectCreate(clone);
+    }
+    syncObjectsLayerZOrder();
+    objectsLayerRef.current?.batchDraw();
+    setObjectCount(objectsRef.current.size);
+    setBoardRevision((value) => value + 1);
+    setSelectedIds(clones.map((c) => c.id));
+    aiExecutor.invalidateUndo();
+    scheduleBoardSave();
+    commitBoardHistory('manual', beforeState);
+    logger.info('CANVAS', `Pasted ${clones.length} object(s) from clipboard`, {
+      count: clones.length,
+      ids: clones.map((c) => c.id),
+    });
+  }
+
   function commitTextEdit(saveChanges: boolean) {
     if (!editingText) {
       return;
@@ -4890,6 +5034,9 @@ export function Board() {
             onDeleteObject={(objectId) => removeObjects([objectId], true)}
             onUpdateObject={updateObjectProperties}
             onUpdateConnector={updateConnectorProperties}
+            onDuplicate={handleDuplicate}
+            onCopy={handleCopy}
+            onPaste={handlePaste}
           />
         </aside>
       </section>

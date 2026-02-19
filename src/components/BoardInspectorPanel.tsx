@@ -9,6 +9,9 @@ interface BoardInspectorPanelProps {
   onDeleteObject: (objectId: string) => void;
   onUpdateObject: (objectId: string, patch: Partial<BoardObject>) => void;
   onUpdateConnector: (connectorId: string, patch: Partial<BoardObject>) => void;
+  onDuplicate: () => void;
+  onCopy: () => void;
+  onPaste: () => void;
 }
 
 function selectedLabel(object: BoardObject): string {
@@ -53,6 +56,9 @@ export function BoardInspectorPanel({
   onDeleteObject,
   onUpdateObject,
   onUpdateConnector,
+  onDuplicate,
+  onCopy,
+  onPaste,
 }: BoardInspectorPanelProps) {
   const isMulti = selectedIds.length > 1;
   const isSingle = selectedIds.length === 1 && selectedObject;
@@ -82,6 +88,32 @@ export function BoardInspectorPanel({
           <div className="property-row">
             <span>Selection</span>
             <strong>{selectedIds.length} objects</strong>
+          </div>
+          <div className="property-row property-actions">
+            <button
+              className="secondary-btn"
+              disabled={!canEditBoard}
+              onClick={onDuplicate}
+              title="Duplicate (Ctrl+D)"
+            >
+              Duplicate
+            </button>
+            <button
+              className="secondary-btn"
+              disabled={!canEditBoard}
+              onClick={onCopy}
+              title="Copy (Ctrl+C)"
+            >
+              Copy
+            </button>
+            <button
+              className="secondary-btn"
+              disabled={!canEditBoard}
+              onClick={onPaste}
+              title="Paste (Ctrl+V)"
+            >
+              Paste
+            </button>
           </div>
           <button
             className="danger-btn property-delete-btn"
@@ -337,6 +369,32 @@ export function BoardInspectorPanel({
             </>
           )}
 
+          <div className="property-row property-actions">
+            <button
+              className="secondary-btn"
+              disabled={!canEditBoard}
+              onClick={onDuplicate}
+              title="Duplicate (Ctrl+D)"
+            >
+              Duplicate
+            </button>
+            <button
+              className="secondary-btn"
+              disabled={!canEditBoard}
+              onClick={onCopy}
+              title="Copy (Ctrl+C)"
+            >
+              Copy
+            </button>
+            <button
+              className="secondary-btn"
+              disabled={!canEditBoard}
+              onClick={onPaste}
+              title="Paste (Ctrl+V)"
+            >
+              Paste
+            </button>
+          </div>
           <button
             className="danger-btn property-delete-btn"
             disabled={!canEditBoard}
