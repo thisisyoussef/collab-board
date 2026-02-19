@@ -197,4 +197,42 @@ describe('useBoardSharing', () => {
     );
     expect(result.current.workspaceState).toBe('saved');
   });
+
+  it('falls back to viewer workspace save when editor role is denied', async () => {
+    const editorAccess: ResolveBoardAccessResult = {
+      ...ownerAccess,
+      effectiveRole: 'editor',
+      canApplyAI: true,
+    };
+
+    mockSetDoc
+      .mockRejectedValueOnce(Object.assign(new Error('denied'), { code: 'permission-denied' }))
+      .mockResolvedValueOnce(undefined);
+
+    const { result } = renderHook(() =>
+      useBoardSharing({
+        boardId: 'board-1',
+        userId: 'user-2',
+        access: editorAccess,
+        isSharePanelOpen: false,
+      }),
+    );
+
+    await act(async () => {
+      await expect(result.current.saveToWorkspace()).resolves.toBe(true);
+    });
+
+    expect(mockSetDoc).toHaveBeenCalledTimes(2);
+    expect(mockSetDoc).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      expect.objectContaining({ role: 'editor' }),
+    );
+    expect(mockSetDoc).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      expect.objectContaining({ role: 'viewer' }),
+    );
+    expect(result.current.workspaceState).toBe('saved');
+  });
 });

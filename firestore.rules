@@ -98,6 +98,15 @@ service cloud.firestore {
         );
     }
 
+    function linkRoleForSignedInUser(data) {
+      let visibility = normalizeVisibility(data);
+      return visibility == 'auth_link'
+        ? normalizeAuthLinkRole(data)
+        : visibility == 'public_link'
+          ? normalizePublicLinkRole(data)
+          : 'none';
+    }
+
     function immutableBoardFieldsUnchanged() {
       return request.resource.data.ownerId == resource.data.ownerId &&
         request.resource.data.createdBy == resource.data.createdBy &&
@@ -164,16 +173,10 @@ service cloud.firestore {
           isBoardOwner(request.resource.data.boardId) ||
           (
             request.resource.data.userId == request.auth.uid &&
-            get(boardDocPath(request.resource.data.boardId)).data != null &&
-            canReadBoard(
-              request.resource.data.boardId,
-              get(boardDocPath(request.resource.data.boardId)).data
-            ) &&
+            get(boardDocPath(request.resource.data.boardId)).data is map &&
+            linkRoleForSignedInUser(get(boardDocPath(request.resource.data.boardId)).data) != 'none' &&
             request.resource.data.role ==
-              effectiveBoardRole(
-                request.resource.data.boardId,
-                get(boardDocPath(request.resource.data.boardId)).data
-              )
+              linkRoleForSignedInUser(get(boardDocPath(request.resource.data.boardId)).data)
           )
         );
 

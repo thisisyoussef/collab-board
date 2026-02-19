@@ -32,6 +32,15 @@ interface UseBoardSharingOptions {
   onSharingSaved?: (nextSharing: PersistedSharing) => void;
 }
 
+function isPermissionDeniedError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const code = 'code' in error && typeof error.code === 'string' ? error.code : '';
+  return code === 'permission-denied';
+}
+
 function normalizeMemberRole(value: unknown): Exclude<BoardRole, 'none'> | null {
   if (value === 'owner' || value === 'editor' || value === 'viewer') {
     return value;
@@ -318,18 +327,40 @@ export function useBoardSharing({
         return true;
       }
 
-      const role: ShareRole = access.effectiveRole === 'editor' ? 'editor' : 'viewer';
-      await withFirestoreTimeout(
-        'Saving board to workspace',
-        setDoc(membershipRef, {
-          boardId,
-          userId,
-          role,
-          addedAt: serverTimestamp(),
-          addedBy: userId,
-          updatedAt: serverTimestamp(),
-        }),
-      );
+      const preferredRole: ShareRole = access.effectiveRole === 'editor' ? 'editor' : 'viewer';
+      const candidateRoles: ShareRole[] =
+        preferredRole === 'editor' ? ['editor', 'viewer'] : ['viewer'];
+
+      let lastError: unknown = null;
+      let saved = false;
+
+      for (let index = 0; index < candidateRoles.length; index += 1) {
+        const role = candidateRoles[index];
+        try {
+          await withFirestoreTimeout(
+            'Saving board to workspace',
+            setDoc(membershipRef, {
+              boardId,
+              userId,
+              role,
+              addedAt: serverTimestamp(),
+              addedBy: userId,
+              updatedAt: serverTimestamp(),
+            }),
+          );
+          saved = true;
+          break;
+        } catch (err) {
+          lastError = err;
+          if (!(isPermissionDeniedError(err) && index < candidateRoles.length - 1)) {
+            throw err;
+          }
+        }
+      }
+
+      if (!saved && lastError) {
+        throw lastError;
+      }
 
       setWorkspaceState('saved');
       return true;
