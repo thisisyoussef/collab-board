@@ -106,7 +106,11 @@ service cloud.firestore {
         hasValidSharingShape(request.resource.data);
 
       allow update: if canEditBoard(boardId, resource.data) &&
-        hasValidSharingShape(request.resource.data);
+        hasValidSharingShape(request.resource.data) &&
+        (
+          isOwner(resource.data) ||
+          request.resource.data.sharing == resource.data.sharing
+        );
 
       allow delete: if isOwner(resource.data);
     }
@@ -126,7 +130,23 @@ service cloud.firestore {
         (request.resource.data.role == 'owner' ||
           request.resource.data.role == 'editor' ||
           request.resource.data.role == 'viewer') &&
-        isBoardOwner(request.resource.data.boardId);
+        (
+          isBoardOwner(request.resource.data.boardId) ||
+          (
+            request.resource.data.userId == request.auth.uid &&
+            request.resource.data.role != 'owner' &&
+            get(boardDocPath(request.resource.data.boardId)).data != null &&
+            canReadBoard(
+              request.resource.data.boardId,
+              get(boardDocPath(request.resource.data.boardId)).data
+            ) &&
+            request.resource.data.role ==
+              effectiveBoardRole(
+                request.resource.data.boardId,
+                get(boardDocPath(request.resource.data.boardId)).data
+              )
+          )
+        );
 
       allow update: if isSignedIn() &&
         resource.data.boardId is string &&

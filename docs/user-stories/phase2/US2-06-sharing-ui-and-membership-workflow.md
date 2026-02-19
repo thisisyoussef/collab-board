@@ -2,7 +2,7 @@
 
 ## Status
 
-- State: Pending
+- State: Ready for User Checkpoint
 - Owner: Codex
 - Depends on: US2-05 approved
 
@@ -61,6 +61,17 @@ Local sources:
 - validation rules
 - failure/retry behavior
 
+### Preparation Notes (February 19, 2026)
+
+1. Firestore write and update behavior confirmed from Firebase docs:
+   [Add data to Cloud Firestore](https://firebase.google.com/docs/firestore/manage-data/add-data)
+2. Firestore rules `get()/exists()` and condition patterns confirmed from:
+   [Writing conditions for Cloud Firestore Security Rules](https://firebase.google.com/docs/firestore/security/rules-conditions)
+3. React conditional render approach and branch patterns confirmed from:
+   [React Conditional Rendering](https://react.dev/learn/conditional-rendering)
+4. Share panel modal semantics reviewed against:
+   [WAI-ARIA Dialog (Modal) Pattern](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/)
+
 ## UX Script
 
 Owner flow:
@@ -87,17 +98,35 @@ Member management flow:
 
 ## Implementation Details
 
-Planned files:
+Implemented files:
 
 1. `/Users/youss/Development/gauntlet/collab-board/src/components/ShareSettingsPanel.tsx`
 2. `/Users/youss/Development/gauntlet/collab-board/src/hooks/useBoardSharing.ts`
 3. `/Users/youss/Development/gauntlet/collab-board/src/types/sharing.ts`
 4. `/Users/youss/Development/gauntlet/collab-board/src/pages/Board.tsx`
+5. `/Users/youss/Development/gauntlet/collab-board/src/index.css`
+6. `/Users/youss/Development/gauntlet/collab-board/firestore.rules`
+7. `/Users/youss/Development/gauntlet/collab-board/src/lib/access.ts`
+8. `/Users/youss/Development/gauntlet/collab-board/src/components/ShareSettingsPanel.test.tsx`
+9. `/Users/youss/Development/gauntlet/collab-board/src/hooks/useBoardSharing.test.ts`
+10. `/Users/youss/Development/gauntlet/collab-board/src/pages/Board.test.tsx`
 
 Data writes:
 
 1. Board sharing config to `boards/{boardId}.sharing`.
 2. Collaborator workspace save to `boardMembers/{boardId_userId}`.
+
+Behavior shipped:
+
+1. `Share` now opens a full side-panel (not only copy-link action).
+2. Owner-only sharing controls: visibility, auth-link role, public-link role.
+3. Public mode enable-time validation: explicit public role is required before save.
+4. Collaborator flow: `Save to workspace` creates explicit membership for the current signed-in user.
+5. Owner member-management: list explicit members, change role editor/viewer, remove member.
+6. Board page keeps copy-link behavior via panel `Copy link` action.
+7. Firestore rules hardening:
+   - non-owner editors cannot change board sharing fields
+   - signed-in users can create their own non-owner membership doc only when they already have read access and the role matches effective link role
 
 ## TDD Plan
 
@@ -124,11 +153,11 @@ Red -> Green -> Refactor:
 
 ## Acceptance Criteria
 
-- [ ] Owner can configure visibility and role behavior from share panel.
-- [ ] Public mode requires explicit role selection at enable-time.
-- [ ] Collaborator can save board to workspace.
-- [ ] Owner can update/remove member roles.
-- [ ] Non-owner cannot modify sharing settings.
+- [x] Owner can configure visibility and role behavior from share panel.
+- [x] Public mode requires explicit role selection at enable-time.
+- [x] Collaborator can save board to workspace.
+- [x] Owner can update/remove member roles.
+- [x] Non-owner cannot modify sharing settings.
 
 ## Local Validation
 
@@ -137,16 +166,28 @@ Red -> Green -> Refactor:
 3. `npm run test`
 4. `npm run build`
 
+Result:
+
+1. `npm run test -- src/components/ShareSettingsPanel.test.tsx src/hooks/useBoardSharing.test.ts src/pages/Board.test.tsx` passed (22 tests).
+2. `npm run lint` passed.
+3. `npm run test` passed (33 files / 217 tests).
+4. `npm run build` passed (Vite Node 20+ warning still present on local Node 18.20.4; artifact built successfully).
+
 ## User Checkpoint Test
 
-1. Owner sets each visibility mode and saves.
-2. Collaborator opens link and saves to workspace.
-3. Owner changes collaborator role and validates behavior.
-4. Owner removes collaborator and validates access change.
+1. Owner opens a board, clicks `Share`, changes visibility/roles, and saves.
+2. Owner switches to `public_link`; verify `Save settings` stays disabled until selecting `Public link role`.
+3. Collaborator (signed-in non-owner with access) opens `Share` and clicks `Save to workspace`; verify button becomes `Saved`.
+4. Owner opens `Share` and sees member list; change member role viewer<->editor and verify the member session behavior updates.
+5. Owner removes a member from the list; verify member loses explicit membership behavior.
+6. Non-owner opens `Share`; verify sharing controls are not editable and owner-only message is shown.
 
 ## Checkpoint Result
 
-- Production Frontend URL: Pending
-- Production Socket URL: Pending
+- Production Frontend URL: https://collab-board-iota.vercel.app
+- Production Socket URL: https://collab-board-0948.onrender.com
 - User Validation: Pending
-- Notes: Pending implementation.
+- Notes:
+1. Firestore rules file updated for US2-06, but rules release still depends on Firebase CLI auth from your machine.
+2. No Socket.IO server code changes were required for this story.
+3. Latest Vercel production deployment for this story aliased on February 19, 2026.

@@ -8,9 +8,11 @@ import { MetricsOverlay } from '../components/MetricsOverlay';
 import { PresenceAvatars } from '../components/PresenceAvatars';
 import { ReconnectBanner } from '../components/ReconnectBanner';
 import { RemoteCursors } from '../components/RemoteCursors';
+import { ShareSettingsPanel } from '../components/ShareSettingsPanel';
 import { useAuth } from '../hooks/useAuth';
 import { useAICommandCenter } from '../hooks/useAICommandCenter';
 import { useAIExecutor, type AICommitMeta } from '../hooks/useAIExecutor';
+import { useBoardSharing } from '../hooks/useBoardSharing';
 import { useCursors } from '../hooks/useCursors';
 import { usePresence } from '../hooks/usePresence';
 import { useSocket, type SocketStatus } from '../hooks/useSocket';
@@ -313,6 +315,7 @@ export function Board() {
   const [averageAIApplyLatencyMs, setAverageAIApplyLatencyMs] = useState(0);
   const [aiApplyCount, setAiApplyCount] = useState(0);
   const [aiDedupeDrops, setAiDedupeDrops] = useState(0);
+  const [isSharePanelOpen, setIsSharePanelOpen] = useState(false);
   const [shareState, setShareState] = useState<'idle' | 'copied' | 'error'>('idle');
 
   const selectedObject =
@@ -393,6 +396,25 @@ export function Board() {
     actorUserId: user?.uid || 'guest',
     getBoardState: serializeBoardObjects,
     commitBoardState: applyAIBoardStateCommit,
+  });
+  const boardSharing = useBoardSharing({
+    boardId,
+    userId: user?.uid ?? null,
+    access: boardAccess,
+    isSharePanelOpen,
+    onSharingSaved: (nextSharing) => {
+      setBoardAccess((previous) => {
+        if (!previous) {
+          return previous;
+        }
+        return {
+          ...previous,
+          ...nextSharing,
+          isLegacyFallback: false,
+        };
+      });
+      setCanvasNotice('Share settings saved.');
+    },
   });
 
   const handleApplyAIPlan = async (actions: AIActionPreview[] = aiCommandCenter.actions) => {
@@ -495,6 +517,7 @@ export function Board() {
     setEditingTitle(false);
     setIsSavingTitle(false);
     setTitleError(null);
+    setIsSharePanelOpen(false);
     setShareState('idle');
     setBoardAccess(null);
     setBoardMissing(false);
@@ -3383,7 +3406,7 @@ export function Board() {
     }
   };
 
-  const handleShareBoard = async () => {
+  const handleCopyShareLink = async () => {
     if (!boardId) {
       return;
     }
@@ -3423,6 +3446,34 @@ export function Board() {
       setShareState('idle');
       shareFeedbackTimeoutRef.current = null;
     }, SHARE_FEEDBACK_RESET_MS);
+  };
+
+  const handleSaveShareSettings = async () => {
+    const saved = await boardSharing.saveSharingSettings();
+    if (saved) {
+      setCanvasNotice('Share settings saved.');
+    }
+  };
+
+  const handleMemberRoleChange = async (membershipId: string, role: 'editor' | 'viewer') => {
+    const updated = await boardSharing.updateMemberRole(membershipId, role);
+    if (updated) {
+      setCanvasNotice('Member role updated.');
+    }
+  };
+
+  const handleMemberRemove = async (membershipId: string) => {
+    const removed = await boardSharing.removeMember(membershipId);
+    if (removed) {
+      setCanvasNotice('Member removed.');
+    }
+  };
+
+  const handleSaveToWorkspace = async () => {
+    const saved = await boardSharing.saveToWorkspace();
+    if (saved) {
+      setCanvasNotice('Board saved to your workspace.');
+    }
   };
 
   if (!boardId) {
@@ -3506,6 +3557,48 @@ export function Board() {
   return (
     <main className="figma-board-root">
       <ReconnectBanner status={socketStatus} disconnectedSinceMs={disconnectedSinceMs} />
+      <ShareSettingsPanel
+        open={isSharePanelOpen}
+        currentUserId={user?.uid ?? null}
+        currentRole={boardAccess?.effectiveRole ?? 'none'}
+        canManage={boardSharing.canManageSharing}
+        visibility={boardSharing.draft.visibility}
+        authLinkRole={boardSharing.draft.authLinkRole}
+        publicLinkRole={boardSharing.draft.publicLinkRole}
+        pendingPublicRole={boardSharing.pendingPublicRole}
+        settingsSaving={boardSharing.settingsSaving}
+        settingsError={boardSharing.settingsError}
+        settingsSuccess={boardSharing.settingsSuccess}
+        members={boardSharing.members}
+        membersLoading={boardSharing.membersLoading}
+        membersError={boardSharing.membersError}
+        workspaceState={boardSharing.workspaceState}
+        workspaceError={boardSharing.workspaceError}
+        canSaveToWorkspace={boardSharing.canSaveToWorkspace}
+        copyState={shareState}
+        onClose={() => setIsSharePanelOpen(false)}
+        onCopyLink={() => {
+          void handleCopyShareLink();
+        }}
+        onVisibilityChange={boardSharing.setVisibility}
+        onAuthLinkRoleChange={boardSharing.setAuthLinkRole}
+        onPublicLinkRoleChange={boardSharing.setPublicLinkRole}
+        onSaveSettings={() => {
+          void handleSaveShareSettings();
+        }}
+        onMemberRoleChange={(membershipId, role) => {
+          void handleMemberRoleChange(membershipId, role);
+        }}
+        onMemberRemove={(membershipId) => {
+          void handleMemberRemove(membershipId);
+        }}
+        onRefreshMembers={() => {
+          void boardSharing.loadMembers();
+        }}
+        onSaveToWorkspace={() => {
+          void handleSaveToWorkspace();
+        }}
+      />
       <header className="figma-board-topbar">
         <div className="topbar-cluster left">
           <button className="icon-chip" aria-label="Menu">
@@ -3582,8 +3675,8 @@ export function Board() {
         <div className="topbar-cluster right">
           <span className={`presence-pill ${socketStatusClass}`}>{socketStatusLabel}</span>
           <PresenceAvatars members={members} currentUserId={user?.uid ?? null} />
-          <button className="secondary-btn" onClick={() => void handleShareBoard()}>
-            {shareState === 'copied' ? 'Copied' : shareState === 'error' ? 'Copy failed' : 'Share'}
+          <button className="secondary-btn" onClick={() => setIsSharePanelOpen(true)}>
+            Share
           </button>
           {user ? (
             <>
@@ -3705,17 +3798,6 @@ export function Board() {
               onDragEnd={handleStageDragEnd}
               onWheel={handleStageWheel}
             >
-              <Layer listening={false}>
-                <KonvaRectShape
-                  name="board-background"
-                  x={-5000}
-                  y={-5000}
-                  width={10000}
-                  height={10000}
-                  fill="transparent"
-                />
-              </Layer>
-
               <Layer ref={objectsLayerRef} />
 
               <Layer ref={selectionLayerRef}>

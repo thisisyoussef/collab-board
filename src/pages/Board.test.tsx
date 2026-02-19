@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { getDoc } from 'firebase/firestore/lite';
+import { getDoc, setDoc } from 'firebase/firestore/lite';
 import type { ReactNode } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
@@ -66,11 +66,17 @@ vi.mock('react-konva', () => ({
 
 // Mock Firestore
 vi.mock('firebase/firestore/lite', () => ({
+  collection: vi.fn(),
   doc: vi.fn(),
+  query: vi.fn(),
+  where: vi.fn(),
+  getDocs: vi.fn().mockResolvedValue({ docs: [] }),
   getDoc: vi.fn().mockResolvedValue({
     exists: () => true,
     data: () => ({ title: 'Test Board Title' }),
   }),
+  setDoc: vi.fn().mockResolvedValue(undefined),
+  deleteDoc: vi.fn().mockResolvedValue(undefined),
   updateDoc: vi.fn().mockResolvedValue(undefined),
   serverTimestamp: vi.fn(() => 'mock-timestamp'),
 }));
@@ -132,6 +138,11 @@ async function renderBoardReady(boardId = 'board-abc', authOverrides: Partial<Au
 describe('Board', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(getDoc).mockResolvedValue({
+      exists: () => true,
+      data: () => ({ title: 'Test Board Title' }),
+    } as never);
+    vi.mocked(setDoc).mockResolvedValue(undefined as never);
     vi.stubGlobal('fetch', mockFetch);
     mockFetch.mockResolvedValue({
       ok: true,
@@ -248,10 +259,12 @@ describe('Board', () => {
     expect(screen.queryByDisplayValue('Test Board Title')).not.toBeInTheDocument();
   });
 
-  it('copies the board link when Share is clicked', async () => {
+  it('opens share panel and copies board link', async () => {
     await renderBoardReady('board-share-test');
 
     fireEvent.click(screen.getByText('Share'));
+    expect(await screen.findByText('Share board')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Copy link' }));
 
     await waitFor(() => {
       expect(mockClipboardWriteText).toHaveBeenCalledWith(
@@ -261,6 +274,44 @@ describe('Board', () => {
     await waitFor(() => {
       expect(screen.getByText('Copied')).toBeInTheDocument();
     });
+  });
+
+  it('allows collaborators to save a shared board to workspace from share panel', async () => {
+    const boardSnapshot = {
+      exists: () => true,
+      data: () => ({
+        title: 'Shared Board',
+        ownerId: 'owner-123',
+        sharing: { visibility: 'auth_link', authLinkRole: 'editor', publicLinkRole: 'viewer' },
+      }),
+    };
+    const noMemberSnapshot = {
+      exists: () => false,
+      data: () => ({}),
+    };
+    const defaultSnapshot = {
+      exists: () => true,
+      data: () => ({ title: 'Shared Board', objects: {} }),
+    };
+
+    vi.mocked(getDoc)
+      .mockResolvedValue(defaultSnapshot as never)
+      .mockResolvedValueOnce(boardSnapshot as never)
+      .mockResolvedValueOnce(noMemberSnapshot as never)
+      .mockResolvedValueOnce(defaultSnapshot as never)
+      .mockResolvedValueOnce(defaultSnapshot as never)
+      .mockResolvedValueOnce(noMemberSnapshot as never);
+
+    renderBoard('board-shared');
+    await screen.findByText('Shared Board');
+
+    fireEvent.click(screen.getByText('Share'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Save to workspace' }));
+
+    await waitFor(() => {
+      expect(setDoc).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.getByText('Saved')).toBeInTheDocument();
   });
 
   it('submits an AI prompt and renders returned action preview', async () => {
@@ -351,5 +402,38 @@ describe('Board', () => {
     expect(screen.getByLabelText('Sticky note tool')).toBeDisabled();
     expect(screen.getByLabelText('AI prompt')).toBeDisabled();
     expect(screen.getByText(/Read-only mode/i)).toBeInTheDocument();
+  });
+
+  it('shows read-only sharing message for non-owner users', async () => {
+    const boardSnapshot = {
+      exists: () => true,
+      data: () => ({
+        title: 'Shared Board',
+        ownerId: 'owner-123',
+        sharing: { visibility: 'auth_link', authLinkRole: 'viewer', publicLinkRole: 'viewer' },
+      }),
+    };
+    const noMemberSnapshot = {
+      exists: () => false,
+      data: () => ({}),
+    };
+    const defaultSnapshot = {
+      exists: () => true,
+      data: () => ({ title: 'Shared Board', objects: {} }),
+    };
+
+    vi.mocked(getDoc)
+      .mockResolvedValue(defaultSnapshot as never)
+      .mockResolvedValueOnce(boardSnapshot as never)
+      .mockResolvedValueOnce(noMemberSnapshot as never)
+      .mockResolvedValueOnce(defaultSnapshot as never)
+      .mockResolvedValueOnce(defaultSnapshot as never);
+
+    renderBoard('board-shared-readonly');
+    await screen.findByText('Shared Board');
+
+    fireEvent.click(screen.getByText('Share'));
+
+    expect(await screen.findByText('Only owner can change sharing settings.')).toBeInTheDocument();
   });
 });

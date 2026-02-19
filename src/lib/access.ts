@@ -1,13 +1,15 @@
-export type BoardVisibility = 'private' | 'auth_link' | 'public_link';
-export type BoardRole = 'owner' | 'editor' | 'viewer' | 'none';
-export type ShareRole = 'editor' | 'viewer';
-
-export interface BoardSharingConfig {
-  visibility: BoardVisibility;
-  authLinkRole: ShareRole;
-  publicLinkRole: ShareRole;
-  isLegacyFallback: boolean;
-}
+import type {
+  BoardRole,
+  BoardSharingConfig,
+  BoardVisibility,
+  ShareRole,
+} from '../types/sharing.js';
+export type {
+  BoardRole,
+  BoardSharingConfig,
+  BoardVisibility,
+  ShareRole,
+} from '../types/sharing.js';
 
 export interface ResolveBoardAccessInput {
   ownerId?: string | null;
