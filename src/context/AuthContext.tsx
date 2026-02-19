@@ -4,6 +4,7 @@ import {
   signOut as firebaseSignOut,
   type User,
 } from 'firebase/auth';
+import { doc, serverTimestamp, setDoc } from 'firebase/firestore/lite';
 import {
   useCallback,
   useEffect,
@@ -11,7 +12,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { auth, googleProvider } from '../lib/firebase';
+import { auth, db, googleProvider } from '../lib/firebase';
 import { logger } from '../lib/logger';
 import { AuthContext, type AuthContextValue } from './auth-context';
 
@@ -24,6 +25,31 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const syncUserProfile = useCallback(async (firebaseUser: User) => {
+    const normalizedDisplayName =
+      firebaseUser.displayName?.trim() || firebaseUser.email?.trim() || null;
+
+    try {
+      await setDoc(
+        doc(db, 'users', firebaseUser.uid),
+        {
+          uid: firebaseUser.uid,
+          displayName: normalizedDisplayName,
+          email: firebaseUser.email || null,
+          photoURL: firebaseUser.photoURL || null,
+          updatedAt: serverTimestamp(),
+          lastLoginAt: serverTimestamp(),
+        },
+        { merge: true },
+      );
+    } catch (err) {
+      logger.warn('AUTH', 'Unable to sync user profile document', {
+        uid: firebaseUser.uid,
+        error: err instanceof Error ? err.message : 'Unknown error',
+      });
+    }
+  }, []);
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
       if (firebaseUser) {
@@ -32,6 +58,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
           email: firebaseUser.email,
           displayName: firebaseUser.displayName,
         });
+        void syncUserProfile(firebaseUser);
       } else if (!loading) {
         // Only log sign-out after initial load (not on first page load when user is null)
         logger.info('AUTH', 'User signed out');
@@ -41,7 +68,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     });
 
     return unsubscribe;
-  }, []);
+  }, [loading, syncUserProfile]);
 
   const signInWithGoogle = useCallback(async () => {
     setError(null);

@@ -172,6 +172,32 @@ describe('useBoardSharing', () => {
     );
   });
 
+  it('hydrates missing member display names from user profiles', async () => {
+    mockGetDocs.mockResolvedValue(
+      memberSnapshot([
+        { id: 'board-1_user-2', userId: 'user-2', role: 'viewer' },
+      ]),
+    );
+    mockGetDoc.mockResolvedValue({
+      exists: () => true,
+      data: () => ({ displayName: 'Profile Name' }),
+    });
+
+    const { result } = renderHook(() =>
+      useBoardSharing({
+        boardId: 'board-1',
+        userId: 'owner-1',
+        access: ownerAccess,
+        isSharePanelOpen: true,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.members).toHaveLength(1);
+    });
+    expect(result.current.members[0].displayName).toBe('Profile Name');
+  });
+
   it('saves shared boards to workspace for non-owner users', async () => {
     const editorAccess: ResolveBoardAccessResult = {
       ...ownerAccess,

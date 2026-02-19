@@ -227,7 +227,7 @@ export function useBoardSharing({
         getDocs(query(collection(db, 'boardMembers'), where('boardId', '==', boardId))),
       );
 
-      const nextMembers = snapshot.docs
+      let nextMembers = snapshot.docs
         .map((entry) => {
           const data = entry.data() as {
             boardId?: unknown;
@@ -264,6 +264,49 @@ export function useBoardSharing({
           }
           return a.userId.localeCompare(b.userId);
         });
+
+      const missingNames = nextMembers.filter((member) => !member.displayName);
+      if (missingNames.length > 0) {
+        const resolvedMissingNames = await Promise.all(
+          missingNames.map(async (member) => {
+            try {
+              const profileSnapshot = await withFirestoreTimeout(
+                'Loading member profile',
+                getDoc(doc(db, 'users', member.userId)),
+              );
+              if (!profileSnapshot.exists()) {
+                return member;
+              }
+
+              const profileData = profileSnapshot.data() as {
+                displayName?: unknown;
+                email?: unknown;
+              };
+              const profileDisplayName =
+                normalizeMemberDisplayName(profileData.displayName) ||
+                normalizeMemberDisplayName(profileData.email);
+
+              if (!profileDisplayName) {
+                return member;
+              }
+
+              return {
+                ...member,
+                displayName: profileDisplayName,
+              } satisfies ShareMemberRoleEntry;
+            } catch {
+              return member;
+            }
+          }),
+        );
+
+        const resolvedByMembershipId = new Map(
+          resolvedMissingNames.map((member) => [member.membershipId, member]),
+        );
+        nextMembers = nextMembers.map(
+          (member) => resolvedByMembershipId.get(member.membershipId) || member,
+        );
+      }
 
       logger.info('FIRESTORE', `Loaded ${nextMembers.length} board member(s)`, { boardId, memberCount: nextMembers.length });
       setMembers(nextMembers);

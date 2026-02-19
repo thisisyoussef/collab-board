@@ -183,34 +183,39 @@ export function ShareSettingsPanel({
                 <ul className="share-member-list">
                   {members.map((member) => (
                     <li key={member.membershipId} className="share-member-row">
-                      <span className="share-member-id">
-                        {member.displayName || 'Member'}
-                        {currentUserId && member.userId === currentUserId ? ' (you)' : ''}
-                      </span>
-                      {member.role === 'owner' ? (
-                        <span className="share-member-owner">Owner</span>
-                      ) : (
-                        <>
-                          <select
-                            aria-label={`Role for ${member.userId}`}
-                            value={member.role}
-                            onChange={(event) =>
-                              onMemberRoleChange(member.membershipId, event.target.value as ShareRole)
-                            }
-                          >
-                            <option value="editor">Editor</option>
-                            <option value="viewer">Viewer</option>
-                          </select>
-                          <button
-                            className="danger-btn"
-                            type="button"
-                            aria-label={`Remove ${member.userId}`}
-                            onClick={() => onMemberRemove(member.membershipId)}
-                          >
-                            Remove
-                          </button>
-                        </>
-                      )}
+                      <div className="share-member-meta">
+                        <span className="share-member-id">
+                          {member.displayName || 'Member'}
+                          {currentUserId && member.userId === currentUserId ? ' (you)' : ''}
+                        </span>
+                      </div>
+
+                      <div className="share-member-actions">
+                        {member.role === 'owner' ? (
+                          <span className="share-member-owner">Owner</span>
+                        ) : (
+                          <>
+                            <select
+                              aria-label={`Role for ${member.userId}`}
+                              value={member.role}
+                              onChange={(event) =>
+                                onMemberRoleChange(member.membershipId, event.target.value as ShareRole)
+                              }
+                            >
+                              <option value="editor">Editor</option>
+                              <option value="viewer">Viewer</option>
+                            </select>
+                            <button
+                              className="danger-btn"
+                              type="button"
+                              aria-label={`Remove ${member.userId}`}
+                              onClick={() => onMemberRemove(member.membershipId)}
+                            >
+                              Remove
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </li>
                   ))}
                 </ul>

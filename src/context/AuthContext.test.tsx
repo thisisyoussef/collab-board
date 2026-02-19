@@ -8,6 +8,9 @@ const mockOnAuthStateChanged = vi.fn();
 const mockSignInWithPopup = vi.fn();
 const mockFirebaseSignOut = vi.fn();
 const mockUnsubscribe = vi.fn();
+const mockDoc = vi.fn();
+const mockSetDoc = vi.fn();
+const mockServerTimestamp = vi.fn(() => 'mock-ts');
 
 let authStateCallback: ((user: unknown) => void) | null = null;
 
@@ -17,8 +20,15 @@ vi.mock('firebase/auth', () => ({
   signOut: (...args: unknown[]) => mockFirebaseSignOut(...args),
 }));
 
+vi.mock('firebase/firestore/lite', () => ({
+  doc: (...args: unknown[]) => mockDoc(...args),
+  setDoc: (...args: unknown[]) => mockSetDoc(...args),
+  serverTimestamp: (...args: unknown[]) => mockServerTimestamp(...args),
+}));
+
 vi.mock('../lib/firebase', () => ({
   auth: { app: 'auth' },
+  db: { app: 'db' },
   googleProvider: { provider: 'google' },
 }));
 
@@ -47,6 +57,11 @@ describe('AuthProvider', () => {
       authStateCallback = callback;
       return mockUnsubscribe;
     });
+    mockDoc.mockImplementation((_db: unknown, collectionName: string, docId: string) => ({
+      id: docId,
+      path: `${collectionName}/${docId}`,
+    }));
+    mockSetDoc.mockResolvedValue(undefined);
     mockSignInWithPopup.mockResolvedValue(undefined);
     mockFirebaseSignOut.mockResolvedValue(undefined);
   });

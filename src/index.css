@@ -1211,10 +1211,23 @@ button {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 0.55rem;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: 0.45rem;
+  display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.share-member-meta {
+  min-width: 0;
+  flex: 1 1 220px;
+}
+
+.share-member-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex: 0 0 auto;
 }
 
 .share-member-row select {
@@ -1228,7 +1241,11 @@ button {
 .share-member-id {
   font-size: 0.8rem;
   color: #1f2937;
-  word-break: break-word;
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: normal;
 }
 
 .share-member-owner {
@@ -1245,6 +1262,13 @@ button {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+}
+
+@media (max-width: 760px) {
+  .share-member-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 1100px) {
