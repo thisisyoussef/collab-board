@@ -98,6 +98,13 @@ service cloud.firestore {
         );
     }
 
+    function immutableBoardFieldsUnchanged() {
+      return request.resource.data.ownerId == resource.data.ownerId &&
+        request.resource.data.createdBy == resource.data.createdBy &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        request.resource.data.schemaVersion == resource.data.schemaVersion;
+    }
+
     function isBoardOwner(boardId) {
       let boardDoc = get(boardDocPath(boardId));
       let ownerId = boardDoc.data != null ? boardOwnerId(boardDoc.data) : null;
@@ -112,13 +119,20 @@ service cloud.firestore {
       allow create: if isSignedIn() &&
         request.resource.data.ownerId is string &&
         request.resource.data.ownerId == request.auth.uid &&
+        (
+          request.resource.data.createdBy == null ||
+          request.resource.data.createdBy == request.auth.uid
+        ) &&
         hasValidSharingShape(request.resource.data);
 
       allow update: if canEditBoard(boardId, resource.data) &&
         hasValidSharingShape(request.resource.data) &&
         (
           isOwner(resource.data) ||
-          request.resource.data.sharing == resource.data.sharing
+          (
+            request.resource.data.sharing == resource.data.sharing &&
+            immutableBoardFieldsUnchanged()
+          )
         );
 
       allow delete: if isOwner(resource.data);
@@ -143,14 +157,13 @@ service cloud.firestore {
       allow create: if isSignedIn() &&
         request.resource.data.boardId is string &&
         request.resource.data.userId is string &&
-        (request.resource.data.role == 'owner' ||
-          request.resource.data.role == 'editor' ||
+        membershipId == request.resource.data.boardId + "_" + request.resource.data.userId &&
+        (request.resource.data.role == 'editor' ||
           request.resource.data.role == 'viewer') &&
         (
           isBoardOwner(request.resource.data.boardId) ||
           (
             request.resource.data.userId == request.auth.uid &&
-            request.resource.data.role != 'owner' &&
             get(boardDocPath(request.resource.data.boardId)).data != null &&
             canReadBoard(
               request.resource.data.boardId,
@@ -166,10 +179,11 @@ service cloud.firestore {
 
       allow update: if isSignedIn() &&
         resource.data.boardId is string &&
+        resource.data.userId is string &&
+        membershipId == resource.data.boardId + "_" + resource.data.userId &&
         request.resource.data.boardId == resource.data.boardId &&
         request.resource.data.userId == resource.data.userId &&
-        (request.resource.data.role == 'owner' ||
-          request.resource.data.role == 'editor' ||
+        (request.resource.data.role == 'editor' ||
           request.resource.data.role == 'viewer') &&
         isBoardOwner(resource.data.boardId);
 
