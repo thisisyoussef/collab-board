@@ -160,9 +160,9 @@ export function AICommandCenter({
           type="button"
           onClick={onUndo}
           disabled={disabled || state.applying || !state.canUndo}
-          aria-label="Undo last AI apply"
+          aria-label="Undo last change"
         >
-          Undo last AI apply
+          Undo last change
         </button>
         <p>
           {applyHint}

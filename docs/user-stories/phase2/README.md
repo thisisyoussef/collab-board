@@ -75,7 +75,7 @@ Before writing code for any Phase II story, complete this sequence:
 ## Deferred Extra Stories
 
 1. `US2-09-figma-connector-parity.md` (added from user-provided research; intentionally parked for later execution)
-2. `US2-10-board-history-undo-redo.md` (full board-level multi-step undo/redo follow-up; intentionally parked for later execution)
+2. `US2-10-board-history-undo-redo.md` (full board-level multi-step undo/redo follow-up; now implemented and awaiting user checkpoint)
 3. `US2-11-figjam-layout-and-contextual-controls.md` (FigJam-like floating layout + contextual right inspector follow-up; intentionally parked for later execution)
 
 ## Story Template (Required Sections)

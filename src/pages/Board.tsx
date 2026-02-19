@@ -20,6 +20,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useAICommandCenter } from '../hooks/useAICommandCenter';
 import { useAIExecutor, type AICommitMeta } from '../hooks/useAIExecutor';
 import { useBoardRecents } from '../hooks/useBoardRecents';
+import { useBoardHistory } from '../hooks/useBoardHistory';
 import { useBoardSharing } from '../hooks/useBoardSharing';
 import { useCursors } from '../hooks/useCursors';
 import { usePresence } from '../hooks/usePresence';
@@ -98,12 +99,14 @@ interface ShapeDraftState {
   startX: number;
   startY: number;
   type: 'rect' | 'circle' | 'line';
+  historyBefore: BoardObjectsRecord;
 }
 
 interface ConnectorDraftState {
   id: string;
   startX: number;
   startY: number;
+  historyBefore: BoardObjectsRecord;
 }
 
 interface SelectionDraftState {
@@ -203,6 +206,7 @@ const CONNECTOR_LABEL_PADDING_X = 8;
 const CONNECTOR_LABEL_PADDING_Y = 4;
 const CONNECTOR_LABEL_BACKGROUND_FILL = 'rgba(248, 250, 252, 0.96)';
 const CONNECTOR_LABEL_BACKGROUND_STROKE = 'rgba(148, 163, 184, 0.45)';
+const BOARD_HISTORY_MAX_ENTRIES = 100;
 
 type PendingRemoteObjectEvent =
   | { kind: 'create'; payload: ObjectCreatePayload }
@@ -350,6 +354,7 @@ export function Board() {
   const viewportRestoredRef = useRef(false);
   const connectorHoverLockRef = useRef<ConnectorHoverLockState | null>(null);
   const connectorHoverLockTimerRef = useRef<number | null>(null);
+  const manualHistoryBaselineRef = useRef<BoardObjectsRecord | null>(null);
 
   const [canvasSize, setCanvasSize] = useState({ width: 960, height: 560 });
   const [boardTitle, setBoardTitle] = useState('Untitled board');
@@ -459,6 +464,7 @@ export function Board() {
     userId: user?.uid ?? null,
     enabled: Boolean(canReadBoard && user?.uid),
   });
+  const boardHistory = useBoardHistory({ maxEntries: BOARD_HISTORY_MAX_ENTRIES });
 
   const handleApplyAIPlan = async (actions: AIActionPreview[] = aiCommandCenter.actions) => {
     if (!canApplyAI) {
@@ -497,15 +503,8 @@ export function Board() {
     await handleApplyAIPlan(result.actions);
   };
 
-  const handleUndoAI = async () => {
-    if (!canApplyAI) {
-      setCanvasNotice('AI undo requires signed-in editor access.');
-      return;
-    }
-    const undone = await aiExecutor.undoLast();
-    if (undone) {
-      setCanvasNotice('Undid last AI apply.');
-    }
+  const handleUndoAI = () => {
+    handleUndoHistory();
   };
 
   const textEditorLayout = (() => {
@@ -570,6 +569,8 @@ export function Board() {
     setBoardAccess(null);
     setBoardMissing(false);
     setIsResolvingAccess(Boolean(boardId));
+    resetBoardHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boardId]);
 
   useEffect(
@@ -784,6 +785,7 @@ export function Board() {
           clearBoardObjects();
           hasInitialBoardLoadRef.current = true;
           pendingRemoteObjectEventsRef.current = [];
+          resetBoardHistory();
           return;
         }
 
@@ -791,6 +793,7 @@ export function Board() {
         const objectCount = Object.keys(rawObjects).length;
         logger.info('FIRESTORE', `Board loaded with ${objectCount} objects`, { boardId, objectCount });
         hydrateBoardObjects(rawObjects, user?.uid || 'guest');
+        resetBoardHistory();
       } catch (err) {
         if (cancelled) {
           return;
@@ -814,6 +817,8 @@ export function Board() {
     }
 
     clearBoardObjects();
+    resetBoardHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boardId, canReadBoard, isResolvingAccess]);
 
   useEffect(() => {
@@ -1129,6 +1134,7 @@ export function Board() {
 
           const rawObjects = (snapshot.data() as { objects?: BoardObjectsRecord }).objects || {};
           hydrateBoardObjects(rawObjects, user?.uid || 'guest');
+          resetBoardHistory();
         } catch {
           // keep local state if background sync fetch fails
         }
@@ -1176,6 +1182,7 @@ export function Board() {
         const count = Object.keys(rawObjects).length;
         logger.info('FIRESTORE', `Board resync complete: ${count} objects loaded`, { boardId, objectCount: count });
         hydrateBoardObjects(rawObjects, user?.uid || 'guest');
+        resetBoardHistory();
       } catch (err) {
         if (cancelled) {
           return;
@@ -1373,7 +1380,137 @@ export function Board() {
     return objectsRecord;
   }
 
+  function computeBoardSnapshotDiff(from: BoardObjectsRecord, to: BoardObjectsRecord): {
+    createdIds: string[];
+    updatedIds: string[];
+    deletedIds: string[];
+  } {
+    const fromKeys = new Set(Object.keys(from));
+    const toKeys = new Set(Object.keys(to));
+    const createdIds: string[] = [];
+    const updatedIds: string[] = [];
+    const deletedIds: string[] = [];
+
+    toKeys.forEach((key) => {
+      const beforeObject = from[key];
+      const afterObject = to[key];
+      if (!beforeObject && afterObject) {
+        createdIds.push(key);
+        return;
+      }
+      if (beforeObject && afterObject && JSON.stringify(beforeObject) !== JSON.stringify(afterObject)) {
+        updatedIds.push(key);
+      }
+    });
+
+    fromKeys.forEach((key) => {
+      if (!toKeys.has(key)) {
+        deletedIds.push(key);
+      }
+    });
+
+    return {
+      createdIds,
+      updatedIds,
+      deletedIds,
+    };
+  }
+
+  function captureManualHistoryBaseline(force = false): BoardObjectsRecord {
+    if (!manualHistoryBaselineRef.current || force) {
+      manualHistoryBaselineRef.current = serializeBoardObjects();
+    }
+    return manualHistoryBaselineRef.current;
+  }
+
+  function clearManualHistoryBaseline() {
+    manualHistoryBaselineRef.current = null;
+  }
+
+  function commitBoardHistory(source: 'manual' | 'ai', explicitBefore?: BoardObjectsRecord) {
+    const beforeState = explicitBefore || manualHistoryBaselineRef.current;
+    clearManualHistoryBaseline();
+    if (!beforeState) {
+      return;
+    }
+
+    const afterState = serializeBoardObjects();
+    boardHistory.commit({
+      source,
+      before: beforeState,
+      after: afterState,
+    });
+  }
+
+  function resetBoardHistory() {
+    clearManualHistoryBaseline();
+    boardHistory.reset();
+  }
+
+  function applyHistoryTransition(transition: ReturnType<typeof boardHistory.undo>, notice: string) {
+    if (!transition) {
+      return;
+    }
+
+    const diff = computeBoardSnapshotDiff(transition.from, transition.to);
+    hydrateBoardObjects(transition.to, user?.uid || 'guest');
+    setSelectedIds([]);
+
+    const realtimeMeta: RealtimeObjectEventMeta = {
+      txId: transition.entry.id,
+      source: transition.entry.source === 'ai' ? 'ai' : 'user',
+      actorUserId: user?.uid || 'guest',
+    };
+
+    diff.createdIds.forEach((objectId) => {
+      const object = objectsRef.current.get(objectId);
+      if (object) {
+        emitObjectCreate(object, realtimeMeta);
+      }
+    });
+    diff.updatedIds.forEach((objectId) => {
+      const object = objectsRef.current.get(objectId);
+      if (object) {
+        emitObjectUpdate(object, true, realtimeMeta);
+      }
+    });
+    diff.deletedIds.forEach((objectId) => {
+      emitObjectDelete(objectId, realtimeMeta);
+    });
+
+    if (
+      diff.createdIds.length > 0 ||
+      diff.updatedIds.length > 0 ||
+      diff.deletedIds.length > 0
+    ) {
+      scheduleBoardSave();
+      flushBoardSave();
+      setCanvasNotice(notice);
+    }
+  }
+
+  const handleUndoHistory = () => {
+    if (!canEditBoard) {
+      setCanvasNotice('Undo is available for editors only.');
+      return;
+    }
+
+    const transition = boardHistory.undo();
+    applyHistoryTransition(transition, 'Undid last change.');
+  };
+
+  const handleRedoHistory = () => {
+    if (!canEditBoard) {
+      setCanvasNotice('Redo is available for editors only.');
+      return;
+    }
+
+    const transition = boardHistory.redo();
+    applyHistoryTransition(transition, 'Redid last change.');
+  };
+
   function applyAIBoardStateCommit(nextBoardState: BoardObjectsRecord, meta: AICommitMeta) {
+    const beforeState = serializeBoardObjects();
     logger.info('AI', `AI commit applied: ${meta.diff.createdIds.length} created, ${meta.diff.updatedIds.length} updated, ${meta.diff.deletedIds.length} deleted (txId: ${meta.txId})`, {
       txId: meta.txId,
       createdCount: meta.diff.createdIds.length,
@@ -1407,6 +1544,7 @@ export function Board() {
     scheduleBoardSave();
     // AI and undo are high-intent actions; flush immediately to reduce refresh race windows.
     flushBoardSave();
+    commitBoardHistory('ai', beforeState);
   }
 
   async function persistBoardSave() {
@@ -1495,6 +1633,7 @@ export function Board() {
     objectsLayerRef.current?.batchDraw();
     objectsRef.current.clear();
     connectorDraftRef.current = null;
+    clearManualHistoryBaseline();
     hasUnsavedChangesRef.current = false;
     setObjectCount(0);
     setSelectedIds([]);
@@ -2256,6 +2395,7 @@ export function Board() {
     if (!current || current.type !== 'connector') {
       return;
     }
+    const beforeState = persist ? captureManualHistoryBaseline() : null;
 
     const [startX, startY, endX, endY] = getConnectorPoints(current);
     const next: BoardObject = {
@@ -2348,6 +2488,7 @@ export function Board() {
     if (persist) {
       aiExecutor.invalidateUndo();
       scheduleBoardSave();
+      commitBoardHistory('manual', beforeState || undefined);
     }
   }
 
@@ -2361,6 +2502,7 @@ export function Board() {
     if (!current || current.type !== 'connector') {
       return;
     }
+    const beforeState = persist ? captureManualHistoryBaseline() : null;
     const pathType = getConnectorPathType(current);
     if (pathType !== 'bent' && pathType !== 'curved') {
       return;
@@ -2401,6 +2543,7 @@ export function Board() {
     if (persist) {
       aiExecutor.invalidateUndo();
       scheduleBoardSave();
+      commitBoardHistory('manual', beforeState || undefined);
     }
   }
 
@@ -2457,6 +2600,7 @@ export function Board() {
     if (!current || !node) {
       return;
     }
+    const beforeState = persist ? captureManualHistoryBaseline() : null;
 
     let width = current.width;
     let height = current.height;
@@ -2545,6 +2689,7 @@ export function Board() {
     if (persist) {
       aiExecutor.invalidateUndo();
       scheduleBoardSave();
+      commitBoardHistory('manual', beforeState || undefined);
     }
   }
 
@@ -2557,6 +2702,7 @@ export function Board() {
     if (!object || (object.type !== 'sticky' && object.type !== 'text')) {
       return;
     }
+    captureManualHistoryBaseline(true);
 
     setEditingText({
       id: objectId,
@@ -2590,6 +2736,7 @@ export function Board() {
     if (activeTool !== 'select') {
       return;
     }
+    captureManualHistoryBaseline(true);
 
     setSelectedIds((previous) =>
       previous.length === 1 && previous[0] === objectId ? previous : [objectId],
@@ -2651,6 +2798,9 @@ export function Board() {
     group.on('dragend', () => {
       syncObjectFromNode(object.id, true);
     });
+    group.on('transformstart', () => {
+      captureManualHistoryBaseline(true);
+    });
     group.on('transformend', () => {
       const existing = objectsRef.current.get(object.id);
       if (!existing) {
@@ -2699,6 +2849,9 @@ export function Board() {
     rect.on('dragend', () => {
       syncObjectFromNode(object.id, true);
     });
+    rect.on('transformstart', () => {
+      captureManualHistoryBaseline(true);
+    });
     rect.on('transformend', () => {
       const existing = objectsRef.current.get(object.id);
       if (!existing) {
@@ -2745,6 +2898,9 @@ export function Board() {
     circle.on('dragend', () => {
       syncObjectFromNode(object.id, true);
     });
+    circle.on('transformstart', () => {
+      captureManualHistoryBaseline(true);
+    });
     circle.on('transformend', () => {
       const existing = objectsRef.current.get(object.id);
       if (!existing) {
@@ -2790,6 +2946,9 @@ export function Board() {
     line.on('dragend', () => {
       syncObjectFromNode(object.id, true);
     });
+    line.on('transformstart', () => {
+      captureManualHistoryBaseline(true);
+    });
     line.on('transformend', () => {
       applyLineTransform(line);
       syncObjectFromNode(object.id, true);
@@ -2833,6 +2992,9 @@ export function Board() {
     });
     textNode.on('dragend', () => {
       syncObjectFromNode(object.id, true);
+    });
+    textNode.on('transformstart', () => {
+      captureManualHistoryBaseline(true);
     });
     textNode.on('transformend', () => {
       const existing = objectsRef.current.get(object.id);
@@ -2901,6 +3063,9 @@ export function Board() {
     group.on('dragend', () => {
       syncObjectFromNode(object.id, true);
     });
+    group.on('transformstart', () => {
+      captureManualHistoryBaseline(true);
+    });
     group.on('transformend', () => {
       const existing = objectsRef.current.get(object.id);
       if (!existing) {
@@ -2965,6 +3130,7 @@ export function Board() {
     if (persist && !canEditBoard) {
       return;
     }
+    const beforeState = persist ? captureManualHistoryBaseline() : null;
 
     objectsRef.current.set(object.id, object);
     const node = createNodeForObject(object);
@@ -2978,6 +3144,7 @@ export function Board() {
       aiExecutor.invalidateUndo();
       emitObjectCreate(object);
       scheduleBoardSave();
+      commitBoardHistory('manual', beforeState || undefined);
     }
   }
 
@@ -2989,6 +3156,7 @@ export function Board() {
     if (persist && !canEditBoard) {
       return;
     }
+    const beforeState = persist ? captureManualHistoryBaseline() : null;
 
     const removeSet = new Set(objectIds);
     objectIds.forEach((objectId) => {
@@ -3010,6 +3178,7 @@ export function Board() {
         emitObjectDelete(objectId);
       });
       scheduleBoardSave();
+      commitBoardHistory('manual', beforeState || undefined);
     }
   }
 
@@ -3022,6 +3191,7 @@ export function Board() {
       setEditingText(null);
       return;
     }
+    const beforeState = saveChanges ? captureManualHistoryBaseline() : null;
 
     const current = objectsRef.current.get(editingText.id);
     if (!current || (current.type !== 'sticky' && current.type !== 'text')) {
@@ -3059,6 +3229,9 @@ export function Board() {
       aiExecutor.invalidateUndo();
       emitObjectUpdate(nextObject, true);
       scheduleBoardSave();
+      commitBoardHistory('manual', beforeState || undefined);
+    } else {
+      clearManualHistoryBaseline();
     }
   }
 
@@ -3132,6 +3305,7 @@ export function Board() {
     if (connectorDraftRef.current) {
       return;
     }
+    const historyBefore = captureManualHistoryBaseline(true);
 
     const initialAttachment = startAttachment || findConnectorAttachment(worldPosition, '', attachmentMode);
     const start = initialAttachment || {
@@ -3167,6 +3341,7 @@ export function Board() {
       id: object.id,
       startX: start.x,
       startY: start.y,
+      historyBefore,
     };
     setIsDrawingConnector(true);
     setSelectedIds([object.id]);
@@ -3203,6 +3378,7 @@ export function Board() {
     if (!current || current.type !== 'connector' || !(node instanceof Konva.Line || node instanceof Konva.Arrow)) {
       connectorDraftRef.current = null;
       setIsDrawingConnector(false);
+      clearManualHistoryBaseline();
       return;
     }
 
@@ -3267,6 +3443,7 @@ export function Board() {
     aiExecutor.invalidateUndo();
     emitObjectCreate(nextObject);
     scheduleBoardSave();
+    commitBoardHistory('manual', draft.historyBefore);
     objectsLayerRef.current?.batchDraw();
     setCanvasNotice(null);
   }
@@ -3275,6 +3452,7 @@ export function Board() {
     if (!canEditBoard) {
       return;
     }
+    const historyBefore = captureManualHistoryBaseline(true);
 
     const object =
       type === 'line'
@@ -3302,6 +3480,7 @@ export function Board() {
       startX: worldPosition.x,
       startY: worldPosition.y,
       type,
+      historyBefore,
     };
     setIsDrawingRect(true);
     setSelectedIds([object.id]);
@@ -3381,6 +3560,7 @@ export function Board() {
     if (!current || !node) {
       rectDraftRef.current = null;
       setIsDrawingRect(false);
+      clearManualHistoryBaseline();
       return;
     }
 
@@ -3440,6 +3620,7 @@ export function Board() {
     aiExecutor.invalidateUndo();
     emitObjectCreate(finalizedObject);
     scheduleBoardSave();
+    commitBoardHistory('manual', draft.historyBefore);
     objectsLayerRef.current?.batchDraw();
   }
 
@@ -3674,6 +3855,7 @@ export function Board() {
     if (!canEditBoard) {
       return;
     }
+    captureManualHistoryBaseline(true);
     clearConnectorHoverLock();
     setIsDraggingConnectorHandle(true);
   }
@@ -3965,6 +4147,7 @@ export function Board() {
     if (!current || current.type !== 'connector') {
       return;
     }
+    const beforeState = captureManualHistoryBaseline();
 
     const next: BoardObject = {
       ...current,
@@ -4007,6 +4190,7 @@ export function Board() {
     aiExecutor.invalidateUndo();
     emitObjectUpdate(nextObject, true);
     scheduleBoardSave();
+    commitBoardHistory('manual', beforeState);
   };
 
   if (!boardId) {
@@ -4224,6 +4408,20 @@ export function Board() {
         </div>
 
         <div className="topbar-cluster middle">
+          <button
+            className="chip-btn"
+            onClick={handleUndoHistory}
+            disabled={!canEditBoard || !boardHistory.canUndo}
+          >
+            Undo
+          </button>
+          <button
+            className="chip-btn"
+            onClick={handleRedoHistory}
+            disabled={!canEditBoard || !boardHistory.canRedo}
+          >
+            Redo
+          </button>
           <button className="chip-btn">Move</button>
           <button className="chip-btn">Frame</button>
           <button className="chip-btn">Text</button>
@@ -4589,7 +4787,7 @@ export function Board() {
                 aiExecutor.applying ||
                 aiCommandCenter.loading ||
                 aiCommandCenter.actions.length === 0,
-              canUndo: canApplyAI && aiExecutor.canUndo,
+              canUndo: canEditBoard && boardHistory.canUndo,
               executionError: aiExecutor.error,
               executionMessage: aiExecutor.message,
             }}

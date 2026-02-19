@@ -180,6 +180,8 @@ describe('Board', () => {
   it('renders the topbar tool buttons', async () => {
     await renderBoardReady();
 
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Redo' })).toBeDisabled();
     expect(screen.getByText('Move')).toBeInTheDocument();
     expect(screen.getByText('Frame')).toBeInTheDocument();
     expect(screen.getByText('Text')).toBeInTheDocument();
@@ -355,7 +357,7 @@ describe('Board', () => {
     expect(screen.getByText('createStickyNote')).toBeInTheDocument();
     expect(screen.getByText(/Preview mode requires manual Apply./i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Apply changes' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'Undo last AI apply' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Undo last change' })).toBeDisabled();
   });
 
   it('redirects signed-out users to landing with returnTo when board access is denied', async () => {

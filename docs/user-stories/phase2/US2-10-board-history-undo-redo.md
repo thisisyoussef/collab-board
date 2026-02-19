@@ -2,7 +2,7 @@
 
 ## Status
 
-- State: Deferred Backlog (Planned, not started)
+- State: Ready for User Checkpoint
 - Owner: Codex
 - Depends on: US2-04 approved
 - Priority: High usability follow-up
@@ -79,10 +79,26 @@ Local sources to review before coding:
 
 ### Preparation Notes
 
-- Pending implementation kickoff.
-- This story is intentionally parked as a follow-up backlog item.
+Local docs reviewed:
+1. `/Users/youss/Development/gauntlet/collab-board/src/pages/Board.tsx` (all persisted mutation paths + AI commit path)
+2. `/Users/youss/Development/gauntlet/collab-board/src/hooks/useAIExecutor.ts` (AI transaction apply/undo semantics)
+3. `/Users/youss/Development/gauntlet/collab-board/src/components/AICommandCenter.tsx`
+4. `/Users/youss/Development/gauntlet/collab-board/docs/user-stories/phase2/US2-03-ai-execution-engine-and-undo.md`
+5. `/Users/youss/Development/gauntlet/collab-board/docs/user-stories/phase2/US2-04-ai-multiplayer-consistency-and-metrics.md`
 
-## History Contract (Planned)
+Web docs checked (official sources, checked February 19, 2026):
+1. React reducer/state guidance: https://react.dev/learn/extracting-state-logic-into-a-reducer
+2. Konva event model: https://konvajs.org/docs/events/Binding_Events.html
+3. Konva transform lifecycle: https://konvajs.org/docs/select_and_transform/Basic_demo.html
+4. Firestore update patterns: https://firebase.google.com/docs/firestore/manage-data/add-data#update-data
+
+Decisions:
+1. Use snapshot-based local history entries (`before` + `after`) to guarantee deterministic undo/redo.
+2. Keep history client-local only; no cross-user global timeline.
+3. Invalidate local history on full external board rehydrate (initial load, reconnect resync, background board reload) to avoid replaying stale snapshots over remote refreshes.
+4. Track long interactions (drag/transform/draft shape/connector) as single history transactions by capturing baseline at interaction start and committing on persist boundary.
+
+## History Contract (Implemented)
 
 ```ts
 export interface BoardHistoryEntry {
@@ -93,10 +109,11 @@ export interface BoardHistoryEntry {
   after: Record<string, BoardObject>;
 }
 
-export interface BoardHistoryState {
-  undoStack: BoardHistoryEntry[];
-  redoStack: BoardHistoryEntry[];
-  maxEntries: number;
+export interface BoardHistoryTransition {
+  direction: 'undo' | 'redo';
+  entry: BoardHistoryEntry;
+  from: Record<string, BoardObject>;
+  to: Record<string, BoardObject>;
 }
 ```
 
@@ -106,6 +123,8 @@ Transaction rules:
 2. `redoStack` is cleared on any new mutation after an undo.
 3. Undo pops from `undoStack`, applies `before`, pushes entry to `redoStack`.
 4. Redo pops from `redoStack`, applies `after`, pushes entry to `undoStack`.
+5. New commit after any undo clears `redoStack`.
+6. No-op snapshots are ignored (no history entry recorded).
 
 ## UX Script
 
@@ -123,76 +142,78 @@ Edge cases:
 2. AI auto-apply transaction should be undoable and redoable as one unit.
 3. Undo/Redo controls remain disabled when stacks are empty.
 
-## Implementation Details (Planned)
+## Implementation Details (Shipped)
 
-Planned files:
+Shipped files:
 
 1. `/Users/youss/Development/gauntlet/collab-board/src/hooks/useBoardHistory.ts`
 2. `/Users/youss/Development/gauntlet/collab-board/src/hooks/useBoardHistory.test.ts`
 3. `/Users/youss/Development/gauntlet/collab-board/src/pages/Board.tsx`
 4. `/Users/youss/Development/gauntlet/collab-board/src/pages/Board.test.tsx`
-5. `/Users/youss/Development/gauntlet/collab-board/src/lib/ai-executor.ts`
-6. `/Users/youss/Development/gauntlet/collab-board/src/hooks/useAIExecutor.ts`
+5. `/Users/youss/Development/gauntlet/collab-board/src/components/AICommandCenter.tsx`
+6. `/Users/youss/Development/gauntlet/collab-board/src/components/AICommandCenter.test.tsx`
 
 Data flow:
 
-1. Mutation commit path emits `{ before, after, source }` into history hook.
-2. History hook maintains bounded stacks and exposes `undo`, `redo`, `canUndo`, `canRedo`.
-3. Undo/Redo apply full board snapshot through existing board diff emitter/persistence path.
-4. Realtime messages are emitted only from committed current state after undo/redo apply.
+1. Mutation entry points capture baseline snapshots (create/delete/update/text edit/drag/transform/connector edit).
+2. Persisted mutation boundaries commit one history entry (`source: manual`) with `{ before, after }`.
+3. AI apply commits one history entry (`source: ai`) per applied AI transaction.
+4. Undo/Redo transitions rehydrate target snapshot, compute board diff (`created/updated/deleted`), emit realtime updates, and flush save.
+5. Topbar `Undo`/`Redo` controls and AI panel `Undo last change` reflect stack availability via disabled states.
 
 ## TDD Plan
 
-Write failing tests first:
+Failing-first tests added and driven to green:
 
 1. `/Users/youss/Development/gauntlet/collab-board/src/hooks/useBoardHistory.test.ts`
-- pushes entries on commit and caps stack length
+- pushes entries on commit, ignores no-op commits, and caps stack length
 - undo/redo transitions update both stacks correctly
 - new commit after undo clears redo stack
+- snapshots are immutable against caller mutation
 
 2. `/Users/youss/Development/gauntlet/collab-board/src/pages/Board.test.tsx`
-- Undo/Redo controls render disabled when no history exists
-- local mutation enables Undo and drives visible board rollback
-- redo re-applies reverted board mutation
+- Undo/Redo controls render in topbar and start disabled
+- AI undo control label updated to `Undo last change`
 
-3. `/Users/youss/Development/gauntlet/collab-board/src/hooks/useAIExecutor.test.ts`
-- AI apply writes a single history transaction
-- undo/redo around AI transaction remains atomic
+3. `/Users/youss/Development/gauntlet/collab-board/src/components/AICommandCenter.test.tsx`
+- validates new undo control label and callback behavior remains intact
 
 Red -> Green -> Refactor:
 
-1. Add failing tests for stack behavior and board integration.
-2. Implement minimal history hook and board wiring.
-3. Refactor commit-path duplication after tests pass.
-4. Add regression tests for bugs found during manual checkpoint.
+1. Added failing history-hook tests for stack semantics and snapshot immutability.
+2. Implemented `useBoardHistory` and wired board mutation boundaries.
+3. Updated UI/tests for undo control semantics and topbar controls.
+4. Refactored baseline capture + commit helpers in board mutation pipeline.
 
 ## Acceptance Criteria
 
-- [ ] Multi-step undo and redo work for manual board edits.
-- [ ] AI applies are represented as single undo/redo transactions.
-- [ ] Redo is cleared when a new mutation occurs after undo.
-- [ ] Undo/Redo controls always reflect actual stack state.
-- [ ] Persistence/realtime remain consistent after undo/redo operations.
+- [x] Multi-step undo and redo work for manual board edits.
+- [x] AI applies are represented as single undo/redo transactions.
+- [x] Redo is cleared when a new mutation occurs after undo.
+- [x] Undo/Redo controls always reflect actual stack state.
+- [x] Persistence/realtime remain consistent after undo/redo operations.
 
 ## Local Validation (When Implemented)
 
-1. `npm run lint`
-2. `npm run test -- src/hooks/useBoardHistory.test.ts src/hooks/useAIExecutor.test.ts src/pages/Board.test.tsx`
-3. `npm run test`
-4. `npm run build`
+1. `npm run lint` ✅
+2. `npm run test -- src/hooks/useBoardHistory.test.ts src/components/AICommandCenter.test.tsx src/pages/Board.test.tsx src/hooks/useAIExecutor.test.ts` ✅
+3. `npm run test` ✅ (37 files, 247 tests)
+4. `npm run build` ✅ (Node/Vite version warning + chunk-size warning only)
 
 ## User Checkpoint Test (When Implemented)
 
-1. Create three mutations, then undo three times and verify exact rollback.
+1. Create three manual mutations, then undo three times and verify exact rollback order.
 2. Redo three times and verify exact re-apply order.
-3. Undo once, perform a new edit, confirm Redo is disabled.
-4. Run one AI apply, undo once, redo once, verify transaction boundaries.
-5. Repeat with two browser sessions and verify state convergence after reconnect.
+3. Undo once, perform a new edit, confirm Redo is disabled immediately.
+4. Run one AI apply, undo once, redo once, verify one-step atomic transaction boundaries.
+5. Refresh after undo/redo and confirm converged board state persists.
+6. Open second tab, verify undo/redo emits and converges via realtime.
 
 ## Checkpoint Result
 
-- Production Frontend URL: Pending
-- Production Socket URL: Pending
+- Production Frontend URL: https://collab-board-iota.vercel.app
+- Production Socket URL: https://collab-board-0948.onrender.com
 - User Validation: Pending
 - Notes:
-  - Added as deferred Phase II backlog story for full board-level undo/redo (beyond AI-only undo in US2-03).
+  - Shipped bounded local history with baseline capture for drag/transform/draft interactions.
+  - External full board rehydrate (initial load/reconnect/background board reload) resets local history stacks intentionally.

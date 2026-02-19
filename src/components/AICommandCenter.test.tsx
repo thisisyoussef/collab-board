@@ -37,7 +37,7 @@ describe('AICommandCenter', () => {
     expect(screen.getByRole('button', { name: 'Preview mode' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Auto mode' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Apply changes' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Undo last AI apply' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Undo last change' })).toBeInTheDocument();
   });
 
   it('disables submit while loading', () => {
@@ -115,7 +115,7 @@ describe('AICommandCenter', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Apply changes' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Undo last AI apply' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Undo last change' }));
 
     expect(handlers.onApply).toHaveBeenCalledTimes(1);
     expect(handlers.onUndo).toHaveBeenCalledTimes(1);
@@ -133,7 +133,7 @@ describe('AICommandCenter', () => {
       />,
     );
 
-    expect(screen.getByRole('button', { name: 'Undo last AI apply' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Undo last change' })).toBeDisabled();
   });
 
   it('shows explicit hint when no executable actions are available', () => {
@@ -167,7 +167,7 @@ describe('AICommandCenter', () => {
     expect(screen.getByLabelText('AI prompt')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Generate Plan' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Apply changes' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Undo last AI apply' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Undo last change' })).toBeDisabled();
     expect(screen.getByText('AI requires signed-in editor access.')).toBeInTheDocument();
   });
 });
