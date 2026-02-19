@@ -3300,8 +3300,32 @@ export function Board() {
     if (!originals || originals.length === 0) {
       return;
     }
+
+    // Compute offset: center pasted objects at mouse cursor position,
+    // or fall back to +20/+20 if pointer is not on the canvas.
+    const pointer = getWorldPointerPosition();
+    let dx = 20;
+    let dy = 20;
+    if (pointer) {
+      // Find bounding box center of the copied objects
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      for (const obj of originals) {
+        minX = Math.min(minX, obj.x);
+        minY = Math.min(minY, obj.y);
+        maxX = Math.max(maxX, obj.x + obj.width);
+        maxY = Math.max(maxY, obj.y + obj.height);
+      }
+      const centerX = (minX + maxX) / 2;
+      const centerY = (minY + maxY) / 2;
+      dx = pointer.x - centerX;
+      dy = pointer.y - centerY;
+    }
+
     const beforeState = captureManualHistoryBaseline();
-    const clones = cloneObjects(originals, { dx: 20, dy: 20 });
+    const clones = cloneObjects(originals, { dx, dy });
     relinkConnectors(originals, clones);
 
     // Assign fresh zIndexes
@@ -3323,9 +3347,10 @@ export function Board() {
     aiExecutor.invalidateUndo();
     scheduleBoardSave();
     commitBoardHistory('manual', beforeState);
-    logger.info('CANVAS', `Pasted ${clones.length} object(s) from clipboard`, {
+    logger.info('CANVAS', `Pasted ${clones.length} object(s) at cursor position`, {
       count: clones.length,
       ids: clones.map((c) => c.id),
+      pastedAtCursor: !!pointer,
     });
   }
 
