@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { getOrCreateGuestIdentity } from '../lib/guest';
+import { logger } from '../lib/logger';
 import type { ClientToServerEvents, ServerToClientEvents } from '../types/realtime';
 import { useAuth } from './useAuth';
 
@@ -61,6 +62,9 @@ export function useSocket(boardId: string | undefined) {
 
   useEffect(() => {
     if (!canConnect || !SOCKET_URL) {
+      if (!SOCKET_URL) {
+        logger.warn('SOCKET', 'Socket server URL not configured (VITE_SOCKET_SERVER_URL missing)');
+      }
       return;
     }
 
@@ -69,6 +73,7 @@ export function useSocket(boardId: string | undefined) {
       if (!active) {
         return;
       }
+      logger.debug('SOCKET', `Waking socket server at ${toHealthUrl(SOCKET_URL)}`);
       void wakeSocketServer(SOCKET_URL);
     };
 
@@ -102,6 +107,13 @@ export function useSocket(boardId: string | undefined) {
           return;
         }
 
+        if (!token) {
+          logger.warn('SOCKET', `Using guest identity for socket auth (no Firebase token)`, {
+            guestId: guestIdentity.userId,
+            guestName: guestIdentity.displayName,
+          });
+        }
+
         const socket = io(SOCKET_URL, {
           auth: token
             ? { token }
@@ -123,21 +135,34 @@ export function useSocket(boardId: string | undefined) {
         socket.on('connect', () => {
           refreshAttempted = false;
           if (hasEverConnectedRef.current) {
-            setReconnectCount((value) => value + 1);
+            setReconnectCount((value) => {
+              const next = value + 1;
+              logger.info('SOCKET', `Socket reconnected (attempt #${next})`, { socketId: socket.id });
+              return next;
+            });
           } else {
             hasEverConnectedRef.current = true;
+            logger.info('SOCKET', `Socket connected to server (first connection)`, {
+              socketId: socket.id,
+              transport: socket.io?.engine?.transport?.name,
+            });
           }
           setConnectedSinceMs(Date.now());
           setDisconnectedSinceMs(null);
           setConnectionStatus('connected');
         });
 
-        socket.on('disconnect', () => {
+        socket.on('disconnect', (reason) => {
+          logger.warn('SOCKET', `Socket disconnected: ${reason}`, { reason });
           setDisconnectedSinceMs((previous) => previous ?? Date.now());
           setConnectionStatus('disconnected');
         });
 
         socket.on('connect_error', async (err) => {
+          logger.warn('SOCKET', `Socket connection error: ${err.message}`, {
+            hasEverConnected: hasEverConnectedRef.current,
+            errorMessage: err.message,
+          });
           setDisconnectedSinceMs((previous) => previous ?? Date.now());
           setConnectionStatus(hasEverConnectedRef.current ? 'disconnected' : 'connecting');
           if (SOCKET_URL) {
@@ -149,6 +174,7 @@ export function useSocket(boardId: string | undefined) {
           }
 
           refreshAttempted = true;
+          logger.info('SOCKET', 'Refreshing auth token for socket reconnect');
 
           try {
             const newToken = await user.getIdToken(true);
@@ -156,7 +182,9 @@ export function useSocket(boardId: string | undefined) {
             socket.auth = { token: newToken };
             setConnectionStatus('connecting');
             socket.connect();
-          } catch {
+          } catch (refreshErr: unknown) {
+            const msg = refreshErr instanceof Error ? refreshErr.message : 'Unknown error';
+            logger.error('SOCKET', `Auth token refresh failed — socket will stay disconnected: ${msg}`);
             setDisconnectedSinceMs((previous) => previous ?? Date.now());
             setConnectionStatus('disconnected');
           }

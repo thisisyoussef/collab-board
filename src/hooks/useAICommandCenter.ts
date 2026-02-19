@@ -1,5 +1,6 @@
 import type { User } from 'firebase/auth';
 import { useCallback, useRef, useState } from 'react';
+import { logger } from '../lib/logger';
 import type { BoardObjectsRecord } from '../types/board';
 import type {
   AIActionPreview,
@@ -172,6 +173,11 @@ export function useAICommandCenter({
       setLoading(true);
       setError(null);
 
+      logger.info('AI', `Sending AI prompt: '${trimmedPrompt.slice(0, 60)}${trimmedPrompt.length > 60 ? '...' : ''}' (${trimmedPrompt.length} chars)`, {
+        boardId,
+        promptLength: trimmedPrompt.length,
+      });
+
       try {
         const headers: Record<string, string> = {
           'Content-Type': 'application/json',
@@ -184,6 +190,7 @@ export function useAICommandCenter({
               headers.Authorization = `Bearer ${token}`;
             }
           } catch {
+            logger.warn('AI', 'Could not retrieve auth token for AI request, continuing without auth');
             // Token retrieval failures should not block preview-only UX.
           }
         }
@@ -213,7 +220,12 @@ export function useAICommandCenter({
 
         const payload = await parseJsonPayload(response);
         if (!response.ok) {
-          setError(parseApiError(response.status, payload.error));
+          const errMsg = parseApiError(response.status, payload.error);
+          logger.error('AI', `AI request failed (HTTP ${response.status}): ${errMsg}`, {
+            status: response.status,
+            boardId,
+          });
+          setError(errMsg);
           setMessage(null);
           setActions([]);
           return null;
@@ -227,6 +239,16 @@ export function useAICommandCenter({
               ? 'No actionable changes were suggested.'
               : `Prepared ${nextActions.length} action${nextActions.length === 1 ? '' : 's'}.`;
 
+        if (nextActions.length === 0) {
+          logger.warn('AI', 'AI returned no actionable changes', { message: nextMessage });
+        } else {
+          logger.info('AI', `AI plan received: ${nextActions.length} action(s)`, {
+            actionCount: nextActions.length,
+            actionNames: nextActions.map((a) => a.name),
+            message: nextMessage,
+          });
+        }
+
         setActions(nextActions);
         setMessage(nextMessage);
         lastPromptRef.current = trimmedPrompt;
@@ -235,6 +257,7 @@ export function useAICommandCenter({
           actions: nextActions,
         };
       } catch {
+        logger.error('AI', 'AI request failed: network error', { boardId });
         setError('Unable to generate an AI plan right now.');
         setMessage(null);
         setActions([]);

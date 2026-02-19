@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MutableRefObject } from 'react';
 import type { Socket } from 'socket.io-client';
 import { getOrCreateGuestIdentity } from '../lib/guest';
+import { logger } from '../lib/logger';
 import { generateColor } from '../lib/utils';
 import type { SocketStatus } from './useSocket';
 import type {
@@ -148,6 +149,13 @@ export function useCursors({ boardId, user, socketRef, socketStatus }: UseCursor
       }
 
       const latency = Math.max(0, Date.now() - Number(payload._ts || 0));
+      if (latency > 100) {
+        logger.warn('PERFORMANCE', `Cursor latency spike: ${latency}ms (target: <50ms)`, {
+          latency,
+          socketId: normalized.socketId,
+          displayName: normalized.displayName,
+        });
+      }
       const nextLatencies = [...latenciesRef.current, latency].slice(-LATENCY_SAMPLE_WINDOW);
       latenciesRef.current = nextLatencies;
       const now = Date.now();
@@ -227,6 +235,10 @@ export function useCursors({ boardId, user, socketRef, socketStatus }: UseCursor
           }
           return keep;
         });
+        const removed = previous.length - next.length;
+        if (removed > 0) {
+          logger.debug('PRESENCE', `Cleaned ${removed} stale cursor(s)`, { removedCount: removed });
+        }
         return next.length === previous.length ? previous : next;
       });
     }, CURSOR_STALE_SWEEP_MS);

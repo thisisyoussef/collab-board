@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { buildAIActionPlanFromPreviews, executeAIActionPlan } from '../lib/ai-executor';
+import { logger } from '../lib/logger';
 import type {
   AIActionPreview,
   AIExecutionDiff,
@@ -57,6 +58,12 @@ export function useAIExecutor({
       setError(null);
       setMessage(null);
 
+      logger.info('AI', `Applying ${previews.length} AI action(s) to board`, {
+        actionCount: previews.length,
+        actionNames: previews.map((p) => p.name),
+      });
+      const applyStartMs = Date.now();
+
       try {
         const current = getBoardState();
         const plan = buildAIActionPlanFromPreviews({
@@ -74,10 +81,19 @@ export function useAIExecutor({
         });
 
         if (!result.ok) {
+          logger.error('AI', `AI action execution failed: ${result.error}`);
           setError(`AI apply failed: ${result.error}`);
           return false;
         }
 
+        const applyTimeMs = Date.now() - applyStartMs;
+        logger.info('AI', `AI actions applied successfully: ${result.diff.createdIds.length} created, ${result.diff.updatedIds.length} updated, ${result.diff.deletedIds.length} deleted`, {
+          txId: result.transaction.txId,
+          createdCount: result.diff.createdIds.length,
+          updatedCount: result.diff.updatedIds.length,
+          deletedCount: result.diff.deletedIds.length,
+          applyTimeMs,
+        });
         commitBoardState(result.nextObjects, {
           txId: result.transaction.txId,
           source: 'ai',
@@ -93,6 +109,7 @@ export function useAIExecutor({
         return true;
       } catch (executionError) {
         const details = executionError instanceof Error ? executionError.message : 'Unknown error';
+        logger.error('AI', `AI action execution failed: ${details}`);
         setError(`AI apply failed: ${details}`);
         return false;
       } finally {
@@ -115,6 +132,11 @@ export function useAIExecutor({
     setApplying(true);
     setError(null);
 
+    logger.info('AI', `Undoing AI transaction ${lastTransaction.txId} (${lastTransaction.inverseActions.length} inverse actions)`, {
+      txId: lastTransaction.txId,
+      actionCount: lastTransaction.inverseActions.length,
+    });
+
     try {
       const current = getBoardState();
       const undoResult = executeAIActionPlan({
@@ -128,10 +150,12 @@ export function useAIExecutor({
       });
 
       if (!undoResult.ok) {
+        logger.error('AI', `AI undo failed: ${undoResult.error}`);
         setError(`Undo failed: ${undoResult.error}`);
         return false;
       }
 
+      logger.info('AI', 'AI undo completed successfully', { txId: undoResult.transaction.txId });
       commitBoardState(undoResult.nextObjects, {
         txId: undoResult.transaction.txId,
         source: 'undo',

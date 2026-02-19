@@ -1,4 +1,5 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { LogTerminal } from './components/LogTerminal';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AuthProvider } from './context/AuthContext';
 import { Board } from './pages/Board';
@@ -29,6 +30,8 @@ export function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
+      {/* Global log terminal — visible in dev mode or when VITE_ENABLE_LOGS=true */}
+      <LogTerminal />
     </AuthProvider>
   );
 }

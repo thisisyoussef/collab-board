@@ -12,6 +12,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toFirestoreUserMessage, withFirestoreTimeout } from '../lib/firestore-client';
 import { db } from '../lib/firebase';
+import { logger } from '../lib/logger';
 
 export interface BoardSummary {
   id: string;
@@ -94,6 +95,8 @@ export function useBoards(userId: string | undefined) {
     setLoading(true);
     setError(null);
 
+    logger.info('FIRESTORE', 'Loading boards from Firestore', { userId });
+
     try {
       const [ownedResult, createdResult] = await Promise.all([
         queryBoardsByField(userId, 'ownerId'),
@@ -126,9 +129,16 @@ export function useBoards(userId: string | undefined) {
         });
       }
 
-      setBoards(sortBoards(Array.from(merged.values())));
+      const boardList = sortBoards(Array.from(merged.values()));
+      logger.info('FIRESTORE', `Loaded ${boardList.length} board(s) from Firestore`, {
+        boardCount: boardList.length,
+        userId,
+      });
+      setBoards(boardList);
     } catch (err) {
-      setError(toFirestoreUserMessage('Unable to load boards right now.', err));
+      const msg = toFirestoreUserMessage('Unable to load boards right now.', err);
+      logger.error('FIRESTORE', `Failed to load boards: ${msg}`, { userId });
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -154,6 +164,8 @@ export function useBoards(userId: string | undefined) {
       const boardRef = doc(collection(db, 'boards'));
       const now = Date.now();
       const cleanedTitle = title.trim() || 'Untitled board';
+
+      logger.info('FIRESTORE', `Creating board '${cleanedTitle}'`, { boardId: boardRef.id, userId });
 
       // Optimistic insert keeps dashboard creation instant while write commits.
       setBoards((prev) =>
@@ -184,10 +196,15 @@ export function useBoards(userId: string | undefined) {
         updatedAt: serverTimestamp(),
       });
 
-      const wrappedCommit = withFirestoreTimeout('Creating board', committed).catch((err) => {
-        setBoards((prev) => prev.filter((board) => board.id !== boardRef.id));
-        throw new Error(toFirestoreUserMessage('Failed to create board.', err));
-      });
+      const wrappedCommit = withFirestoreTimeout('Creating board', committed)
+        .then(() => {
+          logger.info('FIRESTORE', `Board '${cleanedTitle}' created successfully`, { boardId: boardRef.id });
+        })
+        .catch((err) => {
+          logger.error('FIRESTORE', `Failed to create board '${cleanedTitle}': ${err instanceof Error ? err.message : 'Unknown error'}`, { boardId: boardRef.id });
+          setBoards((prev) => prev.filter((board) => board.id !== boardRef.id));
+          throw new Error(toFirestoreUserMessage('Failed to create board.', err));
+        });
 
       return { id: boardRef.id, committed: wrappedCommit };
     },
@@ -202,6 +219,8 @@ export function useBoards(userId: string | undefined) {
 
     const previousBoard = boards.find((board) => board.id === boardId) || null;
     const optimisticUpdatedAt = Date.now();
+
+    logger.info('FIRESTORE', `Renaming board to '${cleaned}'`, { boardId, previousTitle: previousBoard?.title });
 
     setBoards((prev) =>
       sortBoards(
@@ -222,6 +241,7 @@ export function useBoards(userId: string | undefined) {
         }),
       );
     } catch (err) {
+      logger.error('FIRESTORE', `Failed to rename board: ${err instanceof Error ? err.message : 'Unknown error'}`, { boardId });
       if (previousBoard) {
         setBoards((prev) =>
           sortBoards(
@@ -245,12 +265,16 @@ export function useBoards(userId: string | undefined) {
   const removeBoard = useCallback(async (boardId: string) => {
     const removedBoard = boards.find((board) => board.id === boardId) || null;
 
+    logger.info('FIRESTORE', `Deleting board '${removedBoard?.title ?? boardId}'`, { boardId });
+
     // Optimistic delete keeps UI responsive; failed deletes restore the record.
     setBoards((prev) => prev.filter((board) => board.id !== boardId));
 
     try {
       await withFirestoreTimeout('Deleting board', deleteDoc(doc(db, 'boards', boardId)));
+      logger.info('FIRESTORE', `Board '${removedBoard?.title ?? boardId}' deleted successfully`, { boardId });
     } catch (err) {
+      logger.error('FIRESTORE', `Failed to delete board: ${err instanceof Error ? err.message : 'Unknown error'}`, { boardId });
       if (removedBoard) {
         setBoards((prev) => sortBoards([removedBoard, ...prev]));
       }

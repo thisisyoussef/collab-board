@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { MutableRefObject } from 'react';
 import type { Socket } from 'socket.io-client';
 import { getOrCreateGuestIdentity } from '../lib/guest';
+import { logger } from '../lib/logger';
 import { generateColor } from '../lib/utils';
 import type { SocketStatus } from './useSocket';
 import type {
@@ -97,7 +98,12 @@ export function usePresence({ boardId, user, socketRef, socketStatus }: UsePrese
         }
       });
 
-      setMembers(sortMembers(Array.from(nextBySocketId.values())));
+      const memberList = Array.from(nextBySocketId.values());
+      logger.info('PRESENCE', `Presence snapshot received: ${memberList.length} user(s) online`, {
+        members: memberList.map((m) => m.displayName),
+        count: memberList.length,
+      });
+      setMembers(sortMembers(memberList));
     };
 
     const handleJoined = (member: PresenceMember) => {
@@ -106,6 +112,10 @@ export function usePresence({ boardId, user, socketRef, socketStatus }: UsePrese
         return;
       }
 
+      logger.info('PRESENCE', `User '${normalized.displayName}' joined the board`, {
+        userId: normalized.userId,
+        socketId: normalized.socketId,
+      });
       clearLeaveTimer(normalized.socketId);
       setMembers((previous) => {
         const next = previous.filter((entry) => entry.socketId !== normalized.socketId);
@@ -119,6 +129,11 @@ export function usePresence({ boardId, user, socketRef, socketStatus }: UsePrese
       if (!socketId) {
         return;
       }
+
+      logger.info('PRESENCE', `User left the board`, {
+        socketId,
+        userId: payload.userId,
+      });
 
       setMembers((previous) =>
         previous.map((entry) =>
@@ -136,6 +151,12 @@ export function usePresence({ boardId, user, socketRef, socketStatus }: UsePrese
     socket.on('presence:snapshot', handleSnapshot);
     socket.on('user:joined', handleJoined);
     socket.on('user:left', handleLeft);
+
+    logger.info('PRESENCE', `Joining board room '${boardId}' as '${selfDisplayName}'`, {
+      boardId,
+      userId: selfId,
+      displayName: selfDisplayName,
+    });
     socket.emit('join-board', joinPayload);
 
     return () => {

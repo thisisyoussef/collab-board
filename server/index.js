@@ -10,6 +10,7 @@ import {
   normalizeNonEmptyString,
 } from './presence.js';
 import { extractRealtimeMeta } from './realtime-meta.js';
+import { logger } from './logger.js';
 
 const PORT = Number(process.env.PORT || 3001);
 const SOCKET_CORS_ORIGIN = process.env.SOCKET_CORS_ORIGIN || 'http://localhost:5173';
@@ -41,9 +42,7 @@ if (canVerifyFirebaseTokens) {
     }),
   });
 } else {
-  console.warn(
-    '[socket] Firebase Admin env vars are missing. Socket auth will reject connections until configured.',
-  );
+  logger.warn('AUTH', 'Firebase Admin env vars are missing — socket auth will reject connections until configured');
 }
 
 const server = http.createServer((req, res) => {
@@ -93,25 +92,34 @@ io.use(async (socket, next) => {
       socket.data.email = decoded.email || null;
       socket.data.photoURL = decoded.picture || null;
       socket.data.isGuest = false;
+      logger.info('AUTH', `Firebase token verified for '${socket.data.displayName}'`, { userId: decoded.uid, socketId: socket.id });
       next();
       return;
     }
 
     applyGuestIdentity(socket);
+    logger.info('AUTH', `Guest identity applied: '${socket.data.displayName}'`, { userId: socket.data.userId, socketId: socket.id });
     next();
-  } catch {
+  } catch (err) {
+    logger.warn('AUTH', `Firebase token verification failed, falling back to guest — ${err instanceof Error ? err.message : 'Unknown error'}`, { socketId: socket.id });
     applyGuestIdentity(socket);
     next();
   }
 });
 
 io.on('connection', (socket) => {
-  console.log(`[socket] Connected: ${socket.data.displayName} (${socket.id})`);
+  logger.info('SOCKET', `Client connected: '${socket.data.displayName}' (${socket.data.isGuest ? 'guest' : 'authenticated'})`, {
+    socketId: socket.id,
+    userId: socket.data.userId,
+    isGuest: socket.data.isGuest,
+    transport: socket.conn?.transport?.name,
+  });
   socket.data.color = generateColor(socket.data.userId);
 
   socket.on('join-board', async (payload) => {
     const boardId = normalizeNonEmptyString(payload?.boardId);
     if (!boardId) {
+      logger.warn('SOCKET', 'join-board rejected: invalid board ID', { socketId: socket.id });
       socket.emit('server:error', { code: 'INVALID_BOARD_ID', message: 'Invalid board id.' });
       return;
     }
@@ -120,6 +128,7 @@ io.on('connection', (socket) => {
     const previousBoardId = normalizeNonEmptyString(socket.data.boardId);
 
     if (previousBoardId && previousBoardId !== boardId) {
+      logger.info('PRESENCE', `User '${socket.data.displayName}' leaving board before joining new one`, { previousBoardId, newBoardId: boardId, socketId: socket.id });
       socket.leave(boardRoom(previousBoardId));
     }
 
@@ -138,6 +147,12 @@ io.on('connection', (socket) => {
 
     const sockets = await io.in(room).fetchSockets();
     const snapshot = sockets.map((entry) => buildPresenceMember(entry));
+    logger.info('PRESENCE', `User '${socket.data.displayName}' joined board — ${snapshot.length} user(s) now in room`, {
+      boardId,
+      socketId: socket.id,
+      userId: socket.data.userId,
+      userCount: snapshot.length,
+    });
     socket.emit('presence:snapshot', snapshot);
     socket.to(room).emit('user:joined', buildPresenceMember(socket));
   });
@@ -147,6 +162,12 @@ io.on('connection', (socket) => {
     if (!boardId) {
       return;
     }
+
+    logger.info('PRESENCE', `User '${socket.data.displayName}' leaving board (disconnecting)`, {
+      boardId,
+      socketId: socket.id,
+      userId: socket.data.userId,
+    });
 
     socket.to(boardRoom(boardId)).emit('user:left', {
       socketId: socket.id,
@@ -186,6 +207,10 @@ io.on('connection', (socket) => {
 
     const ts = Number(data?._ts);
     const meta = extractRealtimeMeta(data, socket.data.userId);
+    logger.info('SYNC', `Broadcasting board:changed from '${socket.data.displayName}'`, {
+      boardId,
+      userId: socket.data.userId,
+    });
     socket.to(boardRoom(boardId)).emit('board:changed', {
       boardId,
       _ts: Number.isFinite(ts) ? ts : Date.now(),
@@ -211,6 +236,12 @@ io.on('connection', (socket) => {
 
     const ts = Number(data?._ts);
     const meta = extractRealtimeMeta(data, socket.data.userId);
+    logger.info('SYNC', `Broadcasting object:create (${object.type || 'unknown'} '${objectId}') from '${socket.data.displayName}'`, {
+      boardId,
+      objectId,
+      objectType: object.type,
+      userId: socket.data.userId,
+    });
     socket.to(boardRoom(boardId)).emit('object:create', {
       boardId,
       object,
@@ -237,6 +268,11 @@ io.on('connection', (socket) => {
 
     const ts = Number(data?._ts);
     const meta = extractRealtimeMeta(data, socket.data.userId);
+    logger.debug('SYNC', `Broadcasting object:update ('${objectId}') from '${socket.data.displayName}'`, {
+      boardId,
+      objectId,
+      userId: socket.data.userId,
+    });
     socket.to(boardRoom(boardId)).emit('object:update', {
       boardId,
       object,
@@ -258,6 +294,11 @@ io.on('connection', (socket) => {
 
     const ts = Number(data?._ts);
     const meta = extractRealtimeMeta(data, socket.data.userId);
+    logger.info('SYNC', `Broadcasting object:delete ('${objectId}') from '${socket.data.displayName}'`, {
+      boardId,
+      objectId,
+      userId: socket.data.userId,
+    });
     socket.to(boardRoom(boardId)).emit('object:delete', {
       boardId,
       objectId,
@@ -267,11 +308,17 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', (reason) => {
-    console.log(`[socket] Disconnected: ${socket.data.displayName} (${reason})`);
+    logger.info('SOCKET', `Client disconnected: '${socket.data.displayName}' — reason: ${reason}`, {
+      socketId: socket.id,
+      userId: socket.data.userId,
+      reason,
+      boardId: socket.data.boardId || null,
+    });
   });
 });
 
 server.listen(PORT, () => {
-  console.log(`[socket] Server listening on :${PORT}`);
-  console.log(`[socket] Allowed origins: ${allowedOrigins.join(', ')}`);
+  logger.info('SOCKET', `Socket.IO server listening on port ${PORT}`, { port: PORT });
+  logger.info('SOCKET', `Allowed CORS origins: ${allowedOrigins.join(', ')}`, { origins: allowedOrigins });
+  logger.info('AUTH', `Firebase Admin token verification: ${canVerifyFirebaseTokens ? 'enabled' : 'disabled'}`);
 });

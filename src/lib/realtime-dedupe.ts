@@ -1,3 +1,5 @@
+import { logger } from './logger';
+
 export type RealtimeEventType = 'object:create' | 'object:update' | 'object:delete';
 
 export interface RealtimeEventSignatureInput {
@@ -81,6 +83,11 @@ export function createRealtimeDedupeCache({
     }
 
     const overflowCount = cache.size - maxEntries;
+    logger.warn('SYNC', `Dedupe cache overflow: pruning ${overflowCount} oldest entries (cache: ${cache.size}/${maxEntries})`, {
+      overflowCount,
+      cacheSize: cache.size,
+      maxEntries,
+    });
     const keys = cache.keys();
     for (let index = 0; index < overflowCount; index += 1) {
       const next = keys.next();

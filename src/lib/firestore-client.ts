@@ -1,3 +1,5 @@
+import { logger } from './logger';
+
 const FIRESTORE_HINT =
   'If you use an ad/privacy blocker, allow firestore.googleapis.com for this site and retry.';
 
@@ -12,6 +14,7 @@ export async function withFirestoreTimeout<T>(
   try {
     const timeoutPromise = new Promise<never>((_, reject) => {
       timeoutId = window.setTimeout(() => {
+        logger.error('FIRESTORE', `Firestore operation timed out after ${timeoutMs}ms: ${operationLabel}`, { operationLabel, timeoutMs });
         reject(new Error(`${operationLabel} timed out. ${FIRESTORE_HINT}`));
       }, timeoutMs);
     });
