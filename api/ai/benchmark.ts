@@ -94,6 +94,8 @@ interface BenchmarkRow {
   requestedProvider: 'anthropic' | 'openai';
   requestedModel: string;
   toolCallCount: number;
+  accuracyScore: number;
+  toolNames: string[];
   error: string | null;
 }
 
@@ -111,6 +113,7 @@ interface ProviderModelStats {
   failures: number;
   latencies: number[];
   toolCalls: number[];
+  accuracies: number[];
 }
 
 export const config = {
@@ -446,7 +449,14 @@ async function runWithConcurrency<T, R>(
 function summarizeResults(results: BenchmarkRow[]) {
   const byProvider: Record<
     string,
-    { requests: number; successes: number; failures: number; latencies: number[]; toolCalls: number[] }
+    {
+      requests: number;
+      successes: number;
+      failures: number;
+      latencies: number[];
+      toolCalls: number[];
+      accuracies: number[];
+    }
   > = {};
   const byProviderModel: Record<string, ProviderModelStats> = {};
   const failures: Array<{
@@ -471,6 +481,7 @@ function summarizeResults(results: BenchmarkRow[]) {
         failures: 0,
         latencies: [],
         toolCalls: [],
+        accuracies: [],
       };
     }
 
@@ -483,16 +494,19 @@ function summarizeResults(results: BenchmarkRow[]) {
         failures: 0,
         latencies: [],
         toolCalls: [],
+        accuracies: [],
       };
     }
 
     byProvider[providerKey].requests += 1;
     byProvider[providerKey].latencies.push(row.latencyMs);
     byProvider[providerKey].toolCalls.push(row.toolCallCount);
+    byProvider[providerKey].accuracies.push(row.accuracyScore);
 
     byProviderModel[providerModelKey].requests += 1;
     byProviderModel[providerModelKey].latencies.push(row.latencyMs);
     byProviderModel[providerModelKey].toolCalls.push(row.toolCallCount);
+    byProviderModel[providerModelKey].accuracies.push(row.accuracyScore);
 
     if (row.success) {
       byProvider[providerKey].successes += 1;
@@ -522,6 +536,7 @@ function summarizeResults(results: BenchmarkRow[]) {
         successRate: percent(stats.successes, stats.requests),
         avgLatencyMs: average(stats.latencies),
         avgToolCalls: average(stats.toolCalls),
+        avgAccuracyScore: average(stats.accuracies),
       },
     ]),
   );
@@ -538,6 +553,7 @@ function summarizeResults(results: BenchmarkRow[]) {
         successRate: percent(stats.successes, stats.requests),
         avgLatencyMs: average(stats.latencies),
         avgToolCalls: average(stats.toolCalls),
+        avgAccuracyScore: average(stats.accuracies),
       },
     ]),
   );
@@ -613,6 +629,142 @@ async function waitForApiReady(baseApiUrl: string, timeoutMs: number, intervalMs
   }
 
   throw new Error(`Timed out waiting for API readiness at ${baseApiUrl}`);
+}
+
+interface NormalizedToolCall {
+  name: string;
+  input: Record<string, unknown>;
+}
+
+function toRecord(value: unknown): Record<string, unknown> {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return {};
+}
+
+function extractToolCalls(payload: Record<string, unknown>): NormalizedToolCall[] {
+  const raw = payload.toolCalls;
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw
+    .map((entry) => toRecord(entry))
+    .map((entry) => ({
+      name: typeof entry.name === 'string' ? entry.name : '',
+      input: toRecord(entry.input),
+    }))
+    .filter((entry) => entry.name.length > 0);
+}
+
+function hasNumericField(input: Record<string, unknown>, key: string): boolean {
+  return typeof input[key] === 'number' && Number.isFinite(input[key] as number);
+}
+
+function scorePromptAccuracy(promptId: string, toolCalls: NormalizedToolCall[], success: boolean): number {
+  if (!success) {
+    return 0;
+  }
+
+  const byName = new Map<string, NormalizedToolCall[]>();
+  toolCalls.forEach((call) => {
+    const arr = byName.get(call.name) || [];
+    arr.push(call);
+    byName.set(call.name, arr);
+  });
+
+  const getCalls = (name: string) => byName.get(name) || [];
+  const hasTool = (name: string) => getCalls(name).length > 0;
+  const stickyCalls = getCalls('createStickyNote');
+  const shapeCalls = getCalls('createShape');
+  const frameCalls = getCalls('createFrame');
+  const moveCalls = getCalls('moveObject');
+  const colorCalls = getCalls('changeColor');
+  const hasBoardStateCall = hasTool('getBoardState');
+
+  let score = 0;
+  switch (promptId) {
+    case 'create_sticky': {
+      score += hasTool('createStickyNote') ? 0.6 : 0;
+      score += stickyCalls.some((call) =>
+        String(call.input.text || '')
+          .toLowerCase()
+          .includes('user research'),
+      )
+        ? 0.2
+        : 0;
+      score += stickyCalls.some(
+        (call) => hasNumericField(call.input, 'x') && hasNumericField(call.input, 'y'),
+      )
+        ? 0.2
+        : 0;
+      break;
+    }
+    case 'create_shape': {
+      score += hasTool('createShape') ? 0.6 : 0;
+      score += shapeCalls.some((call) => String(call.input.type || '') === 'rect') ? 0.2 : 0;
+      score += shapeCalls.some(
+        (call) => hasNumericField(call.input, 'x') && hasNumericField(call.input, 'y'),
+      )
+        ? 0.2
+        : 0;
+      break;
+    }
+    case 'change_color': {
+      score += hasTool('changeColor') ? 0.7 : 0;
+      score += colorCalls.some(
+        (call) =>
+          typeof call.input.objectId === 'string' &&
+          String(call.input.objectId).trim().length > 0 &&
+          typeof call.input.color === 'string' &&
+          String(call.input.color).trim().length > 0,
+      )
+        ? 0.3
+        : 0;
+      break;
+    }
+    case 'move_notes': {
+      score += hasTool('moveObject') ? 0.5 : 0;
+      score += hasBoardStateCall ? 0.3 : 0;
+      score += moveCalls.some(
+        (call) => hasNumericField(call.input, 'x') && hasNumericField(call.input, 'y'),
+      )
+        ? 0.2
+        : 0;
+      break;
+    }
+    case 'grid_arrange': {
+      score += hasTool('moveObject') ? 0.5 : 0;
+      score += hasBoardStateCall ? 0.3 : 0;
+      score += toolCalls.length >= 2 ? 0.2 : 0;
+      break;
+    }
+    case 'grid_generate': {
+      score += stickyCalls.length >= 4 ? 0.5 : 0;
+      score += stickyCalls.length >= 6 ? 0.3 : 0;
+      score += hasTool('createFrame') || hasTool('createShape') ? 0.2 : 0;
+      break;
+    }
+    case 'swot_template': {
+      score += frameCalls.length >= 1 ? 0.4 : 0;
+      score += stickyCalls.length >= 4 || shapeCalls.length >= 4 ? 0.4 : 0;
+      score += toolCalls.length >= 5 ? 0.2 : 0;
+      break;
+    }
+    case 'retro_template': {
+      score += frameCalls.length >= 1 ? 0.4 : 0;
+      score += stickyCalls.length >= 3 ? 0.4 : 0;
+      score += toolCalls.length >= 4 ? 0.2 : 0;
+      break;
+    }
+    default: {
+      score = 1;
+      break;
+    }
+  }
+
+  return Math.max(0, Math.min(1, score));
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -738,7 +890,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       let provider: string | null = null;
       let model: string | null = null;
       let toolCallCount = 0;
+      let toolNames: string[] = [];
       let error: string | null = null;
+      let accuracyScore = 0;
 
       try {
         const response = await fetch(apiUrl, {
@@ -759,13 +913,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         status = response.status;
         const payload = await response.json().catch(() => ({} as Record<string, unknown>));
+        const parsedToolCalls = extractToolCalls(payload);
         provider =
           response.headers.get('x-ai-provider') ||
           (typeof payload.provider === 'string' ? payload.provider : null);
         model =
           response.headers.get('x-ai-model') ||
           (typeof payload.model === 'string' ? payload.model : null);
-        toolCallCount = Array.isArray(payload.toolCalls) ? payload.toolCalls.length : 0;
+        toolCallCount = parsedToolCalls.length;
+        toolNames = parsedToolCalls.map((call) => call.name).slice(0, 12);
+        accuracyScore = scorePromptAccuracy(
+          item.promptId,
+          parsedToolCalls,
+          response.ok,
+        );
 
         if (!response.ok) {
           error = typeof payload.error === 'string' ? payload.error : `HTTP ${response.status}`;
@@ -790,6 +951,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         requestedProvider: item.providerOverride,
         requestedModel: item.modelOverride,
         toolCallCount,
+        accuracyScore,
+        toolNames,
         error,
       };
     });
