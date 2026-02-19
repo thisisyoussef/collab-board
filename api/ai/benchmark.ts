@@ -116,6 +116,19 @@ interface ProviderModelStats {
   accuracies: number[];
 }
 
+interface PromptProviderModelStats {
+  promptId: string;
+  category: string;
+  provider: string;
+  model: string;
+  requests: number;
+  successes: number;
+  failures: number;
+  latencies: number[];
+  toolCalls: number[];
+  accuracies: number[];
+}
+
 export const config = {
   maxDuration: 300,
 };
@@ -459,6 +472,7 @@ function summarizeResults(results: BenchmarkRow[]) {
     }
   > = {};
   const byProviderModel: Record<string, ProviderModelStats> = {};
+  const byPromptProviderModel: Record<string, PromptProviderModelStats> = {};
   const failures: Array<{
     round: number;
     boardId: string;
@@ -473,6 +487,7 @@ function summarizeResults(results: BenchmarkRow[]) {
     const providerKey = row.provider || 'unknown';
     const modelKey = row.model || 'unknown';
     const providerModelKey = `${providerKey}:${modelKey}`;
+    const promptProviderModelKey = `${row.promptId}:${providerKey}:${modelKey}`;
 
     if (!byProvider[providerKey]) {
       byProvider[providerKey] = {
@@ -498,6 +513,21 @@ function summarizeResults(results: BenchmarkRow[]) {
       };
     }
 
+    if (!byPromptProviderModel[promptProviderModelKey]) {
+      byPromptProviderModel[promptProviderModelKey] = {
+        promptId: row.promptId,
+        category: row.category,
+        provider: providerKey,
+        model: modelKey,
+        requests: 0,
+        successes: 0,
+        failures: 0,
+        latencies: [],
+        toolCalls: [],
+        accuracies: [],
+      };
+    }
+
     byProvider[providerKey].requests += 1;
     byProvider[providerKey].latencies.push(row.latencyMs);
     byProvider[providerKey].toolCalls.push(row.toolCallCount);
@@ -508,12 +538,19 @@ function summarizeResults(results: BenchmarkRow[]) {
     byProviderModel[providerModelKey].toolCalls.push(row.toolCallCount);
     byProviderModel[providerModelKey].accuracies.push(row.accuracyScore);
 
+    byPromptProviderModel[promptProviderModelKey].requests += 1;
+    byPromptProviderModel[promptProviderModelKey].latencies.push(row.latencyMs);
+    byPromptProviderModel[promptProviderModelKey].toolCalls.push(row.toolCallCount);
+    byPromptProviderModel[promptProviderModelKey].accuracies.push(row.accuracyScore);
+
     if (row.success) {
       byProvider[providerKey].successes += 1;
       byProviderModel[providerModelKey].successes += 1;
+      byPromptProviderModel[promptProviderModelKey].successes += 1;
     } else {
       byProvider[providerKey].failures += 1;
       byProviderModel[providerModelKey].failures += 1;
+      byPromptProviderModel[promptProviderModelKey].failures += 1;
       failures.push({
         round: row.round,
         boardId: row.boardId,
@@ -558,12 +595,37 @@ function summarizeResults(results: BenchmarkRow[]) {
     ]),
   );
 
+  const promptProviderModels = Object.fromEntries(
+    Object.entries(byPromptProviderModel).map(([key, stats]) => [
+      key,
+      {
+        promptId: stats.promptId,
+        category: stats.category,
+        provider: stats.provider,
+        model: stats.model,
+        requests: stats.requests,
+        successes: stats.successes,
+        failures: stats.failures,
+        successRate: percent(stats.successes, stats.requests),
+        avgLatencyMs: average(stats.latencies),
+        avgToolCalls: average(stats.toolCalls),
+        avgAccuracyScore: average(stats.accuracies),
+      },
+    ]),
+  );
+
+  const complexPromptProviderModels = Object.fromEntries(
+    Object.entries(promptProviderModels).filter(([, stats]) => stats.category === 'complex'),
+  );
+
   return {
     totalRequests: results.length,
     totalSuccesses: results.filter((row) => row.success).length,
     totalFailures: failures.length,
     providers,
     providerModels,
+    promptProviderModels,
+    complexPromptProviderModels,
     failures: failures.slice(0, 25),
   };
 }
