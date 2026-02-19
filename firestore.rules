@@ -126,10 +126,18 @@ service cloud.firestore {
 
     match /boardMembers/{membershipId} {
       allow read: if isSignedIn() &&
-        resource.data.boardId is string &&
         (
-          (resource.data.userId is string && resource.data.userId == request.auth.uid) ||
-          isBoardOwner(resource.data.boardId)
+          // Allow users to check their own membership doc even before it exists.
+          membershipId.matches('^.+_' + request.auth.uid + '$') ||
+          (
+            resource.data.boardId is string &&
+            resource.data.userId is string &&
+            resource.data.userId == request.auth.uid
+          ) ||
+          (
+            resource.data.boardId is string &&
+            isBoardOwner(resource.data.boardId)
+          )
         );
 
       allow create: if isSignedIn() &&
