@@ -36,6 +36,14 @@ service cloud.firestore {
         : 'viewer';
     }
 
+    function boardOwnerId(data) {
+      return data.ownerId is string
+        ? data.ownerId
+        : data.createdBy is string
+          ? data.createdBy
+          : null;
+    }
+
     function explicitMemberRole(boardId) {
       let memberDoc = isSignedIn()
         ? get(boardMemberDocPath(boardId, request.auth.uid))
@@ -50,9 +58,10 @@ service cloud.firestore {
     }
 
     function isOwner(data) {
+      let ownerId = boardOwnerId(data);
       return isSignedIn() &&
-        data.ownerId is string &&
-        data.ownerId == request.auth.uid;
+        ownerId != null &&
+        ownerId == request.auth.uid;
     }
 
     function effectiveBoardRole(boardId, data) {
@@ -91,10 +100,10 @@ service cloud.firestore {
 
     function isBoardOwner(boardId) {
       let boardDoc = get(boardDocPath(boardId));
+      let ownerId = boardDoc.data != null ? boardOwnerId(boardDoc.data) : null;
       return isSignedIn() &&
-        boardDoc.data != null &&
-        boardDoc.data.ownerId is string &&
-        boardDoc.data.ownerId == request.auth.uid;
+        ownerId != null &&
+        ownerId == request.auth.uid;
     }
 
     match /boards/{boardId} {
@@ -118,9 +127,8 @@ service cloud.firestore {
     match /boardMembers/{membershipId} {
       allow read: if isSignedIn() &&
         resource.data.boardId is string &&
-        resource.data.userId is string &&
         (
-          resource.data.userId == request.auth.uid ||
+          (resource.data.userId is string && resource.data.userId == request.auth.uid) ||
           isBoardOwner(resource.data.boardId)
         );
 
