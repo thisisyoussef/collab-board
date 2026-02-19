@@ -322,20 +322,9 @@ export function Board() {
     selectedIds.length === 1 ? objectsRef.current.get(selectedIds[0]) ?? null : null;
   const selectedConnector =
     selectedObject && selectedObject.type === 'connector' ? selectedObject : null;
-  const selectedShapeQuickConnectId =
-    activeTool === 'select' &&
-    selectedIds.length === 1 &&
-    selectedObject &&
-    selectedObject.type !== 'connector'
-      ? selectedObject.id
-      : null;
-  const canStartConnectorFromAnchor =
-    canEditBoard && (activeTool === 'connector' || Boolean(selectedShapeQuickConnectId));
+  const canStartConnectorFromAnchor = canEditBoard && activeTool === 'connector';
   const connectorShapeAnchors = (() => {
-    const showConnectorToolAnchors = activeTool === 'connector';
-    const showSelectedConnectorAnchors = activeTool === 'select' && Boolean(selectedConnector);
-    const showQuickConnectAnchors = Boolean(selectedShapeQuickConnectId);
-    if (!showConnectorToolAnchors && !showSelectedConnectorAnchors && !showQuickConnectAnchors) {
+    if (!canStartConnectorFromAnchor) {
       return [] as ConnectorShapeAnchorMarker[];
     }
 
@@ -344,35 +333,9 @@ export function Board() {
       if (entry.type === 'connector') {
         return;
       }
-      if (
-        showQuickConnectAnchors &&
-        !showConnectorToolAnchors &&
-        !showSelectedConnectorAnchors &&
-        entry.id !== selectedShapeQuickConnectId
-      ) {
-        return;
-      }
 
       const candidates = getObjectAnchorCandidates(entry);
       candidates.forEach((candidate, index) => {
-        const connector = showSelectedConnectorAnchors ? selectedConnector : null;
-        const fromMatch =
-          connector?.fromId === entry.id &&
-          Number.isFinite(connector.fromAnchorX) &&
-          Number.isFinite(connector.fromAnchorY) &&
-          Math.abs((connector.fromAnchorX || 0) - candidate.anchorX) <=
-            SHAPE_ANCHOR_MATCH_EPSILON &&
-          Math.abs((connector.fromAnchorY || 0) - candidate.anchorY) <=
-            SHAPE_ANCHOR_MATCH_EPSILON;
-        const toMatch =
-          connector?.toId === entry.id &&
-          Number.isFinite(connector.toAnchorX) &&
-          Number.isFinite(connector.toAnchorY) &&
-          Math.abs((connector.toAnchorX || 0) - candidate.anchorX) <=
-            SHAPE_ANCHOR_MATCH_EPSILON &&
-          Math.abs((connector.toAnchorY || 0) - candidate.anchorY) <=
-            SHAPE_ANCHOR_MATCH_EPSILON;
-
         markers.push({
           key: `${entry.id}-${index}`,
           objectId: entry.id,
@@ -380,7 +343,7 @@ export function Board() {
           anchorY: candidate.anchorY,
           x: candidate.x,
           y: candidate.y,
-          endpoint: fromMatch ? 'from' : toMatch ? 'to' : null,
+          endpoint: null,
         });
       });
     });
