@@ -135,7 +135,7 @@ describe('Dashboard', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/board/b1');
   });
 
-  it('calls createBoard and navigates on form submit', () => {
+  it('calls createBoard and navigates on form submit after commit resolves', async () => {
     mockCreateBoard.mockReturnValue({
       id: 'new-board-id',
       committed: Promise.resolve(),
@@ -148,7 +148,9 @@ describe('Dashboard', () => {
     fireEvent.submit(input.closest('form')!);
 
     expect(mockCreateBoard).toHaveBeenCalledWith('My New Board');
-    expect(mockNavigate).toHaveBeenCalledWith('/board/new-board-id');
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/board/new-board-id');
+    });
   });
 
   it('shows rename input when Rename is clicked', () => {

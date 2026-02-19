@@ -238,6 +238,7 @@ export function Board() {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const [boardAccess, setBoardAccess] = useState<ResolveBoardAccessResult | null>(null);
+  const [boardMissing, setBoardMissing] = useState(false);
   const [isResolvingAccess, setIsResolvingAccess] = useState(Boolean(boardId));
   const canReadBoard = Boolean(boardAccess?.canRead);
   const canEditBoard = Boolean(boardAccess?.canEdit);
@@ -496,6 +497,7 @@ export function Board() {
     setTitleError(null);
     setShareState('idle');
     setBoardAccess(null);
+    setBoardMissing(false);
     setIsResolvingAccess(Boolean(boardId));
   }, [boardId]);
 
@@ -519,6 +521,7 @@ export function Board() {
   useEffect(() => {
     if (!boardId) {
       setBoardAccess(null);
+      setBoardMissing(false);
       setIsResolvingAccess(false);
       return;
     }
@@ -538,12 +541,14 @@ export function Board() {
 
         if (!boardSnapshot.exists()) {
           setBoardAccess(null);
+          setBoardMissing(true);
           setCanvasNotice('Board not found.');
           setIsResolvingAccess(false);
           return;
         }
 
         const boardData = boardSnapshot.data() as BoardDocData;
+        setBoardMissing(false);
         const ownerId = boardData.ownerId || boardData.createdBy || null;
         const currentUserId = user?.uid || null;
         let explicitMemberRole: 'owner' | 'editor' | 'viewer' | null = null;
@@ -601,6 +606,7 @@ export function Board() {
         }
 
         if (permissionDenied) {
+          setBoardMissing(false);
           setBoardAccess(
             resolveBoardAccess({
               ownerId: null,
@@ -611,6 +617,7 @@ export function Board() {
           );
           setCanvasNotice('You do not have access to this board.');
         } else {
+          setBoardMissing(false);
           setCanvasNotice(toFirestoreUserMessage('Unable to load board access.', err));
         }
       } finally {
@@ -3424,6 +3431,21 @@ export function Board() {
 
   if (isResolvingAccess) {
     return <div className="centered-screen">Checking board access...</div>;
+  }
+
+  if (boardMissing) {
+    return (
+      <main className="centered-screen">
+        <div>
+          <p>Board not found.</p>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 12 }}>
+            <button className="secondary-btn" onClick={() => navigate('/dashboard')}>
+              Back to dashboard
+            </button>
+          </div>
+        </div>
+      </main>
+    );
   }
 
   if (!canReadBoard) {

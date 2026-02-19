@@ -38,21 +38,20 @@ export function Dashboard() {
     navigate(`/board/${boardId}`);
   };
 
-  const handleCreateBoard = () => {
+  const handleCreateBoard = async () => {
     if (isCreating) return;
     setActionError(null);
     setIsCreating(true);
     try {
       const { id: boardId, committed } = createBoard(newBoardName);
+      await committed;
       setNewBoardName('');
-      setIsCreating(false);
       openBoard(boardId);
-      void committed.catch((err: unknown) => {
-        console.error(err);
-      });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to create board. Please try again.';
       setActionError(message);
+      return;
+    } finally {
       setIsCreating(false);
     }
   };
