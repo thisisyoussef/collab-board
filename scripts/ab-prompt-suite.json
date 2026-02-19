@@ -1,0 +1,42 @@
+[
+  {
+    "id": "create_sticky",
+    "category": "creation",
+    "prompt": "Add a yellow sticky note that says 'User Research'."
+  },
+  {
+    "id": "create_shape",
+    "category": "creation",
+    "prompt": "Create a blue rectangle at position 100, 200."
+  },
+  {
+    "id": "change_color",
+    "category": "manipulation",
+    "prompt": "Change the sticky note color to green."
+  },
+  {
+    "id": "move_notes",
+    "category": "manipulation",
+    "prompt": "Move all pink sticky notes to the right side."
+  },
+  {
+    "id": "grid_arrange",
+    "category": "layout",
+    "prompt": "Arrange these sticky notes in a grid."
+  },
+  {
+    "id": "grid_generate",
+    "category": "layout",
+    "prompt": "Create a 2x3 grid of sticky notes for pros and cons."
+  },
+  {
+    "id": "swot_template",
+    "category": "complex",
+    "prompt": "Create a SWOT analysis template with four quadrants."
+  },
+  {
+    "id": "retro_template",
+    "category": "complex",
+    "prompt": "Set up a retrospective board with What Went Well, What Didn't, and Action Items columns."
+  }
+]

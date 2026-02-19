@@ -121,3 +121,45 @@ Before signoff, ensure these files are populated:
 3. `/Users/youss/Development/gauntlet/collab-board/docs/submission/ai-cost-analysis.md`
 4. `/Users/youss/Development/gauntlet/collab-board/docs/submission/demo-video-notes.md`
 5. `/Users/youss/Development/gauntlet/collab-board/docs/submission/social-post-draft.md`
+
+## AI A/B Benchmark Script
+
+Use this to generate reproducible Anthropic vs OpenAI benchmark evidence.
+
+### Inputs Required
+
+1. Firebase ID token with editor access to the target boards (`AI_AUTH_TOKEN`).
+2. Existing board IDs to test (`AB_BOARD_IDS=id1,id2,...`).
+3. Provider mode env vars in runtime (`AI_PROVIDER_MODE`, `AI_OPENAI_PERCENT`).
+
+### Run Command
+
+```bash
+AI_AUTH_TOKEN=\"<firebase-id-token>\" \
+AB_BOARD_IDS=\"board-a,board-b,board-c,board-d\" \
+npm run ab:run
+```
+
+Optional flags:
+
+```bash
+npm run ab:run -- \
+  --base-url https://collab-board-iota.vercel.app \
+  --prompt-suite scripts/ab-prompt-suite.json \
+  --delay-ms 150 \
+  --timeout-ms 30000 \
+  --max-requests 0
+```
+
+### Outputs
+
+- JSON report: `/Users/youss/Development/gauntlet/collab-board/docs/submission/ab-results/ab-report-<timestamp>.json`
+- Markdown report: `/Users/youss/Development/gauntlet/collab-board/docs/submission/ab-results/ab-report-<timestamp>.md`
+
+Captured stats include:
+
+1. `X-AI-Provider` selected provider.
+2. Request latency.
+3. HTTP status + error.
+4. Tool-call count + stop reason.
+5. Provider-level and prompt-level success/latency aggregates.
