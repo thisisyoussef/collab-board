@@ -84,9 +84,11 @@ Tracing is server-side only and should be configured in Vercel environment varia
 You can run the AI endpoint with Anthropic only, OpenAI only, or deterministic A/B routing:
 
 1. Set `AI_PROVIDER_MODE=anthropic` (default), `openai`, or `ab`.
-2. If using OpenAI or A/B, set `OPENAI_API_KEY` and optionally `OPENAI_MODEL`.
-3. If using A/B, set `AI_OPENAI_PERCENT` (0-100) to control OpenAI traffic split.
-4. For scripted benchmark runs that force provider/model per request, set `AI_ALLOW_EXPERIMENT_OVERRIDES=true`.
+2. If using OpenAI or A/B, set `OPENAI_API_KEY`.
+3. Optional OpenAI model routing:
+`OPENAI_MODEL_SIMPLE` for single-step prompts, `OPENAI_MODEL_COMPLEX` for complex/template prompts, or `OPENAI_MODEL` as a shared fallback.
+4. If using A/B, set `AI_OPENAI_PERCENT` (0-100) to control OpenAI traffic split.
+5. For scripted benchmark runs that force provider/model per request, set `AI_ALLOW_EXPERIMENT_OVERRIDES=true`.
 
 Recommended for observability:
 - Keep LangSmith tracing enabled.

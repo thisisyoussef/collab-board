@@ -35,7 +35,8 @@ const LANGSMITH_TAGS = ['collab-board', 'api', 'ai-generate'];
 const AI_PROVIDER_MODE_FALLBACK = 'anthropic';
 const AI_OPENAI_PERCENT_FALLBACK = 50;
 const ANTHROPIC_MODEL_FALLBACK = 'claude-sonnet-4-20250514';
-const OPENAI_MODEL_FALLBACK = 'gpt-4.1-mini';
+const OPENAI_SIMPLE_MODEL_FALLBACK = 'gpt-4o-mini';
+const OPENAI_COMPLEX_MODEL_FALLBACK = 'gpt-4.1-mini';
 const MODEL_NAME_PATTERN = /^[a-zA-Z0-9._:-]{1,128}$/;
 const LANGSMITH_TRACING_ENABLED =
   process.env.LANGCHAIN_TRACING_V2 === 'true' &&
@@ -119,12 +120,26 @@ function getAnthropicModelName(): string {
   return ANTHROPIC_MODEL_FALLBACK;
 }
 
-function getOpenAIModelName(): string {
-  const value = process.env.OPENAI_MODEL;
+function getOpenAISimpleModelName(): string {
+  const value = process.env.OPENAI_MODEL_SIMPLE ?? process.env.OPENAI_MODEL;
   if (typeof value === 'string' && value.trim().length > 0) {
     return value.trim();
   }
-  return OPENAI_MODEL_FALLBACK;
+  return OPENAI_SIMPLE_MODEL_FALLBACK;
+}
+
+function getOpenAIComplexModelName(): string {
+  const value = process.env.OPENAI_MODEL_COMPLEX ?? process.env.OPENAI_MODEL;
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return value.trim();
+  }
+  return OPENAI_COMPLEX_MODEL_FALLBACK;
+}
+
+function getOpenAIModelNameForPrompt(prompt: string): string {
+  return isLikelyComplexPlanPrompt(prompt)
+    ? getOpenAIComplexModelName()
+    : getOpenAISimpleModelName();
 }
 
 const baseAnthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -718,7 +733,9 @@ async function generatePlanCore({
   provider,
   modelOverride,
 }: PlanGenerationInput): Promise<PlanGenerationResult> {
-  const resolvedModel = modelOverride || (provider === 'openai' ? getOpenAIModelName() : getAnthropicModelName());
+  const resolvedModel =
+    modelOverride ||
+    (provider === 'openai' ? getOpenAIModelNameForPrompt(prompt) : getAnthropicModelName());
   const commonMetadata = {
     boardId,
     actorUserId,

@@ -90,6 +90,8 @@ describe('AI Generate API Endpoint', () => {
     delete process.env.AI_OPENAI_PERCENT;
     delete process.env.ANTHROPIC_MODEL;
     delete process.env.OPENAI_MODEL;
+    delete process.env.OPENAI_MODEL_SIMPLE;
+    delete process.env.OPENAI_MODEL_COMPLEX;
     delete process.env.AI_ALLOW_EXPERIMENT_OVERRIDES;
     mockGetApps.mockReturnValue([{}]);
     mockVerifyIdToken.mockResolvedValue({ uid: 'user-123' });
@@ -553,8 +555,66 @@ describe('AI Generate API Endpoint', () => {
         message: null,
         stopReason: 'tool_calls',
         provider: 'openai',
-        model: 'gpt-4.1-mini',
+        model: 'gpt-4o-mini',
       });
+    });
+
+    it('uses OPENAI_MODEL_SIMPLE for non-complex prompts and OPENAI_MODEL_COMPLEX for complex prompts', async () => {
+      vi.resetModules();
+      process.env.ANTHROPIC_API_KEY = 'test-key';
+      process.env.OPENAI_API_KEY = 'test-openai-key';
+      process.env.AI_PROVIDER_MODE = 'openai';
+      process.env.OPENAI_MODEL_SIMPLE = 'gpt-4.1-nano';
+      process.env.OPENAI_MODEL_COMPLEX = 'gpt-4.1';
+
+      mockOpenAIChatCreate.mockResolvedValue({
+        choices: [
+          {
+            finish_reason: 'tool_calls',
+            message: {
+              content: null,
+              tool_calls: [
+                {
+                  id: 'openai-tool',
+                  type: 'function',
+                  function: {
+                    name: 'createStickyNote',
+                    arguments: JSON.stringify({ text: 'From OpenAI', x: 40, y: 50 }),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      });
+
+      const handler = (await import('../../api/ai/generate')).default;
+
+      const simpleReq = createMockReq({
+        body: {
+          prompt: 'Add one sticky note',
+          boardId: 'board-1',
+          boardState: {},
+        },
+      });
+      const simpleRes = createMockRes();
+      await handler(simpleReq as never, simpleRes as never);
+      expect(simpleRes.status).toHaveBeenCalledWith(200);
+      const simplePayload = mockOpenAIChatCreate.mock.calls[0][0] as { model: string };
+      expect(simplePayload.model).toBe('gpt-4.1-nano');
+
+      const complexReq = createMockReq({
+        body: {
+          prompt: 'Create a SWOT analysis template with 4 quadrants',
+          boardId: 'board-1',
+          boardState: {},
+        },
+      });
+      const complexRes = createMockRes();
+      await handler(complexReq as never, complexRes as never);
+      expect(complexRes.status).toHaveBeenCalledWith(200);
+      const complexPayload = mockOpenAIChatCreate.mock.calls[1][0] as { model: string };
+      expect(complexPayload.model).toBe('gpt-4.1');
     });
 
     it('allows provider and model overrides when experiments are enabled', async () => {
