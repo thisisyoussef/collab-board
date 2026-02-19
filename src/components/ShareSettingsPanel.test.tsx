@@ -89,10 +89,13 @@ describe('ShareSettingsPanel', () => {
   it('supports member role updates and removals for owners', () => {
     const handlers = renderPanel({
       members: [
-        { membershipId: 'board-1_user-2', userId: 'user-2', role: 'viewer' },
-        { membershipId: 'board-1_user-3', userId: 'user-3', role: 'editor' },
+        { membershipId: 'board-1_user-2', userId: 'user-2', displayName: 'Sam Doe', role: 'viewer' },
+        { membershipId: 'board-1_user-3', userId: 'user-3', displayName: 'Alex Doe', role: 'editor' },
       ],
     });
+
+    expect(screen.getByText('Sam Doe')).toBeInTheDocument();
+    expect(screen.getByText('Alex Doe')).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('Role for user-2'), {
       target: { value: 'editor' },

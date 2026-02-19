@@ -14,6 +14,7 @@ export interface ShareMemberRoleEntry {
   boardId: string;
   userId: string;
   role: Exclude<BoardRole, 'none'>;
+  displayName?: string;
 }
 
 export type SharedBoardSource = 'explicit' | 'recent';

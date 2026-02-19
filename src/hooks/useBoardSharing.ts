@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ResolveBoardAccessResult } from '../lib/access';
 import { toFirestoreUserMessage, withFirestoreTimeout } from '../lib/firestore-client';
 import { db } from '../lib/firebase';
+import { logger } from '../lib/logger';
 import type { BoardRole, BoardVisibility, ShareMemberRoleEntry, ShareRole } from '../types/sharing';
 
 type PersistedSharing = {
@@ -27,6 +28,7 @@ type WorkspaceState = 'idle' | 'saving' | 'saved' | 'error';
 interface UseBoardSharingOptions {
   boardId?: string;
   userId?: string | null;
+  userDisplayName?: string | null;
   access: ResolveBoardAccessResult | null;
   isSharePanelOpen: boolean;
   onSharingSaved?: (nextSharing: PersistedSharing) => void;
@@ -55,9 +57,19 @@ function roleRank(role: Exclude<BoardRole, 'none'>): number {
   return role === 'editor' ? 1 : 2;
 }
 
+function normalizeMemberDisplayName(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
 export function useBoardSharing({
   boardId,
   userId,
+  userDisplayName,
   access,
   isSharePanelOpen,
   onSharingSaved,
@@ -157,6 +169,9 @@ export function useBoardSharing({
 
     setSettingsSaving(true);
     setSettingsError(null);
+
+    logger.info('FIRESTORE', `Saving share settings: visibility=${nextSharing.visibility}, authLinkRole=${nextSharing.authLinkRole}`, { boardId });
+
     try {
       await withFirestoreTimeout(
         'Saving share settings',
@@ -166,13 +181,16 @@ export function useBoardSharing({
           updatedAt: serverTimestamp(),
         }),
       );
+      logger.info('FIRESTORE', `Share settings saved successfully`, { boardId, visibility: nextSharing.visibility });
       setDraft(nextSharing);
       setPendingPublicRole(nextSharing.visibility === 'public_link' ? nextSharing.publicLinkRole : null);
       setSettingsSuccess('Share settings saved.');
       onSharingSaved?.(nextSharing);
       return true;
     } catch (err) {
-      setSettingsError(toFirestoreUserMessage('Unable to save sharing settings.', err));
+      const msg = toFirestoreUserMessage('Unable to save sharing settings.', err);
+      logger.error('FIRESTORE', `Failed to save share settings: ${msg}`, { boardId });
+      setSettingsError(msg);
       setSettingsSuccess(null);
       return false;
     } finally {
@@ -200,6 +218,9 @@ export function useBoardSharing({
 
     setMembersLoading(true);
     setMembersError(null);
+
+    logger.info('FIRESTORE', 'Loading board members', { boardId });
+
     try {
       const snapshot = await withFirestoreTimeout(
         'Loading board members',
@@ -212,9 +233,11 @@ export function useBoardSharing({
             boardId?: unknown;
             role?: unknown;
             userId?: unknown;
+            displayName?: unknown;
           };
           const memberRole = normalizeMemberRole(data.role);
           const memberUserId = typeof data.userId === 'string' ? data.userId.trim() : '';
+          const memberDisplayName = normalizeMemberDisplayName(data.displayName);
           if (!memberRole || !memberUserId) {
             return null;
           }
@@ -223,6 +246,7 @@ export function useBoardSharing({
             boardId: typeof data.boardId === 'string' && data.boardId.trim() ? data.boardId : boardId,
             userId: memberUserId,
             role: memberRole,
+            ...(memberDisplayName ? { displayName: memberDisplayName } : {}),
           } satisfies ShareMemberRoleEntry;
         })
         .filter((entry): entry is ShareMemberRoleEntry => Boolean(entry))
@@ -231,12 +255,20 @@ export function useBoardSharing({
           if (roleDelta !== 0) {
             return roleDelta;
           }
+          const nameA = (a.displayName || a.userId).toLowerCase();
+          const nameB = (b.displayName || b.userId).toLowerCase();
+          if (nameA !== nameB) {
+            return nameA.localeCompare(nameB);
+          }
           return a.userId.localeCompare(b.userId);
         });
 
+      logger.info('FIRESTORE', `Loaded ${nextMembers.length} board member(s)`, { boardId, memberCount: nextMembers.length });
       setMembers(nextMembers);
     } catch (err) {
-      setMembersError(toFirestoreUserMessage('Unable to load members.', err));
+      const msg = toFirestoreUserMessage('Unable to load members.', err);
+      logger.error('FIRESTORE', `Failed to load board members: ${msg}`, { boardId });
+      setMembersError(msg);
     } finally {
       setMembersLoading(false);
     }
@@ -256,6 +288,9 @@ export function useBoardSharing({
       }
 
       setMembersError(null);
+
+      logger.info('FIRESTORE', `Updating member role to '${role}'`, { membershipId, boardId });
+
       try {
         await withFirestoreTimeout(
           'Updating board member role',
@@ -264,16 +299,18 @@ export function useBoardSharing({
             updatedAt: serverTimestamp(),
           }),
         );
+        logger.info('FIRESTORE', `Member role updated to '${role}'`, { membershipId });
         setMembers((previous) =>
           previous.map((member) => (member.membershipId === membershipId ? { ...member, role } : member)),
         );
         return true;
       } catch (err) {
+        logger.error('FIRESTORE', `Failed to update member role: ${err instanceof Error ? err.message : 'Unknown error'}`, { membershipId });
         setMembersError(toFirestoreUserMessage('Unable to update member role.', err));
         return false;
       }
     },
-    [canManageSharing],
+    [boardId, canManageSharing],
   );
 
   const removeMember = useCallback(
@@ -283,19 +320,24 @@ export function useBoardSharing({
       }
 
       setMembersError(null);
+
+      logger.info('FIRESTORE', `Removing board member`, { membershipId, boardId });
+
       try {
         await withFirestoreTimeout(
           'Removing board member',
           deleteDoc(doc(db, 'boardMembers', membershipId)),
         );
+        logger.info('FIRESTORE', `Board member removed`, { membershipId });
         setMembers((previous) => previous.filter((member) => member.membershipId !== membershipId));
         return true;
       } catch (err) {
+        logger.error('FIRESTORE', `Failed to remove board member: ${err instanceof Error ? err.message : 'Unknown error'}`, { membershipId });
         setMembersError(toFirestoreUserMessage('Unable to remove member.', err));
         return false;
       }
     },
-    [canManageSharing],
+    [boardId, canManageSharing],
   );
 
   const canSaveToWorkspace = Boolean(
@@ -311,6 +353,7 @@ export function useBoardSharing({
       return false;
     }
 
+    const normalizedCurrentDisplayName = normalizeMemberDisplayName(userDisplayName);
     setWorkspaceState('saving');
     setWorkspaceError(null);
 
@@ -323,6 +366,22 @@ export function useBoardSharing({
       );
 
       if (existingSnapshot.exists()) {
+        const existingDisplayName = normalizeMemberDisplayName(
+          (existingSnapshot.data() as { displayName?: unknown }).displayName,
+        );
+
+        if (
+          normalizedCurrentDisplayName &&
+          normalizedCurrentDisplayName !== existingDisplayName
+        ) {
+          await withFirestoreTimeout(
+            'Refreshing workspace member profile',
+            updateDoc(membershipRef, {
+              displayName: normalizedCurrentDisplayName,
+              updatedAt: serverTimestamp(),
+            }),
+          );
+        }
         setWorkspaceState('saved');
         return true;
       }
@@ -343,6 +402,7 @@ export function useBoardSharing({
               boardId,
               userId,
               role,
+              ...(normalizedCurrentDisplayName ? { displayName: normalizedCurrentDisplayName } : {}),
               addedAt: serverTimestamp(),
               addedBy: userId,
               updatedAt: serverTimestamp(),
@@ -369,7 +429,7 @@ export function useBoardSharing({
       setWorkspaceError(toFirestoreUserMessage('Unable to save board to workspace.', err));
       return false;
     }
-  }, [access, boardId, canSaveToWorkspace, userId]);
+  }, [access, boardId, canSaveToWorkspace, userDisplayName, userId]);
 
   return {
     canManageSharing,

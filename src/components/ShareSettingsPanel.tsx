@@ -4,6 +4,7 @@ export interface ShareMemberRow {
   membershipId: string;
   userId: string;
   role: Exclude<BoardRole, 'none'>;
+  displayName?: string;
 }
 
 interface ShareSettingsPanelProps {
@@ -183,9 +184,10 @@ export function ShareSettingsPanel({
                   {members.map((member) => (
                     <li key={member.membershipId} className="share-member-row">
                       <span className="share-member-id">
-                        {member.userId}
+                        {member.displayName || 'Unnamed member'}
                         {currentUserId && member.userId === currentUserId ? ' (you)' : ''}
                       </span>
+                      <span className="share-member-handle">{member.userId}</span>
                       {member.role === 'owner' ? (
                         <span className="share-member-owner">Owner</span>
                       ) : (

@@ -166,6 +166,10 @@ service cloud.firestore {
       allow create: if isSignedIn() &&
         request.resource.data.boardId is string &&
         request.resource.data.userId is string &&
+        (
+          request.resource.data.displayName == null ||
+          request.resource.data.displayName is string
+        ) &&
         membershipId == request.resource.data.boardId + "_" + request.resource.data.userId &&
         (request.resource.data.role == 'editor' ||
           request.resource.data.role == 'viewer') &&
@@ -183,6 +187,10 @@ service cloud.firestore {
       allow update: if isSignedIn() &&
         resource.data.boardId is string &&
         resource.data.userId is string &&
+        (
+          request.resource.data.displayName == null ||
+          request.resource.data.displayName is string
+        ) &&
         membershipId == resource.data.boardId + "_" + resource.data.userId &&
         request.resource.data.boardId == resource.data.boardId &&
         request.resource.data.userId == resource.data.userId &&

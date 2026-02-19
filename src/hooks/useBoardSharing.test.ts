@@ -50,7 +50,9 @@ const ownerAccess: ResolveBoardAccessResult = {
   canApplyAI: true,
 };
 
-function memberSnapshot(members: Array<{ id: string; userId: string; role: 'editor' | 'viewer' }>) {
+function memberSnapshot(
+  members: Array<{ id: string; userId: string; role: 'editor' | 'viewer'; displayName?: string }>,
+) {
   return {
     docs: members.map((member) => ({
       id: member.id,
@@ -58,6 +60,7 @@ function memberSnapshot(members: Array<{ id: string; userId: string; role: 'edit
         boardId: 'board-1',
         userId: member.userId,
         role: member.role,
+        ...(member.displayName ? { displayName: member.displayName } : {}),
       }),
     })),
   };
@@ -133,8 +136,8 @@ describe('useBoardSharing', () => {
   it('loads members for owners and supports role update/remove', async () => {
     mockGetDocs.mockResolvedValue(
       memberSnapshot([
-        { id: 'board-1_user-2', userId: 'user-2', role: 'viewer' },
-        { id: 'board-1_user-3', userId: 'user-3', role: 'editor' },
+        { id: 'board-1_user-2', userId: 'user-2', role: 'viewer', displayName: 'Sam Doe' },
+        { id: 'board-1_user-3', userId: 'user-3', role: 'editor', displayName: 'Alex Doe' },
       ]),
     );
 
@@ -150,6 +153,8 @@ describe('useBoardSharing', () => {
     await waitFor(() => {
       expect(result.current.members).toHaveLength(2);
     });
+    expect(result.current.members[0].displayName).toBe('Alex Doe');
+    expect(result.current.members[1].displayName).toBe('Sam Doe');
 
     await act(async () => {
       await expect(result.current.updateMemberRole('board-1_user-2', 'editor')).resolves.toBe(true);
@@ -178,6 +183,7 @@ describe('useBoardSharing', () => {
       useBoardSharing({
         boardId: 'board-1',
         userId: 'user-2',
+        userDisplayName: 'Test User',
         access: editorAccess,
         isSharePanelOpen: false,
       }),
@@ -193,6 +199,7 @@ describe('useBoardSharing', () => {
         boardId: 'board-1',
         userId: 'user-2',
         role: 'editor',
+        displayName: 'Test User',
       }),
     );
     expect(result.current.workspaceState).toBe('saved');

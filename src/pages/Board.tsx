@@ -365,6 +365,7 @@ export function Board() {
   const boardSharing = useBoardSharing({
     boardId,
     userId: user?.uid ?? null,
+    userDisplayName: user?.displayName || user?.email || null,
     access: boardAccess,
     isSharePanelOpen,
     onSharingSaved: (nextSharing) => {
