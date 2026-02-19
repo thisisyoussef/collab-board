@@ -241,10 +241,38 @@ const toolDefinitions: Anthropic.Tool[] = [
       properties: {
         fromId: { type: 'string', description: 'ID of the source object' },
         toId: { type: 'string', description: 'ID of the target object' },
+        connectorType: {
+          type: 'string',
+          enum: ['straight', 'bent', 'curved'],
+          description: 'Path behavior for the connector',
+        },
+        strokeStyle: {
+          type: 'string',
+          enum: ['solid', 'dashed'],
+          description: 'Line stroke style for connector body',
+        },
         style: {
           type: 'string',
           enum: ['arrow', 'line', 'dashed'],
-          description: 'Visual style of the connector',
+          description: 'Legacy connector style compatibility mode',
+        },
+        startArrow: {
+          type: 'string',
+          enum: ['none', 'solid', 'line', 'triangle', 'diamond'],
+          description: 'Arrowhead style at connector start',
+        },
+        endArrow: {
+          type: 'string',
+          enum: ['none', 'solid', 'line', 'triangle', 'diamond'],
+          description: 'Arrowhead style at connector end',
+        },
+        label: {
+          type: 'string',
+          description: 'Optional connector label text',
+        },
+        labelPosition: {
+          type: 'number',
+          description: 'Label position from 0 to 100 along connector path',
         },
       },
       required: ['fromId', 'toId'],

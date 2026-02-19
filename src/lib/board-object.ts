@@ -1,4 +1,18 @@
-import type { BoardObject, BoardObjectStyle, BoardObjectType } from '../types/board';
+import {
+  buildConnectorRenderPoints,
+  getConnectorEndpoints,
+  type ConnectorObstacle,
+  type ConnectorPathType as RouteConnectorPathType,
+} from './connector-routing';
+import type {
+  BoardObject,
+  BoardObjectStyle,
+  BoardObjectType,
+  ConnectorArrowHead,
+  ConnectorAttachmentMode,
+  ConnectorPathType,
+  ConnectorStrokeStyle,
+} from '../types/board';
 
 export const STICKY_DEFAULT_WIDTH = 150;
 export const STICKY_DEFAULT_HEIGHT = 100;
@@ -22,6 +36,12 @@ export const FRAME_MIN_WIDTH = 220;
 export const FRAME_MIN_HEIGHT = 140;
 export const CONNECTOR_DEFAULT_COLOR = '#64748B';
 export const CONNECTOR_DEFAULT_STYLE: BoardObjectStyle = 'arrow';
+export const CONNECTOR_DEFAULT_PATH_TYPE: ConnectorPathType = 'straight';
+export const CONNECTOR_DEFAULT_STROKE_STYLE: ConnectorStrokeStyle = 'solid';
+export const CONNECTOR_DEFAULT_START_ARROW: ConnectorArrowHead = 'none';
+export const CONNECTOR_DEFAULT_END_ARROW: ConnectorArrowHead = 'solid';
+export const CONNECTOR_DEFAULT_LABEL_POSITION = 50;
+export const CONNECTOR_DEFAULT_LABEL_BACKGROUND = false;
 const LINE_MIN_LENGTH = 8;
 const EPSILON = 0.0001;
 
@@ -74,6 +94,37 @@ function parseStyle(value: unknown): BoardObjectStyle {
     return value;
   }
   return CONNECTOR_DEFAULT_STYLE;
+}
+
+function parseConnectorPathType(value: unknown): ConnectorPathType {
+  if (value === 'straight' || value === 'bent' || value === 'curved') {
+    return value;
+  }
+  return CONNECTOR_DEFAULT_PATH_TYPE;
+}
+
+function parseConnectorStrokeStyle(value: unknown, fallback: ConnectorStrokeStyle): ConnectorStrokeStyle {
+  if (value === 'solid' || value === 'dashed') {
+    return value;
+  }
+  return fallback;
+}
+
+function parseConnectorAttachmentMode(
+  value: unknown,
+  fallback: ConnectorAttachmentMode,
+): ConnectorAttachmentMode {
+  if (value === 'side-center' || value === 'arbitrary' || value === 'free') {
+    return value;
+  }
+  return fallback;
+}
+
+function parseConnectorArrowHead(value: unknown, fallback: ConnectorArrowHead): ConnectorArrowHead {
+  if (value === 'none' || value === 'solid' || value === 'line' || value === 'triangle' || value === 'diamond') {
+    return value;
+  }
+  return fallback;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -234,9 +285,27 @@ export function createDefaultObject(
   }
 
   const points = parsePoints(overrides.points, [0, 0, 120, 0]);
+  const endpoints = getConnectorEndpoints(points);
   const bounds = getPointsBounds(points);
   const fromId = typeof overrides.fromId === 'string' ? overrides.fromId.trim() : '';
   const toId = typeof overrides.toId === 'string' ? overrides.toId.trim() : '';
+  const legacyStyle = parseStyle(overrides.style);
+  const strokeStyle = parseConnectorStrokeStyle(
+    overrides.strokeStyle,
+    legacyStyle === 'dashed' ? 'dashed' : CONNECTOR_DEFAULT_STROKE_STYLE,
+  );
+  const startArrow = parseConnectorArrowHead(overrides.startArrow, CONNECTOR_DEFAULT_START_ARROW);
+  const endArrow = parseConnectorArrowHead(
+    overrides.endArrow,
+    legacyStyle === 'arrow' ? CONNECTOR_DEFAULT_END_ARROW : CONNECTOR_DEFAULT_START_ARROW,
+  );
+  const connectorType = parseConnectorPathType(overrides.connectorType);
+  const labelPosition = clamp(numberOr(overrides.labelPosition, CONNECTOR_DEFAULT_LABEL_POSITION), 0, 100);
+  const fromAttachmentMode = parseConnectorAttachmentMode(
+    overrides.fromAttachmentMode,
+    fromId ? 'side-center' : 'free',
+  );
+  const toAttachmentMode = parseConnectorAttachmentMode(overrides.toAttachmentMode, toId ? 'side-center' : 'free');
   return {
     ...base,
     type: 'connector',
@@ -244,14 +313,36 @@ export function createDefaultObject(
     height: Math.max(LINE_MIN_LENGTH, numberOr(overrides.height, bounds.height)),
     color: stringOr(overrides.color, CONNECTOR_DEFAULT_COLOR),
     strokeWidth: Math.max(1, numberOr(overrides.strokeWidth, 2)),
-    points,
+    points: parsePoints(overrides.points, [endpoints.startX, endpoints.startY, endpoints.endX, endpoints.endY]),
     fromId,
     toId,
     fromAnchorX: fromId ? parseAnchor(overrides.fromAnchorX) : undefined,
     fromAnchorY: fromId ? parseAnchor(overrides.fromAnchorY) : undefined,
     toAnchorX: toId ? parseAnchor(overrides.toAnchorX) : undefined,
     toAnchorY: toId ? parseAnchor(overrides.toAnchorY) : undefined,
-    style: parseStyle(overrides.style),
+    fromAttachmentMode,
+    toAttachmentMode,
+    style: legacyStyle,
+    strokeStyle,
+    connectorType,
+    startArrow,
+    endArrow,
+    label: typeof overrides.label === 'string' ? overrides.label : undefined,
+    labelPosition,
+    labelBackground: Boolean(
+      typeof overrides.labelBackground === 'boolean'
+        ? overrides.labelBackground
+        : CONNECTOR_DEFAULT_LABEL_BACKGROUND,
+    ),
+    pathControlX: Number.isFinite(Number(overrides.pathControlX))
+      ? Number(overrides.pathControlX)
+      : undefined,
+    pathControlY: Number.isFinite(Number(overrides.pathControlY))
+      ? Number(overrides.pathControlY)
+      : undefined,
+    curveOffset: Number.isFinite(Number(overrides.curveOffset))
+      ? Number(overrides.curveOffset)
+      : undefined,
   };
 }
 
@@ -397,7 +488,28 @@ export function sanitizeBoardObjectForFirestore(entry: BoardObject): BoardObject
     fromAnchorY: normalized.fromAnchorY,
     toAnchorX: normalized.toAnchorX,
     toAnchorY: normalized.toAnchorY,
+    fromAttachmentMode: normalized.fromAttachmentMode,
+    toAttachmentMode: normalized.toAttachmentMode,
     style: normalized.style || CONNECTOR_DEFAULT_STYLE,
+    strokeStyle: normalized.strokeStyle || CONNECTOR_DEFAULT_STROKE_STYLE,
+    connectorType: normalized.connectorType || CONNECTOR_DEFAULT_PATH_TYPE,
+    startArrow: normalized.startArrow || CONNECTOR_DEFAULT_START_ARROW,
+    endArrow: normalized.endArrow || CONNECTOR_DEFAULT_END_ARROW,
+    label: normalized.label || undefined,
+    labelPosition: clamp(numberOr(normalized.labelPosition, CONNECTOR_DEFAULT_LABEL_POSITION), 0, 100),
+    labelBackground:
+      typeof normalized.labelBackground === 'boolean'
+        ? normalized.labelBackground
+        : CONNECTOR_DEFAULT_LABEL_BACKGROUND,
+    pathControlX: Number.isFinite(Number(normalized.pathControlX))
+      ? Number(normalized.pathControlX)
+      : undefined,
+    pathControlY: Number.isFinite(Number(normalized.pathControlY))
+      ? Number(normalized.pathControlY)
+      : undefined,
+    curveOffset: Number.isFinite(Number(normalized.curveOffset))
+      ? Number(normalized.curveOffset)
+      : undefined,
     color: normalized.color,
     strokeWidth: normalized.strokeWidth || 2,
     zIndex: normalized.zIndex,
@@ -533,6 +645,29 @@ export function getObjectAnchorCandidates(entry: BoardObject): ObjectAnchorPoint
   }));
 }
 
+export function getObjectSideAnchorCandidates(entry: BoardObject): ObjectAnchorPoint[] {
+  if (entry.type === 'line' || entry.type === 'connector') {
+    return [];
+  }
+
+  const bounds = getObjectBounds(entry);
+  const safeWidth = Math.max(1, bounds.width);
+  const safeHeight = Math.max(1, bounds.height);
+  const anchors = [
+    { anchorX: 0.5, anchorY: 0 },
+    { anchorX: 1, anchorY: 0.5 },
+    { anchorX: 0.5, anchorY: 1 },
+    { anchorX: 0, anchorY: 0.5 },
+  ];
+
+  return anchors.map((anchor) => ({
+    anchorX: anchor.anchorX,
+    anchorY: anchor.anchorY,
+    x: bounds.x + anchor.anchorX * safeWidth,
+    y: bounds.y + anchor.anchorY * safeHeight,
+  }));
+}
+
 export function projectPointToObjectPerimeter(
   entry: BoardObject,
   point: { x: number; y: number },
@@ -596,6 +731,13 @@ export function resolveConnectorPoints({
   fromAnchorY,
   toAnchorX,
   toAnchorY,
+  connectorType = CONNECTOR_DEFAULT_PATH_TYPE,
+  pathControlX,
+  pathControlY,
+  curveOffset,
+  obstacles = [],
+  clearance,
+  turnPenalty,
   fallback,
 }: {
   from: BoardObject | undefined;
@@ -604,21 +746,44 @@ export function resolveConnectorPoints({
   fromAnchorY?: number;
   toAnchorX?: number;
   toAnchorY?: number;
+  connectorType?: ConnectorPathType;
+  pathControlX?: number;
+  pathControlY?: number;
+  curveOffset?: number;
+  obstacles?: ConnectorObstacle[];
+  clearance?: number;
+  turnPenalty?: number;
   fallback: number[];
 }): number[] {
   const normalizedFallback = parsePoints(fallback, [0, 0, 120, 0]);
+  const fallbackEndpoints = getConnectorEndpoints(normalizedFallback);
   const start = from
     ? resolveObjectAnchorPoint(from, fromAnchorX, fromAnchorY)
     : {
-        x: normalizedFallback[0],
-        y: normalizedFallback[1],
+        x: fallbackEndpoints.startX,
+        y: fallbackEndpoints.startY,
       };
   const end = to
     ? resolveObjectAnchorPoint(to, toAnchorX, toAnchorY)
     : {
-        x: normalizedFallback[2],
-        y: normalizedFallback[3],
+        x: fallbackEndpoints.endX,
+        y: fallbackEndpoints.endY,
       };
 
-  return [start.x, start.y, end.x, end.y];
+  return buildConnectorRenderPoints({
+    type: (connectorType || CONNECTOR_DEFAULT_PATH_TYPE) as RouteConnectorPathType,
+    start,
+    end,
+    obstacles,
+    clearance,
+    turnPenalty,
+    curveOffset,
+    controlPoint:
+      Number.isFinite(pathControlX) && Number.isFinite(pathControlY)
+        ? {
+            x: Number(pathControlX),
+            y: Number(pathControlY),
+          }
+        : undefined,
+  });
 }

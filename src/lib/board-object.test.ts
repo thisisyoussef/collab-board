@@ -170,6 +170,56 @@ describe('board-object normalize/sanitize', () => {
     expect(points).toEqual([300, 160, 500, 180]);
   });
 
+  it('normalizes connector v2 defaults for path, stroke, and arrowheads', () => {
+    const connector = createDefaultObject('connector', {
+      id: 'connector-v2',
+      x: 0,
+      y: 0,
+      createdBy: 'u1',
+      zIndex: 1,
+    });
+
+    expect(connector.connectorType).toBe('straight');
+    expect(connector.strokeStyle).toBe('solid');
+    expect(connector.startArrow).toBe('none');
+    expect(connector.endArrow).toBe('solid');
+    expect(connector.labelPosition).toBe(50);
+    expect(connector.labelBackground).toBe(false);
+  });
+
+  it('resolves bent connector path around obstacles', () => {
+    const points = resolveConnectorPoints({
+      from: undefined,
+      to: undefined,
+      connectorType: 'bent',
+      obstacles: [{ x: 180, y: 120, width: 140, height: 120 }],
+      fallback: [120, 180, 420, 180],
+    });
+
+    expect(points.length).toBeGreaterThanOrEqual(6);
+    expect(points[0]).toBe(120);
+    expect(points[1]).toBe(180);
+    expect(points[points.length - 2]).toBe(420);
+    expect(points[points.length - 1]).toBe(180);
+  });
+
+  it('resolves curved connector path with control point overrides', () => {
+    const points = resolveConnectorPoints({
+      from: undefined,
+      to: undefined,
+      connectorType: 'curved',
+      pathControlX: 220,
+      pathControlY: 40,
+      fallback: [100, 100, 300, 100],
+    });
+
+    expect(points).toHaveLength(8);
+    expect(points[0]).toBe(100);
+    expect(points[1]).toBe(100);
+    expect(points[6]).toBe(300);
+    expect(points[7]).toBe(100);
+  });
+
   it('keeps circles normalized and exposes anchor candidates', () => {
     const circle = createDefaultObject('circle', {
       id: 'circle-anchors',

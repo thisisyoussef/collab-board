@@ -335,12 +335,43 @@ function actionFromPreview(
     const fromId = stringFromInput(input, 'fromId');
     const toId = stringFromInput(input, 'toId');
     const style = optionalStringFromInput(input, 'style');
+    const connectorTypeInput = optionalStringFromInput(input, 'connectorType') || optionalStringFromInput(input, 'type');
+    const connectorType =
+      connectorTypeInput === 'straight' || connectorTypeInput === 'bent' || connectorTypeInput === 'curved'
+        ? connectorTypeInput
+        : undefined;
+    const strokeStyleInput = optionalStringFromInput(input, 'strokeStyle');
+    const strokeStyle = strokeStyleInput === 'solid' || strokeStyleInput === 'dashed' ? strokeStyleInput : undefined;
+    const startArrowInput = optionalStringFromInput(input, 'startArrow');
+    const startArrow =
+      startArrowInput === 'none' ||
+      startArrowInput === 'solid' ||
+      startArrowInput === 'line' ||
+      startArrowInput === 'triangle' ||
+      startArrowInput === 'diamond'
+        ? startArrowInput
+        : undefined;
+    const endArrowInput = optionalStringFromInput(input, 'endArrow');
+    const endArrow =
+      endArrowInput === 'none' ||
+      endArrowInput === 'solid' ||
+      endArrowInput === 'line' ||
+      endArrowInput === 'triangle' ||
+      endArrowInput === 'diamond'
+        ? endArrowInput
+        : undefined;
 
     const fallbackObject = createDefaultObject('connector', {
       id,
       fromId,
       toId,
       style: style === 'line' || style === 'dashed' || style === 'arrow' ? style : 'arrow',
+      strokeStyle,
+      connectorType,
+      startArrow,
+      endArrow,
+      label: optionalStringFromInput(input, 'label'),
+      labelPosition: optionalNumberFromInput(input, 'labelPosition'),
       zIndex: context.nextZIndex,
       createdBy: context.actorUserId,
       updatedAt: context.nowIso,

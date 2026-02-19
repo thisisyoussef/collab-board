@@ -8,6 +8,10 @@ export type BoardObjectType =
   | 'connector';
 
 export type BoardObjectStyle = 'arrow' | 'line' | 'dashed';
+export type ConnectorStrokeStyle = 'solid' | 'dashed';
+export type ConnectorPathType = 'straight' | 'bent' | 'curved';
+export type ConnectorAttachmentMode = 'side-center' | 'arbitrary' | 'free';
+export type ConnectorArrowHead = 'none' | 'solid' | 'line' | 'triangle' | 'diamond';
 
 export interface BoardObject {
   id: string;
@@ -31,7 +35,19 @@ export interface BoardObject {
   fromAnchorY?: number;
   toAnchorX?: number;
   toAnchorY?: number;
+  fromAttachmentMode?: ConnectorAttachmentMode;
+  toAttachmentMode?: ConnectorAttachmentMode;
   style?: BoardObjectStyle;
+  strokeStyle?: ConnectorStrokeStyle;
+  connectorType?: ConnectorPathType;
+  startArrow?: ConnectorArrowHead;
+  endArrow?: ConnectorArrowHead;
+  label?: string;
+  labelPosition?: number;
+  labelBackground?: boolean;
+  pathControlX?: number;
+  pathControlY?: number;
+  curveOffset?: number;
   zIndex: number;
   createdBy: string;
   updatedAt: string;
