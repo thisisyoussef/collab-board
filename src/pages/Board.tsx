@@ -49,12 +49,9 @@ import {
   getObjectSideAnchorCandidates,
   getObjectBounds,
   normalizeLoadedObject as normalizeBoardObject,
-  projectPointToObjectPerimeter,
   RECT_DEFAULT_STROKE,
   RECT_DEFAULT_STROKE_WIDTH,
   RECT_MIN_SIZE,
-  resolveConnectorPoints,
-  resolveObjectAnchorPoint,
   sanitizeBoardObjectForFirestore as sanitizeBoardObject,
   STICKY_DEFAULT_COLOR,
   STICKY_DEFAULT_HEIGHT,
@@ -69,8 +66,6 @@ import {
 import {
   getConnectorEndpoints,
   getPointAlongConnectorPath,
-  type ConnectorObstacle,
-  type ConnectorPathType,
 } from '../lib/connector-routing';
 import { toFirestoreUserMessage, withFirestoreTimeout } from '../lib/firestore-client';
 import { db } from '../lib/firebase';
@@ -88,6 +83,20 @@ import {
 } from '../lib/realtime-dedupe';
 import { screenToWorld, worldToScreen } from '../lib/utils';
 import type { BoardObject, BoardObjectsRecord } from '../types/board';
+import type {
+  BoardCanvasNode,
+  BoardDocData,
+  Bounds,
+  ConnectorAttachmentResult,
+  ConnectorDraftState,
+  ConnectorEndpoint,
+  ConnectorHoverLockState,
+  ConnectorShapeAnchorMarker,
+  EditingTextState,
+  PendingRemoteObjectEvent,
+  SelectionDraftState,
+  ShapeDraftState,
+} from '../types/board-canvas';
 import type { AIActionPreview } from '../types/ai';
 import type {
   ObjectCreatePayload,
@@ -95,195 +104,55 @@ import type {
   RealtimeObjectEventMeta,
   ObjectUpdatePayload,
 } from '../types/realtime';
+import {
+  AI_APPLY_LATENCY_SAMPLE_WINDOW,
+  BOARD_HISTORY_MAX_ENTRIES,
+  BOARD_SAVE_DEBOUNCE_MS,
+  CIRCLE_CLICK_DEFAULT_SIZE,
+  CONNECTOR_HANDLE_RADIUS,
+  CONNECTOR_HANDLE_STROKE,
+  CONNECTOR_HOVER_LOCK_DELAY_MS,
+  CONNECTOR_LABEL_BACKGROUND_FILL,
+  CONNECTOR_LABEL_BACKGROUND_STROKE,
+  CONNECTOR_LABEL_FONT_FAMILY,
+  CONNECTOR_LABEL_FONT_SIZE,
+  CONNECTOR_PATH_HANDLE_RADIUS,
+  LINE_CLICK_DEFAULT_WIDTH,
+  OBJECT_LATENCY_SAMPLE_WINDOW,
+  OBJECT_LATENCY_UI_UPDATE_MS,
+  OBJECT_UPDATE_EMIT_THROTTLE_MS,
+  REALTIME_DEDUPE_MAX_ENTRIES,
+  REALTIME_DEDUPE_TTL_MS,
+  RECT_CLICK_DEFAULT_HEIGHT,
+  RECT_CLICK_DEFAULT_WIDTH,
+  RECT_CLICK_DRAG_THRESHOLD,
+  SHAPE_ANCHOR_MATCH_EPSILON,
+  SHAPE_ANCHOR_RADIUS,
+  SHARE_FEEDBACK_RESET_MS,
+  STICKY_PLACEHOLDER_TEXT,
+  VIEWPORT_SAVE_DEBOUNCE_MS,
+} from '../lib/board-constants';
+import {
+  buildBoardReturnToPath,
+  estimateConnectorLabelBounds,
+  fallbackCopyToClipboard,
+  getStickyRenderColor,
+  getStickyRenderText,
+  intersects,
+  isPlaceholderStickyText,
+} from '../lib/board-canvas-utils';
+import {
+  findConnectorAttachment,
+  findHoveredShapeId,
+  getConnectorArrowHead,
+  getConnectorPathBounds,
+  getConnectorPathType,
+  getConnectorPoints,
+  isConnectorDashed,
+  resolveConnectorRenderPoints,
+} from '../lib/board-connector-helpers';
 
 type ActiveTool = BoardTool;
-
-interface EditingTextState {
-  id: string;
-  value: string;
-}
-
-interface ShapeDraftState {
-  id: string;
-  startX: number;
-  startY: number;
-  type: 'rect' | 'circle' | 'line';
-  historyBefore: BoardObjectsRecord;
-}
-
-interface ConnectorDraftState {
-  id: string;
-  startX: number;
-  startY: number;
-  historyBefore: BoardObjectsRecord;
-}
-
-interface SelectionDraftState {
-  startX: number;
-  startY: number;
-}
-
-interface Bounds {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-type BoardCanvasNode = Konva.Group | Konva.Shape;
-type ConnectorEndpoint = 'from' | 'to';
-
-interface ConnectorAttachmentResult {
-  objectId: string;
-  x: number;
-  y: number;
-  anchorX: number;
-  anchorY: number;
-  attachmentMode: 'side-center' | 'arbitrary';
-}
-
-interface ConnectorAttachmentCandidate extends ConnectorAttachmentResult {
-  distance: number;
-}
-
-interface ConnectorShapeAnchorMarker {
-  key: string;
-  objectId: string;
-  anchorX: number;
-  anchorY: number;
-  x: number;
-  y: number;
-  endpoint: ConnectorEndpoint | null;
-}
-
-interface ConnectorAnchorIgnore {
-  objectId: string;
-  anchorX: number;
-  anchorY: number;
-}
-
-interface ConnectorHoverLockState {
-  connectorId: string;
-  endpoint: ConnectorEndpoint;
-  objectId: string;
-  startedAt: number;
-  pointer: { x: number; y: number };
-}
-
-interface BoardDocData {
-  ownerId?: string;
-  createdBy?: string;
-  title?: string;
-  objects?: BoardObjectsRecord;
-  sharing?: {
-    visibility?: string;
-    authLinkRole?: string;
-    publicLinkRole?: string;
-  };
-}
-
-const STICKY_PLACEHOLDER_TEXT = 'New note';
-const RECT_CLICK_DEFAULT_WIDTH = 180;
-const RECT_CLICK_DEFAULT_HEIGHT = 120;
-const CIRCLE_CLICK_DEFAULT_SIZE = 120;
-const LINE_CLICK_DEFAULT_WIDTH = 180;
-const RECT_CLICK_DRAG_THRESHOLD = 8;
-const BOARD_SAVE_DEBOUNCE_MS = 300;
-const OBJECT_UPDATE_EMIT_THROTTLE_MS = 45;
-const OBJECT_LATENCY_SAMPLE_WINDOW = 30;
-const OBJECT_LATENCY_UI_UPDATE_MS = 120;
-const AI_APPLY_LATENCY_SAMPLE_WINDOW = 20;
-const SHARE_FEEDBACK_RESET_MS = 2000;
-const VIEWPORT_SAVE_DEBOUNCE_MS = 180;
-const REALTIME_DEDUPE_TTL_MS = 30_000;
-const REALTIME_DEDUPE_MAX_ENTRIES = 4_000;
-const CONNECTOR_HANDLE_RADIUS = 7;
-const CONNECTOR_HANDLE_STROKE = '#2563eb';
-const CONNECTOR_SNAP_DISTANCE_PX = 20;
-const CONNECTOR_SNAP_RELEASE_BUFFER_PX = 10;
-const CONNECTOR_PERIMETER_SNAP_DISTANCE_PX = 26;
-const CONNECTOR_HOVER_LOCK_DELAY_MS = 2000;
-const CONNECTOR_ROUTING_CLEARANCE_PX = 12;
-const CONNECTOR_ROUTING_TURN_PENALTY = 18;
-const SHAPE_ANCHOR_RADIUS = 4;
-const SHAPE_ANCHOR_MATCH_EPSILON = 0.01;
-const CONNECTOR_PATH_HANDLE_RADIUS = 6;
-const CONNECTOR_LABEL_FONT_SIZE = 13;
-const CONNECTOR_LABEL_FONT_FAMILY = 'Segoe UI, sans-serif';
-const CONNECTOR_LABEL_CHAR_WIDTH_FACTOR = 0.56;
-const CONNECTOR_LABEL_PADDING_X = 8;
-const CONNECTOR_LABEL_PADDING_Y = 4;
-const CONNECTOR_LABEL_BACKGROUND_FILL = 'rgba(248, 250, 252, 0.96)';
-const CONNECTOR_LABEL_BACKGROUND_STROKE = 'rgba(148, 163, 184, 0.45)';
-const BOARD_HISTORY_MAX_ENTRIES = 100;
-
-type PendingRemoteObjectEvent =
-  | { kind: 'create'; payload: ObjectCreatePayload }
-  | { kind: 'update'; payload: ObjectUpdatePayload }
-  | { kind: 'delete'; payload: ObjectDeletePayload };
-
-function intersects(a: Bounds, b: Bounds): boolean {
-  return !(
-    a.x + a.width < b.x ||
-    b.x + b.width < a.x ||
-    a.y + a.height < b.y ||
-    b.y + b.height < a.y
-  );
-}
-
-function isPlaceholderStickyText(value: string | undefined): boolean {
-  if (!value) {
-    return true;
-  }
-
-  return value.trim().toLowerCase() === STICKY_PLACEHOLDER_TEXT.toLowerCase();
-}
-
-function getStickyRenderText(value: string | undefined): string {
-  return isPlaceholderStickyText(value) ? STICKY_PLACEHOLDER_TEXT : value || '';
-}
-
-function getStickyRenderColor(value: string | undefined): string {
-  return isPlaceholderStickyText(value) ? '#6b7280' : '#111827';
-}
-
-function estimateConnectorLabelBounds(text: string): { width: number; height: number } {
-  const length = Math.max(1, text.length);
-  const estimatedTextWidth = Math.max(
-    CONNECTOR_LABEL_FONT_SIZE,
-    length * CONNECTOR_LABEL_FONT_SIZE * CONNECTOR_LABEL_CHAR_WIDTH_FACTOR,
-  );
-  return {
-    width: estimatedTextWidth + CONNECTOR_LABEL_PADDING_X * 2,
-    height: CONNECTOR_LABEL_FONT_SIZE + CONNECTOR_LABEL_PADDING_Y * 2,
-  };
-}
-
-function fallbackCopyToClipboard(value: string): boolean {
-  if (typeof document === 'undefined') {
-    return false;
-  }
-
-  const textarea = document.createElement('textarea');
-  textarea.value = value;
-  textarea.setAttribute('readonly', 'true');
-  textarea.style.position = 'fixed';
-  textarea.style.opacity = '0';
-  textarea.style.pointerEvents = 'none';
-  document.body.appendChild(textarea);
-  textarea.select();
-  textarea.setSelectionRange(0, value.length);
-
-  let copied = false;
-  try {
-    copied = document.execCommand('copy');
-  } catch {
-    copied = false;
-  }
-
-  textarea.remove();
-  return copied;
-}
 
 function normalizeLoadedObject(raw: unknown, fallbackUserId: string): BoardObject | null {
   return normalizeBoardObject(raw, fallbackUserId);
@@ -291,16 +160,6 @@ function normalizeLoadedObject(raw: unknown, fallbackUserId: string): BoardObjec
 
 function sanitizeBoardObjectForFirestore(entry: BoardObject): BoardObject {
   return sanitizeBoardObject(entry);
-}
-
-function buildBoardReturnToPath(boardId: string): string {
-  if (typeof window !== 'undefined') {
-    const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-    if (currentPath.startsWith('/board/')) {
-      return currentPath;
-    }
-  }
-  return `/board/${boardId}`;
 }
 
 export function Board() {
@@ -391,6 +250,9 @@ export function Board() {
 
   const selectedObject =
     selectedIds.length === 1 ? objectsRef.current.get(selectedIds[0]) ?? null : null;
+  const selectedObjects = selectedIds
+    .map((id) => objectsRef.current.get(id))
+    .filter((obj): obj is BoardObject => obj != null);
   const selectedConnector =
     selectedObject && selectedObject.type === 'connector' ? selectedObject : null;
   const canStartConnectorFromAnchor = canEditBoard && activeTool === 'connector';
@@ -650,7 +512,7 @@ export function Board() {
             if (!cancelled && memberSnapshot.exists()) {
               const roleValue = (memberSnapshot.data() as { role?: unknown }).role;
               const normalizedRole = normalizeBoardRole(roleValue);
-              explicitMemberRole = normalizedRole === 'none' ? null : normalizedRole;
+              explicitMemberRole = normalizedRole;
             }
           } catch {
             // Membership lookups are best-effort; access still resolves from board sharing.
@@ -1785,6 +1647,7 @@ export function Board() {
 
     if (normalized.type === 'connector') {
       const points = resolveConnectorRenderPoints(
+        objectsRef.current,
         normalized,
         normalized.points || [normalized.x, normalized.y, normalized.x + normalized.width, normalized.y],
       );
@@ -2080,60 +1943,6 @@ export function Board() {
     node.scale({ x: 1, y: 1 });
   }
 
-  function getConnectorPoints(connector: BoardObject): [number, number, number, number] {
-    const points = connector.points || [connector.x, connector.y, connector.x + connector.width, connector.y];
-    const endpoints = getConnectorEndpoints(points);
-    return [endpoints.startX, endpoints.startY, endpoints.endX, endpoints.endY];
-  }
-
-  function getConnectorPathType(entry: BoardObject): ConnectorPathType {
-    if (entry.connectorType === 'bent' || entry.connectorType === 'curved' || entry.connectorType === 'straight') {
-      return entry.connectorType;
-    }
-    return CONNECTOR_DEFAULT_PATH_TYPE;
-  }
-
-  function getConnectorStrokeStyle(entry: BoardObject): 'solid' | 'dashed' {
-    if (entry.strokeStyle === 'solid' || entry.strokeStyle === 'dashed') {
-      return entry.strokeStyle;
-    }
-    return entry.style === 'dashed' ? 'dashed' : CONNECTOR_DEFAULT_STROKE_STYLE;
-  }
-
-  function getConnectorArrowHead(entry: BoardObject, endpoint: 'start' | 'end') {
-    const fallback = endpoint === 'start' ? CONNECTOR_DEFAULT_START_ARROW : CONNECTOR_DEFAULT_END_ARROW;
-    const value = endpoint === 'start' ? entry.startArrow : entry.endArrow;
-    if (value === 'none' || value === 'solid' || value === 'line' || value === 'triangle' || value === 'diamond') {
-      return value;
-    }
-    if (endpoint === 'end' && entry.style === 'arrow') {
-      return 'solid' as const;
-    }
-    return fallback;
-  }
-
-  function isConnectorDashed(entry: BoardObject): boolean {
-    return getConnectorStrokeStyle(entry) === 'dashed';
-  }
-
-  function getConnectorPathBounds(points: number[]): { width: number; height: number } {
-    const sanitized = points.length >= 4 ? points : [0, 0, 120, 0];
-    const xs: number[] = [];
-    const ys: number[] = [];
-    for (let index = 0; index < sanitized.length - 1; index += 2) {
-      xs.push(sanitized[index]);
-      ys.push(sanitized[index + 1]);
-    }
-    const minX = Math.min(...xs);
-    const maxX = Math.max(...xs);
-    const minY = Math.min(...ys);
-    const maxY = Math.max(...ys);
-    return {
-      width: Math.max(1, Math.abs(maxX - minX)),
-      height: Math.max(1, Math.abs(maxY - minY)),
-    };
-  }
-
   function applyConnectorNodeStyle(node: Konva.Line | Konva.Arrow, entry: BoardObject) {
     const connectorType = getConnectorPathType(entry);
     const startArrow = getConnectorArrowHead(entry, 'start');
@@ -2153,218 +1962,12 @@ export function Board() {
     node.tension(isCurved ? 0.45 : 0);
   }
 
-  function getConnectorRoutingObstacles(connector: BoardObject): ConnectorObstacle[] {
-    const obstacles: ConnectorObstacle[] = [];
-    objectsRef.current.forEach((entry) => {
-      if (entry.id === connector.id || entry.type === 'connector') {
-        return;
-      }
-      if (entry.id === connector.fromId || entry.id === connector.toId) {
-        return;
-      }
-
-      const bounds = getObjectBounds(entry);
-      obstacles.push({
-        x: bounds.x,
-        y: bounds.y,
-        width: bounds.width,
-        height: bounds.height,
-      });
-    });
-    return obstacles;
-  }
-
-  function resolveConnectorRenderPoints(
-    connector: BoardObject,
-    fallbackPoints: number[],
-  ): number[] {
-    const from = connector.fromId ? objectsRef.current.get(connector.fromId) : undefined;
-    const to = connector.toId ? objectsRef.current.get(connector.toId) : undefined;
-    return resolveConnectorPoints({
-      from,
-      to,
-      fromAnchorX: connector.fromAnchorX,
-      fromAnchorY: connector.fromAnchorY,
-      toAnchorX: connector.toAnchorX,
-      toAnchorY: connector.toAnchorY,
-      connectorType: getConnectorPathType(connector),
-      pathControlX: connector.pathControlX,
-      pathControlY: connector.pathControlY,
-      curveOffset: connector.curveOffset,
-      obstacles: getConnectorRoutingObstacles(connector),
-      clearance: CONNECTOR_ROUTING_CLEARANCE_PX,
-      turnPenalty: CONNECTOR_ROUTING_TURN_PENALTY,
-      fallback: fallbackPoints,
-    });
-  }
-
-  function findClosestAnchorForObject(
-    entry: BoardObject,
-    point: { x: number; y: number },
-    mode: 'side-center' | 'arbitrary',
-  ): ConnectorAttachmentCandidate | null {
-    if (mode === 'arbitrary') {
-      const projected = projectPointToObjectPerimeter(entry, point);
-      const bounds = getObjectBounds(entry);
-      const insideBounds =
-        point.x >= bounds.x &&
-        point.x <= bounds.x + bounds.width &&
-        point.y >= bounds.y &&
-        point.y <= bounds.y + bounds.height;
-      return {
-        objectId: entry.id,
-        x: projected.x,
-        y: projected.y,
-        anchorX: projected.anchorX,
-        anchorY: projected.anchorY,
-        distance: insideBounds ? 0 : Math.hypot(point.x - projected.x, point.y - projected.y),
-        attachmentMode: 'arbitrary',
-      };
-    }
-
-    const candidates = getObjectSideAnchorCandidates(entry);
-    if (candidates.length === 0) {
-      return null;
-    }
-
-    let best: ConnectorAttachmentCandidate | null = null;
-    candidates.forEach((candidate) => {
-      const distance = Math.hypot(point.x - candidate.x, point.y - candidate.y);
-      if (!best || distance < best.distance) {
-        best = {
-          objectId: entry.id,
-          x: candidate.x,
-          y: candidate.y,
-          anchorX: candidate.anchorX,
-          anchorY: candidate.anchorY,
-          distance,
-          attachmentMode: 'side-center',
-        };
-      }
-    });
-
-    return best;
-  }
-
-  function isSameConnectorAnchor(
-    anchorA: ConnectorAnchorIgnore,
-    anchorB: ConnectorAnchorIgnore,
-  ): boolean {
-    return (
-      anchorA.objectId === anchorB.objectId &&
-      Math.abs(anchorA.anchorX - anchorB.anchorX) <= SHAPE_ANCHOR_MATCH_EPSILON &&
-      Math.abs(anchorA.anchorY - anchorB.anchorY) <= SHAPE_ANCHOR_MATCH_EPSILON
-    );
-  }
-
-  function findConnectorAttachment(
-    worldPosition: { x: number; y: number },
-    connectorId: string,
-    mode: 'side-center' | 'arbitrary' = 'side-center',
-    ignoreAnchor?: ConnectorAnchorIgnore,
-    currentAnchor?: ConnectorAnchorIgnore,
-    targetObjectId?: string,
-  ): ConnectorAttachmentResult | null {
-    const stageScale = stageRef.current?.scaleX() || 1;
-    const snapDistance = targetObjectId
-      ? Number.POSITIVE_INFINITY
-      :
-      (mode === 'arbitrary' ? CONNECTOR_PERIMETER_SNAP_DISTANCE_PX : CONNECTOR_SNAP_DISTANCE_PX) /
-        Math.max(0.1, stageScale);
-    const snapReleaseDistance =
-      ((mode === 'arbitrary' ? CONNECTOR_PERIMETER_SNAP_DISTANCE_PX : CONNECTOR_SNAP_DISTANCE_PX) +
-        CONNECTOR_SNAP_RELEASE_BUFFER_PX) /
-      Math.max(0.1, stageScale);
-
-    if (
-      currentAnchor &&
-      (!ignoreAnchor || !isSameConnectorAnchor(currentAnchor, ignoreAnchor))
-    ) {
-      const currentObject = objectsRef.current.get(currentAnchor.objectId);
-      if (currentObject && currentObject.type !== 'connector') {
-        const currentPoint = resolveObjectAnchorPoint(
-          currentObject,
-          currentAnchor.anchorX,
-          currentAnchor.anchorY,
-        );
-        const distance = Math.hypot(
-          worldPosition.x - currentPoint.x,
-          worldPosition.y - currentPoint.y,
-        );
-        if (distance <= snapReleaseDistance) {
-          return {
-            objectId: currentAnchor.objectId,
-            x: currentPoint.x,
-            y: currentPoint.y,
-            anchorX: currentAnchor.anchorX,
-            anchorY: currentAnchor.anchorY,
-            attachmentMode: mode,
-          };
-        }
-      }
-    }
-
-    let bestMatch: ConnectorAttachmentCandidate | null = null;
-
-    objectsRef.current.forEach((entry) => {
-      if (entry.id === connectorId || entry.type === 'connector') {
-        return;
-      }
-      if (targetObjectId && entry.id !== targetObjectId) {
-        return;
-      }
-
-      const candidate = findClosestAnchorForObject(entry, worldPosition, mode);
-      if (!candidate || candidate.distance > snapDistance) {
-        return;
-      }
-
-      if (
-        ignoreAnchor &&
-        isSameConnectorAnchor(ignoreAnchor, {
-          objectId: candidate.objectId,
-          anchorX: candidate.anchorX,
-          anchorY: candidate.anchorY,
-        })
-      ) {
-        return;
-      }
-
-      if (!bestMatch || candidate.distance < bestMatch.distance) {
-        bestMatch = candidate;
-      }
-    });
-
-    if (!bestMatch) {
-      return null;
-    }
-
-    const { objectId, x, y, anchorX, anchorY, attachmentMode } = bestMatch;
-    return { objectId, x, y, anchorX, anchorY, attachmentMode };
-  }
-
   function clearConnectorHoverLock() {
     if (connectorHoverLockTimerRef.current) {
       window.clearTimeout(connectorHoverLockTimerRef.current);
       connectorHoverLockTimerRef.current = null;
     }
     connectorHoverLockRef.current = null;
-  }
-
-  function findHoveredShapeId(worldPosition: { x: number; y: number }, connectorId: string): string | null {
-    let hovered: string | null = null;
-    objectsRef.current.forEach((entry) => {
-      if (hovered || entry.id === connectorId || entry.type === 'connector') {
-        return;
-      }
-      const bounds = getObjectBounds(entry);
-      const withinX = worldPosition.x >= bounds.x && worldPosition.x <= bounds.x + bounds.width;
-      const withinY = worldPosition.y >= bounds.y && worldPosition.y <= bounds.y + bounds.height;
-      if (withinX && withinY) {
-        hovered = entry.id;
-      }
-    });
-    return hovered;
   }
 
   function updateConnectorHoverLockState(
@@ -2378,7 +1981,7 @@ export function Board() {
       return;
     }
 
-    const hoveredObjectId = findHoveredShapeId(worldPosition, connector.id);
+    const hoveredObjectId = findHoveredShapeId(objectsRef.current, worldPosition, connector.id);
     if (!hoveredObjectId) {
       clearConnectorHoverLock();
       return;
@@ -2476,6 +2079,8 @@ export function Board() {
     const attachmentMode = options?.attachmentMode || 'side-center';
     const attachment = shouldSnap
       ? findConnectorAttachment(
+          objectsRef.current,
+          stageRef.current?.scaleX() || 1,
           worldPosition,
           connectorId,
           attachmentMode,
@@ -2514,7 +2119,7 @@ export function Board() {
         ? [attachment?.x ?? worldPosition.x, attachment?.y ?? worldPosition.y, endX, endY]
         : [startX, startY, attachment?.x ?? worldPosition.x, attachment?.y ?? worldPosition.y];
 
-    const resolvedPoints = resolveConnectorRenderPoints(next, fallbackPoints);
+    const resolvedPoints = resolveConnectorRenderPoints(objectsRef.current, next, fallbackPoints);
     const bounds = getConnectorPathBounds(resolvedPoints);
 
     const nextObject: BoardObject = {
@@ -2568,6 +2173,7 @@ export function Board() {
       updatedAt: persist ? new Date().toISOString() : current.updatedAt,
     };
     const resolvedPoints = resolveConnectorRenderPoints(
+      objectsRef.current,
       next,
       current.points || [current.x, current.y, current.x + current.width, current.y],
     );
@@ -2613,6 +2219,7 @@ export function Board() {
 
     relatedConnectors.forEach((connector) => {
       const nextPoints = resolveConnectorRenderPoints(
+        objectsRef.current,
         connector,
         connector.points || [connector.x, connector.y, connector.x + connector.width, connector.y],
       );
@@ -3479,7 +3086,7 @@ export function Board() {
     }
     const historyBefore = captureManualHistoryBaseline(true);
 
-    const initialAttachment = startAttachment || findConnectorAttachment(worldPosition, '', attachmentMode);
+    const initialAttachment = startAttachment || findConnectorAttachment(objectsRef.current, stageRef.current?.scaleX() || 1, worldPosition, '', attachmentMode);
     const start = initialAttachment || {
       x: worldPosition.x,
       y: worldPosition.y,
@@ -4472,6 +4079,7 @@ export function Board() {
     }
 
     const resolvedPoints = resolveConnectorRenderPoints(
+      objectsRef.current,
       next,
       current.points || [current.x, current.y, current.x + current.width, current.y],
     );
@@ -4502,6 +4110,27 @@ export function Board() {
     emitObjectUpdate(nextObject, true);
     scheduleBoardSave();
     commitBoardHistory('manual', beforeState);
+  };
+
+  const handleBatchStyleChange = (ids: string[], patch: Partial<BoardObject>) => {
+    for (const id of ids) {
+      const obj = objectsRef.current.get(id);
+      if (!obj) continue;
+      if (obj.type === 'connector') {
+        updateConnectorProperties(id, patch);
+      } else if (obj.type === 'line') {
+        // Lines store stroke color in `color` field, same as connectors.
+        // If the patch has `stroke` (from mixed-type selection), remap to `color`.
+        const linePatch = { ...patch };
+        if ('stroke' in linePatch && !('color' in linePatch)) {
+          linePatch.color = linePatch.stroke;
+          delete linePatch.stroke;
+        }
+        updateObjectProperties(id, linePatch);
+      } else {
+        updateObjectProperties(id, patch);
+      }
+    }
   };
 
   if (!boardId) {
@@ -5053,12 +4682,14 @@ export function Board() {
           <BoardInspectorPanel
             selectedIds={selectedIds}
             selectedObject={selectedObject}
+            selectedObjects={selectedObjects}
             zoomPercent={zoomPercent}
             canEditBoard={canEditBoard}
             onDeleteSelected={() => removeObjects(selectedIds, true)}
             onDeleteObject={(objectId) => removeObjects([objectId], true)}
             onUpdateObject={updateObjectProperties}
             onUpdateConnector={updateConnectorProperties}
+            onBatchStyleChange={handleBatchStyleChange}
             onDuplicate={handleDuplicate}
             onCopy={handleCopy}
             onPaste={handlePaste}

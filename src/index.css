@@ -1193,6 +1193,86 @@ button {
   margin-top: 0.15rem;
 }
 
+/* --- StylePanel / ColorPicker --- */
+.style-panel-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.color-picker-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #4b5563;
+}
+
+.color-swatches {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
+}
+
+.color-swatch {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: border-color 0.12s;
+}
+
+.color-swatch:hover {
+  border-color: rgba(15, 23, 42, 0.35);
+}
+
+.color-swatch.selected {
+  border-color: #1e40af;
+  box-shadow: 0 0 0 2px rgba(30, 64, 175, 0.25);
+}
+
+.color-swatch:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.hex-input-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 2px;
+}
+
+.hex-prefix {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #94a3b8;
+}
+
+.hex-input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.25rem 0.35rem;
+  font-size: 0.78rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: #1e293b;
+  outline: none;
+}
+
+.hex-input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.18);
+}
+
+.hex-input:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .metrics-overlay {
   position: fixed;
   right: 8px;

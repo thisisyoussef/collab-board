@@ -1,14 +1,17 @@
 import type { BoardObject } from '../types/board';
+import { StylePanel } from './StylePanel';
 
 interface BoardInspectorPanelProps {
   selectedIds: string[];
   selectedObject: BoardObject | null;
+  selectedObjects: BoardObject[];
   zoomPercent: number;
   canEditBoard: boolean;
   onDeleteSelected: () => void;
   onDeleteObject: (objectId: string) => void;
   onUpdateObject: (objectId: string, patch: Partial<BoardObject>) => void;
   onUpdateConnector: (connectorId: string, patch: Partial<BoardObject>) => void;
+  onBatchStyleChange: (ids: string[], patch: Partial<BoardObject>) => void;
   onDuplicate: () => void;
   onCopy: () => void;
   onPaste: () => void;
@@ -36,26 +39,16 @@ function selectedLabel(object: BoardObject): string {
   return 'Connector';
 }
 
-function safeColor(value: string | undefined, fallback = '#64748b'): string {
-  if (typeof value !== 'string') {
-    return fallback;
-  }
-  const normalized = value.trim();
-  if (/^#[0-9a-fA-F]{6}$/.test(normalized) || /^#[0-9a-fA-F]{3}$/.test(normalized)) {
-    return normalized;
-  }
-  return fallback;
-}
-
 export function BoardInspectorPanel({
   selectedIds,
   selectedObject,
+  selectedObjects,
   zoomPercent,
   canEditBoard,
   onDeleteSelected,
   onDeleteObject,
-  onUpdateObject,
   onUpdateConnector,
+  onBatchStyleChange,
   onDuplicate,
   onCopy,
   onPaste,
@@ -89,6 +82,11 @@ export function BoardInspectorPanel({
             <span>Selection</span>
             <strong>{selectedIds.length} objects</strong>
           </div>
+          <StylePanel
+            selectedObjects={selectedObjects}
+            disabled={!canEditBoard}
+            onStyleChange={onBatchStyleChange}
+          />
           <div className="property-row property-actions">
             <button
               className="secondary-btn"
@@ -152,39 +150,14 @@ export function BoardInspectorPanel({
             <strong>{Math.round(selectedObject.rotation)}°</strong>
           </div>
 
+          <StylePanel
+            selectedObjects={[selectedObject]}
+            disabled={!canEditBoard}
+            onStyleChange={onBatchStyleChange}
+          />
+
           {selectedObject.type === 'connector' ? (
             <>
-              <label className="property-row" htmlFor="connector-color">
-                <span>Stroke</span>
-                <input
-                  id="connector-color"
-                  type="color"
-                  value={safeColor(selectedObject.color, '#64748b')}
-                  disabled={!canEditBoard}
-                  onChange={(event) =>
-                    onUpdateConnector(selectedObject.id, {
-                      color: event.target.value,
-                    })
-                  }
-                />
-              </label>
-              <label className="property-row" htmlFor="connector-stroke-width">
-                <span>Width</span>
-                <input
-                  id="connector-stroke-width"
-                  type="range"
-                  min={1}
-                  max={12}
-                  step={1}
-                  value={selectedObject.strokeWidth || 2}
-                  disabled={!canEditBoard}
-                  onChange={(event) =>
-                    onUpdateConnector(selectedObject.id, {
-                      strokeWidth: Number(event.target.value),
-                    })
-                  }
-                />
-              </label>
               <label className="property-row" htmlFor="connector-type">
                 <span>Path</span>
                 <select
@@ -288,86 +261,7 @@ export function BoardInspectorPanel({
                 />
               </label>
             </>
-          ) : (
-            <>
-              <label className="property-row" htmlFor="object-fill">
-                <span>{selectedObject.type === 'line' ? 'Stroke' : 'Fill'}</span>
-                <input
-                  id="object-fill"
-                  type="color"
-                  value={safeColor(selectedObject.color, '#64748b')}
-                  disabled={!canEditBoard}
-                  onChange={(event) =>
-                    onUpdateObject(selectedObject.id, {
-                      color: event.target.value,
-                    })
-                  }
-                />
-              </label>
-
-              {selectedObject.type === 'rect' ||
-              selectedObject.type === 'circle' ||
-              selectedObject.type === 'frame' ? (
-                <label className="property-row" htmlFor="object-stroke">
-                  <span>Stroke</span>
-                  <input
-                    id="object-stroke"
-                    type="color"
-                    value={safeColor(selectedObject.stroke, '#334155')}
-                    disabled={!canEditBoard}
-                    onChange={(event) =>
-                      onUpdateObject(selectedObject.id, {
-                        stroke: event.target.value,
-                      })
-                    }
-                  />
-                </label>
-              ) : null}
-
-              {selectedObject.type === 'rect' ||
-              selectedObject.type === 'circle' ||
-              selectedObject.type === 'frame' ||
-              selectedObject.type === 'line' ? (
-                <label className="property-row" htmlFor="object-stroke-width">
-                  <span>Stroke width</span>
-                  <input
-                    id="object-stroke-width"
-                    type="range"
-                    min={1}
-                    max={12}
-                    step={1}
-                    value={selectedObject.strokeWidth || 2}
-                    disabled={!canEditBoard}
-                    onChange={(event) =>
-                      onUpdateObject(selectedObject.id, {
-                        strokeWidth: Number(event.target.value),
-                      })
-                    }
-                  />
-                </label>
-              ) : null}
-
-              {selectedObject.type === 'sticky' || selectedObject.type === 'text' ? (
-                <label className="property-row" htmlFor="object-font-size">
-                  <span>Font size</span>
-                  <input
-                    id="object-font-size"
-                    type="range"
-                    min={10}
-                    max={72}
-                    step={1}
-                    value={selectedObject.fontSize || 14}
-                    disabled={!canEditBoard}
-                    onChange={(event) =>
-                      onUpdateObject(selectedObject.id, {
-                        fontSize: Number(event.target.value),
-                      })
-                    }
-                  />
-                </label>
-              ) : null}
-            </>
-          )}
+          ) : null}
 
           <div className="property-row property-actions">
             <button
