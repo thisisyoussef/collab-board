@@ -4,6 +4,7 @@ import OpenAI from 'openai';
 import { cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
+import { Client } from 'langsmith';
 import { traceable } from 'langsmith/traceable';
 import { wrapAnthropic } from 'langsmith/wrappers/anthropic';
 import { wrapOpenAI } from 'langsmith/wrappers/openai';
@@ -19,6 +20,7 @@ const LANGSMITH_TRACING_ENABLED =
   process.env.LANGCHAIN_TRACING_V2 === 'true' &&
   typeof process.env.LANGCHAIN_API_KEY === 'string' &&
   process.env.LANGCHAIN_API_KEY.trim().length > 0;
+const TRACE_FLUSH_TIMEOUT_MS = 900;
 
 type AIProvider = 'anthropic' | 'openai';
 type AIProviderMode = AIProvider | 'ab';
@@ -85,10 +87,17 @@ function getOpenAIModelName(): string {
 
 const baseAnthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const baseOpenAI = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const langSmithClient = LANGSMITH_TRACING_ENABLED
+  ? new Client({
+      apiKey: process.env.LANGCHAIN_API_KEY,
+      apiUrl: process.env.LANGCHAIN_ENDPOINT,
+    })
+  : null;
 const anthropic = LANGSMITH_TRACING_ENABLED
   ? wrapAnthropic(baseAnthropic, {
       name: 'collabboard.anthropic.messages',
       project_name: getLangSmithProjectName(),
+      client: langSmithClient ?? undefined,
       tags: LANGSMITH_TAGS,
       metadata: {
         route: '/api/ai/generate',
@@ -100,6 +109,7 @@ const openai = LANGSMITH_TRACING_ENABLED
   ? wrapOpenAI(baseOpenAI, {
       name: 'collabboard.openai.chat.completions',
       project_name: getLangSmithProjectName(),
+      client: langSmithClient ?? undefined,
       tags: LANGSMITH_TAGS,
       metadata: {
         route: '/api/ai/generate',
@@ -576,6 +586,22 @@ function getBoardObjectCount(boardState: unknown): number {
   return 0;
 }
 
+async function flushLangSmithTracesBestEffort() {
+  if (!langSmithClient || !LANGSMITH_TRACING_ENABLED) {
+    return;
+  }
+
+  const timeout = new Promise<void>((resolve) => {
+    setTimeout(resolve, TRACE_FLUSH_TIMEOUT_MS);
+  });
+
+  try {
+    await Promise.race([langSmithClient.awaitPendingTraceBatches(), timeout]);
+  } catch (err) {
+    console.warn('[ai/generate] LangSmith flush warning:', err);
+  }
+}
+
 async function createAnthropicPlanningMessage(
   payload: Anthropic.MessageCreateParamsNonStreaming,
   runName: string,
@@ -803,6 +829,7 @@ const generatePlan = LANGSMITH_TRACING_ENABLED
   ? traceable(generatePlanCore, {
       name: 'ai.generate.pipeline',
       project_name: getLangSmithProjectName(),
+      client: langSmithClient ?? undefined,
       run_type: 'chain',
       tags: LANGSMITH_TAGS,
       metadata: {
@@ -819,9 +846,16 @@ const generatePlan = LANGSMITH_TRACING_ENABLED
       }),
       processOutputs: (outputs) => ({
         toolCallCount: Array.isArray(outputs.toolCalls) ? outputs.toolCalls.length : 0,
+        toolNames: Array.isArray(outputs.toolCalls)
+          ? outputs.toolCalls.slice(0, 12).map((call) => call.name)
+          : [],
         stopReason: outputs.stopReason,
         provider: outputs.provider,
         assistantMessageLength: typeof outputs.message === 'string' ? outputs.message.length : 0,
+        assistantMessagePreview:
+          typeof outputs.message === 'string'
+            ? outputs.message.slice(0, Math.min(160, outputs.message.length))
+            : '',
       }),
     })
   : generatePlanCore;
@@ -831,6 +865,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Expose-Headers', 'X-AI-Provider');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -916,6 +951,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const provider = chooseProviderForRequest(trimmedBoardId, actorUserId);
+  res.setHeader('X-AI-Provider', provider);
   if (provider === 'anthropic' && !process.env.ANTHROPIC_API_KEY) {
     return res.status(500).json({ error: 'AI service not configured' });
   }
@@ -931,7 +967,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       actorUserId,
       provider,
     });
-    res.setHeader('X-AI-Provider', result.provider);
+    await flushLangSmithTracesBestEffort();
 
     return res.status(200).json({
       toolCalls: result.toolCalls,

@@ -17,6 +17,12 @@ vi.mock('openai', () => ({
 }));
 const mockWrapAnthropic = vi.fn((client) => client);
 const mockTraceable = vi.fn((fn) => fn);
+const mockAwaitPendingTraceBatches = vi.fn().mockResolvedValue(undefined);
+vi.mock('langsmith', () => ({
+  Client: vi.fn().mockImplementation(() => ({
+    awaitPendingTraceBatches: mockAwaitPendingTraceBatches,
+  })),
+}));
 vi.mock('langsmith/wrappers/anthropic', () => ({
   wrapAnthropic: mockWrapAnthropic,
 }));
@@ -74,6 +80,7 @@ function createMockRes() {
 describe('AI Generate API Endpoint', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockAwaitPendingTraceBatches.mockResolvedValue(undefined);
     process.env.ANTHROPIC_API_KEY = 'test-key';
     process.env.OPENAI_API_KEY = 'test-openai-key';
     delete process.env.LANGCHAIN_TRACING_V2;
@@ -675,6 +682,7 @@ describe('AI Generate API Endpoint', () => {
       expect(mockWrapAnthropic).toHaveBeenCalledTimes(1);
       expect(mockWrapOpenAI).toHaveBeenCalledTimes(1);
       expect(mockTraceable).toHaveBeenCalled();
+      expect(mockAwaitPendingTraceBatches).toHaveBeenCalled();
     });
   });
 });
