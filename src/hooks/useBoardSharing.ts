@@ -237,7 +237,9 @@ export function useBoardSharing({
           };
           const memberRole = normalizeMemberRole(data.role);
           const memberUserId = typeof data.userId === 'string' ? data.userId.trim() : '';
-          const memberDisplayName = normalizeMemberDisplayName(data.displayName);
+          const memberDisplayName =
+            normalizeMemberDisplayName(data.displayName) ||
+            (memberUserId === userId ? normalizeMemberDisplayName(userDisplayName) : null);
           if (!memberRole || !memberUserId) {
             return null;
           }
@@ -272,7 +274,7 @@ export function useBoardSharing({
     } finally {
       setMembersLoading(false);
     }
-  }, [boardId, canManageSharing]);
+  }, [boardId, canManageSharing, userDisplayName, userId]);
 
   useEffect(() => {
     if (!isSharePanelOpen || !canManageSharing) {
@@ -374,13 +376,21 @@ export function useBoardSharing({
           normalizedCurrentDisplayName &&
           normalizedCurrentDisplayName !== existingDisplayName
         ) {
-          await withFirestoreTimeout(
-            'Refreshing workspace member profile',
-            updateDoc(membershipRef, {
-              displayName: normalizedCurrentDisplayName,
-              updatedAt: serverTimestamp(),
-            }),
-          );
+          try {
+            await withFirestoreTimeout(
+              'Refreshing workspace member profile',
+              updateDoc(membershipRef, {
+                displayName: normalizedCurrentDisplayName,
+                updatedAt: serverTimestamp(),
+              }),
+            );
+          } catch (err) {
+            if (!isPermissionDeniedError(err)) {
+              throw err;
+            }
+            // Some deployments only allow owner updates on boardMembers.
+            // Keep Save to workspace successful for existing memberships.
+          }
         }
         setWorkspaceState('saved');
         return true;

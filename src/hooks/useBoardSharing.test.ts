@@ -205,6 +205,38 @@ describe('useBoardSharing', () => {
     expect(result.current.workspaceState).toBe('saved');
   });
 
+  it('does not fail save-to-workspace if existing membership display-name refresh is denied', async () => {
+    const editorAccess: ResolveBoardAccessResult = {
+      ...ownerAccess,
+      effectiveRole: 'editor',
+      canApplyAI: true,
+    };
+
+    mockGetDoc.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ displayName: 'Old Name' }),
+    });
+    mockUpdateDoc.mockRejectedValueOnce(
+      Object.assign(new Error('permission denied'), { code: 'permission-denied' }),
+    );
+
+    const { result } = renderHook(() =>
+      useBoardSharing({
+        boardId: 'board-1',
+        userId: 'user-2',
+        userDisplayName: 'Fresh Name',
+        access: editorAccess,
+        isSharePanelOpen: false,
+      }),
+    );
+
+    await act(async () => {
+      await expect(result.current.saveToWorkspace()).resolves.toBe(true);
+    });
+
+    expect(result.current.workspaceState).toBe('saved');
+  });
+
   it('falls back to viewer workspace save when editor role is denied', async () => {
     const editorAccess: ResolveBoardAccessResult = {
       ...ownerAccess,

@@ -96,6 +96,8 @@ describe('ShareSettingsPanel', () => {
 
     expect(screen.getByText('Sam Doe')).toBeInTheDocument();
     expect(screen.getByText('Alex Doe')).toBeInTheDocument();
+    expect(screen.queryByText('user-2')).not.toBeInTheDocument();
+    expect(screen.queryByText('user-3')).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('Role for user-2'), {
       target: { value: 'editor' },
