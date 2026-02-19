@@ -106,6 +106,32 @@ describe('board-object normalize/sanitize', () => {
     expect(sanitized[4].toAnchorY).toBe(0.25);
   });
 
+  it('removes undefined fields from sanitized connector payloads', () => {
+    const connector = createDefaultObject('connector', {
+      id: 'connector-undefined',
+      createdBy: 'u1',
+      zIndex: 1,
+      fromId: '',
+      toId: '',
+      fromAnchorX: undefined,
+      fromAnchorY: undefined,
+      toAnchorX: undefined,
+      toAnchorY: undefined,
+      label: undefined,
+      pathControlX: undefined,
+      pathControlY: undefined,
+    });
+
+    const sanitized = sanitizeBoardObjectForFirestore(connector) as Record<string, unknown>;
+    expect('fromAnchorX' in sanitized).toBe(false);
+    expect('fromAnchorY' in sanitized).toBe(false);
+    expect('toAnchorX' in sanitized).toBe(false);
+    expect('toAnchorY' in sanitized).toBe(false);
+    expect('label' in sanitized).toBe(false);
+    expect('pathControlX' in sanitized).toBe(false);
+    expect('pathControlY' in sanitized).toBe(false);
+  });
+
   it('projects attachment points to rectangle and circle perimeters', () => {
     const rect = createDefaultObject('rect', {
       id: 'rect-1',

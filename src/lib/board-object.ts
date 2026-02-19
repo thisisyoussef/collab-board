@@ -165,6 +165,25 @@ function parsePoints(value: unknown, fallback: number[]): number[] {
   return next.slice(0, Math.max(4, next.length - (next.length % 2)));
 }
 
+function stripUndefinedDeep<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((entry) => stripUndefinedDeep(entry)) as T;
+  }
+
+  if (value && typeof value === 'object') {
+    const result: Record<string, unknown> = {};
+    Object.entries(value as Record<string, unknown>).forEach(([key, entryValue]) => {
+      if (entryValue === undefined) {
+        return;
+      }
+      result[key] = stripUndefinedDeep(entryValue);
+    });
+    return result as T;
+  }
+
+  return value;
+}
+
 function getPointsBounds(points: number[]): { width: number; height: number } {
   const xs: number[] = [];
   const ys: number[] = [];
@@ -382,7 +401,7 @@ export function sanitizeBoardObjectForFirestore(entry: BoardObject): BoardObject
   const normalized = createDefaultObject(entry.type, entry);
 
   if (normalized.type === 'sticky') {
-    return {
+    return stripUndefinedDeep({
       id: normalized.id,
       type: normalized.type,
       x: normalized.x,
@@ -396,11 +415,11 @@ export function sanitizeBoardObjectForFirestore(entry: BoardObject): BoardObject
       zIndex: normalized.zIndex,
       createdBy: normalized.createdBy,
       updatedAt: normalized.updatedAt,
-    };
+    });
   }
 
   if (normalized.type === 'rect' || normalized.type === 'circle') {
-    return {
+    return stripUndefinedDeep({
       id: normalized.id,
       type: normalized.type,
       x: normalized.x,
@@ -415,11 +434,11 @@ export function sanitizeBoardObjectForFirestore(entry: BoardObject): BoardObject
       zIndex: normalized.zIndex,
       createdBy: normalized.createdBy,
       updatedAt: normalized.updatedAt,
-    };
+    });
   }
 
   if (normalized.type === 'text') {
-    return {
+    return stripUndefinedDeep({
       id: normalized.id,
       type: normalized.type,
       x: normalized.x,
@@ -433,11 +452,11 @@ export function sanitizeBoardObjectForFirestore(entry: BoardObject): BoardObject
       zIndex: normalized.zIndex,
       createdBy: normalized.createdBy,
       updatedAt: normalized.updatedAt,
-    };
+    });
   }
 
   if (normalized.type === 'frame') {
-    return {
+    return stripUndefinedDeep({
       id: normalized.id,
       type: normalized.type,
       x: normalized.x,
@@ -452,11 +471,11 @@ export function sanitizeBoardObjectForFirestore(entry: BoardObject): BoardObject
       zIndex: normalized.zIndex,
       createdBy: normalized.createdBy,
       updatedAt: normalized.updatedAt,
-    };
+    });
   }
 
   if (normalized.type === 'line') {
-    return {
+    return stripUndefinedDeep({
       id: normalized.id,
       type: normalized.type,
       x: normalized.x,
@@ -470,10 +489,10 @@ export function sanitizeBoardObjectForFirestore(entry: BoardObject): BoardObject
       zIndex: normalized.zIndex,
       createdBy: normalized.createdBy,
       updatedAt: normalized.updatedAt,
-    };
+    });
   }
 
-  return {
+  return stripUndefinedDeep({
     id: normalized.id,
     type: normalized.type,
     x: normalized.x,
@@ -515,7 +534,7 @@ export function sanitizeBoardObjectForFirestore(entry: BoardObject): BoardObject
     zIndex: normalized.zIndex,
     createdBy: normalized.createdBy,
     updatedAt: normalized.updatedAt,
-  };
+  });
 }
 
 function parseUpdatedAtMs(value: string | undefined): number {
