@@ -48,3 +48,76 @@ Prefer lightweight `react-konva` mocks for DOM-oriented tests.
 - Error path is tested for any catch branch.
 - Optimistic update code has rollback coverage.
 - Test names describe behavior, not implementation details.
+
+## Phase III Validation Protocol
+
+Use this when running final PRD checks and submission verification.
+
+### 1) Local Gate
+
+```bash
+npm run lint
+npm run test
+npm run build
+```
+
+Record results in `/Users/youss/Development/gauntlet/collab-board/docs/user-stories/phase3/phase3-checkpoint-log.md`.
+
+### 2) AI Command Validation
+
+Use this template:
+
+- `/Users/youss/Development/gauntlet/collab-board/docs/user-stories/phase3/templates/ai-command-validation-matrix.md`
+
+Minimum expected coverage:
+
+1. Creation commands
+2. Manipulation commands
+3. Layout commands
+4. Complex multi-step template commands
+5. Multiplayer AI convergence behavior
+
+### 3) Performance Validation
+
+Use this template:
+
+- `/Users/youss/Development/gauntlet/collab-board/docs/user-stories/phase3/templates/performance-evidence-template.md`
+
+PRD thresholds to verify:
+
+1. Cursor sync latency <50ms average
+2. Object sync latency <100ms average
+3. 60 FPS during active manipulation
+4. 500+ objects without major degradation
+5. 5+ concurrent users without major degradation
+
+### 4) WebSocket Smoke Checks (Production)
+
+1. Verify socket health endpoint:
+
+```bash
+curl -i https://collab-board-0948.onrender.com/health
+```
+
+2. Verify frontend points to intended socket URL:
+
+```bash
+cat /Users/youss/Development/gauntlet/collab-board/.env | rg '^VITE_SOCKET_URL='
+```
+
+3. Run two-browser session and confirm:
+
+- presence snapshot received
+- cursor events stream
+- object create/update/delete sync
+- reconnect path recovers after brief network drop
+
+### 5) Final Evidence Pack
+
+Before signoff, ensure these files are populated:
+
+1. `/Users/youss/Development/gauntlet/collab-board/docs/submission/README.md`
+2. `/Users/youss/Development/gauntlet/collab-board/docs/submission/ai-development-log.md`
+3. `/Users/youss/Development/gauntlet/collab-board/docs/submission/ai-cost-analysis.md`
+4. `/Users/youss/Development/gauntlet/collab-board/docs/submission/demo-video-notes.md`
+5. `/Users/youss/Development/gauntlet/collab-board/docs/submission/social-post-draft.md`

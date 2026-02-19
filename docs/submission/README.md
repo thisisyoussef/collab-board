@@ -1,0 +1,31 @@
+# Submission Artifacts (Phase III)
+
+This folder tracks the final submission package required by the PRD.
+
+## Artifact Index
+
+| Deliverable | Required by PRD | Path | Status | Notes |
+|---|---|---|---|---|
+| GitHub repository + setup + architecture + deployed link | Yes | `/Users/youss/Development/gauntlet/collab-board/README.md` | In Progress | Keep live URLs and setup steps current. |
+| Demo video (3-5 min) | Yes | `/Users/youss/Development/gauntlet/collab-board/docs/submission/demo-video-notes.md` | Drafted | Add final hosted video URL before submission. |
+| Pre-Search document | Yes | `/Users/youss/Development/gauntlet/collab-board/docs/pre-search.md` | Complete | Verify final checklist coverage. |
+| AI Development Log (1 page) | Yes | `/Users/youss/Development/gauntlet/collab-board/docs/submission/ai-development-log.md` | Drafted | Fill final numbers and examples. |
+| AI Cost Analysis | Yes | `/Users/youss/Development/gauntlet/collab-board/docs/submission/ai-cost-analysis.md` | Drafted | Replace placeholders with real cost data. |
+| Deployed application (public) | Yes | Frontend: `https://collab-board-iota.vercel.app`  | In Progress | Confirm production alias and auth flow before final. |
+| Deployed realtime backend | Supporting evidence | Socket: `https://collab-board-0948.onrender.com` | In Progress | Confirm healthy websocket handshake in final validation. |
+| Social post (X or LinkedIn) | Yes | `/Users/youss/Development/gauntlet/collab-board/docs/submission/social-post-draft.md` | Drafted | Include final screenshots/video clips and @GauntletAI tag. |
+
+## Final Pre-Submit Checklist
+
+1. Confirm Phase II + Phase III checkpoints are marked complete.
+2. Confirm public frontend URL, socket URL, and auth flow are working.
+3. Record final video URL in this file.
+4. Replace all `TODO` placeholders in artifact docs.
+5. Run `npm run lint && npm run test && npm run build` and log results in phase checkpoint docs.
+6. Confirm social post includes: project summary, core features, demo proof, and `@GauntletAI`.
+
+## Final Links (Fill Before Submit)
+
+- Final demo video URL: `TODO`
+- Final repository URL: `TODO`
+- Final social post URL: `TODO`
