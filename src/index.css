@@ -711,6 +711,17 @@ button {
   background: #f9fafb;
 }
 
+.chip-btn:disabled {
+  opacity: 0.56;
+  cursor: not-allowed;
+  background: #f3f4f6;
+  color: #9ca3af;
+}
+
+.chip-btn:disabled:hover {
+  background: #f3f4f6;
+}
+
 .figma-board-workspace {
   flex: 1;
   min-height: 0;
