@@ -1,11 +1,112 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import { cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
+import { traceable } from 'langsmith/traceable';
+import { wrapAnthropic } from 'langsmith/wrappers/anthropic';
+import { wrapOpenAI } from 'langsmith/wrappers/openai';
 import { normalizeBoardRole, resolveBoardAccess } from '../../src/lib/access.js';
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const LANGSMITH_PROJECT_FALLBACK = 'collab-board-dev';
+const LANGSMITH_TAGS = ['collab-board', 'api', 'ai-generate'];
+const AI_PROVIDER_MODE_FALLBACK = 'anthropic';
+const AI_OPENAI_PERCENT_FALLBACK = 50;
+const ANTHROPIC_MODEL_FALLBACK = 'claude-sonnet-4-20250514';
+const OPENAI_MODEL_FALLBACK = 'gpt-4.1-mini';
+const LANGSMITH_TRACING_ENABLED =
+  process.env.LANGCHAIN_TRACING_V2 === 'true' &&
+  typeof process.env.LANGCHAIN_API_KEY === 'string' &&
+  process.env.LANGCHAIN_API_KEY.trim().length > 0;
+
+type AIProvider = 'anthropic' | 'openai';
+type AIProviderMode = AIProvider | 'ab';
+
+function getLangSmithProjectName(): string {
+  const value = process.env.LANGCHAIN_PROJECT;
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return value.trim();
+  }
+  return LANGSMITH_PROJECT_FALLBACK;
+}
+
+function getProviderMode(): AIProviderMode {
+  const value = process.env.AI_PROVIDER_MODE;
+  if (value === 'anthropic' || value === 'openai' || value === 'ab') {
+    return value;
+  }
+  return AI_PROVIDER_MODE_FALLBACK;
+}
+
+function getOpenAIPercent(): number {
+  const value = Number.parseInt(process.env.AI_OPENAI_PERCENT ?? '', 10);
+  if (Number.isNaN(value)) {
+    return AI_OPENAI_PERCENT_FALLBACK;
+  }
+  return Math.max(0, Math.min(100, value));
+}
+
+function deterministicPercentBucket(seed: string): number {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i += 1) {
+    hash = (hash << 5) - hash + seed.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash) % 100;
+}
+
+function chooseProviderForRequest(boardId: string, actorUserId: string): AIProvider {
+  const mode = getProviderMode();
+  if (mode === 'anthropic' || mode === 'openai') {
+    return mode;
+  }
+
+  const openAIPercent = getOpenAIPercent();
+  const bucket = deterministicPercentBucket(`${boardId}:${actorUserId}`);
+  return bucket < openAIPercent ? 'openai' : 'anthropic';
+}
+
+function getAnthropicModelName(): string {
+  const value = process.env.ANTHROPIC_MODEL;
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return value.trim();
+  }
+  return ANTHROPIC_MODEL_FALLBACK;
+}
+
+function getOpenAIModelName(): string {
+  const value = process.env.OPENAI_MODEL;
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return value.trim();
+  }
+  return OPENAI_MODEL_FALLBACK;
+}
+
+const baseAnthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const baseOpenAI = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const anthropic = LANGSMITH_TRACING_ENABLED
+  ? wrapAnthropic(baseAnthropic, {
+      name: 'collabboard.anthropic.messages',
+      project_name: getLangSmithProjectName(),
+      tags: LANGSMITH_TAGS,
+      metadata: {
+        route: '/api/ai/generate',
+        provider: 'anthropic',
+      },
+    })
+  : baseAnthropic;
+const openai = LANGSMITH_TRACING_ENABLED
+  ? wrapOpenAI(baseOpenAI, {
+      name: 'collabboard.openai.chat.completions',
+      project_name: getLangSmithProjectName(),
+      tags: LANGSMITH_TAGS,
+      metadata: {
+        route: '/api/ai/generate',
+        provider: 'openai',
+      },
+    })
+  : baseOpenAI;
 
 interface OutgoingToolCall {
   id: string;
@@ -171,6 +272,17 @@ const toolDefinitions: Anthropic.Tool[] = [
   },
 ];
 
+const openAIToolDefinitions: OpenAI.Chat.Completions.ChatCompletionTool[] = toolDefinitions.map(
+  (tool) => ({
+    type: 'function',
+    function: {
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.input_schema as OpenAI.FunctionParameters,
+    },
+  }),
+);
+
 const SYSTEM_PROMPT = `You are an AI whiteboard assistant for a collaborative whiteboard app. You help users create and manipulate objects on an infinite canvas.
 
 You have access to tools to create sticky notes, shapes, frames, connectors, and to move, resize, recolor, and update text on existing objects.
@@ -200,6 +312,21 @@ interface BoardDocData {
     authLinkRole?: string;
     publicLinkRole?: string;
   };
+}
+
+interface PlanGenerationInput {
+  prompt: string;
+  truncatedBoardState: unknown;
+  boardId: string;
+  actorUserId: string;
+  provider: AIProvider;
+}
+
+interface PlanGenerationResult {
+  toolCalls: OutgoingToolCall[];
+  message: string | null;
+  stopReason: string | null;
+  provider: AIProvider;
 }
 
 function getFirebasePrivateKey(): string | null {
@@ -270,6 +397,68 @@ function extractTextMessage(message: Anthropic.Message): string | null {
     .filter((text) => text.trim().length > 0);
 
   return textBlocks.join('\n') || null;
+}
+
+function parseToolArgumentsJson(raw: string | undefined): Record<string, unknown> {
+  if (!raw) {
+    return {};
+  }
+
+  try {
+    return ensureRecord(JSON.parse(raw));
+  } catch {
+    return {};
+  }
+}
+
+function extractOpenAIToolCalls(
+  completion: OpenAI.Chat.Completions.ChatCompletion,
+): OutgoingToolCall[] {
+  const toolCalls = completion.choices?.[0]?.message?.tool_calls ?? [];
+  return toolCalls
+    .filter((toolCall) => toolCall.type === 'function' && typeof toolCall.function.name === 'string')
+    .map((toolCall, index) => ({
+      id: toolCall.id || `openai-tool-${index + 1}`,
+      name: toolCall.function.name,
+      input: parseToolArgumentsJson(toolCall.function.arguments),
+    }));
+}
+
+function extractOpenAITextMessage(
+  completion: OpenAI.Chat.Completions.ChatCompletion,
+): string | null {
+  const content = completion.choices?.[0]?.message?.content;
+  if (typeof content === 'string') {
+    const trimmed = content.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  if (Array.isArray(content)) {
+    const joined = content
+      .map((part) => {
+        if (typeof part === 'string') {
+          return part;
+        }
+
+        if (part && typeof part === 'object' && 'text' in part && typeof part.text === 'string') {
+          return part.text;
+        }
+
+        return '';
+      })
+      .join('\n')
+      .trim();
+
+    return joined.length > 0 ? joined : null;
+  }
+
+  return null;
+}
+
+function extractOpenAIStopReason(
+  completion: OpenAI.Chat.Completions.ChatCompletion,
+): string | null {
+  return completion.choices?.[0]?.finish_reason ?? null;
 }
 
 function isValueMissing(value: unknown): boolean {
@@ -380,6 +569,263 @@ function buildExpansionUserContent(
   ].join('\n');
 }
 
+function getBoardObjectCount(boardState: unknown): number {
+  if (boardState && typeof boardState === 'object' && !Array.isArray(boardState)) {
+    return Object.keys(boardState as Record<string, unknown>).length;
+  }
+  return 0;
+}
+
+async function createAnthropicPlanningMessage(
+  payload: Anthropic.MessageCreateParamsNonStreaming,
+  runName: string,
+  metadata: Record<string, unknown>,
+): Promise<Anthropic.Message> {
+  if (!LANGSMITH_TRACING_ENABLED) {
+    return anthropic.messages.create(payload);
+  }
+
+  return anthropic.messages.create(payload, {
+    langsmithExtra: {
+      name: runName,
+      tags: LANGSMITH_TAGS,
+      metadata,
+    },
+  } as Anthropic.RequestOptions);
+}
+
+async function createOpenAIPlanningMessage(
+  payload: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
+  runName: string,
+  metadata: Record<string, unknown>,
+): Promise<OpenAI.Chat.Completions.ChatCompletion> {
+  if (!LANGSMITH_TRACING_ENABLED) {
+    return openai.chat.completions.create(payload);
+  }
+
+  return openai.chat.completions.create(payload, {
+    langsmithExtra: {
+      name: runName,
+      tags: LANGSMITH_TAGS,
+      metadata,
+    },
+  } as OpenAI.RequestOptions);
+}
+
+async function generatePlanCore({
+  prompt,
+  truncatedBoardState,
+  boardId,
+  actorUserId,
+  provider,
+}: PlanGenerationInput): Promise<PlanGenerationResult> {
+  const commonMetadata = {
+    boardId,
+    actorUserId,
+    promptLength: prompt.length,
+    boardObjectCount: getBoardObjectCount(truncatedBoardState),
+    provider,
+    providerMode: getProviderMode(),
+  };
+
+  if (provider === 'openai') {
+    const initialCompletion = await createOpenAIPlanningMessage(
+      {
+        model: getOpenAIModelName(),
+        max_tokens: 4096,
+        tools: openAIToolDefinitions,
+        tool_choice: 'auto',
+        messages: [
+          {
+            role: 'system',
+            content: SYSTEM_PROMPT,
+          },
+          {
+            role: 'user',
+            content: buildInitialUserContent(prompt, truncatedBoardState),
+          },
+        ],
+      },
+      'ai.generate.initial-plan.openai',
+      commonMetadata,
+    );
+
+    let finalCompletion = initialCompletion;
+    let outgoingToolCalls = extractOpenAIToolCalls(initialCompletion);
+    let assistantText = extractOpenAITextMessage(initialCompletion);
+    let validationIssues = validateToolCalls(outgoingToolCalls);
+
+    const expansionReasons: string[] = [];
+    if (shouldRequestPlanExpansion(prompt, outgoingToolCalls)) {
+      expansionReasons.push('The tool plan is likely under-scoped for a complex request.');
+    }
+    if (validationIssues.length > 0) {
+      expansionReasons.push(
+        `Tool calls have validation issues: ${validationIssues
+          .map((issue) => `${issue.toolName} (${issue.reason})`)
+          .join('; ')}`,
+      );
+    }
+
+    if (MAX_PLANNING_ATTEMPTS > 1 && expansionReasons.length > 0) {
+      const expandedCompletion = await createOpenAIPlanningMessage(
+        {
+          model: getOpenAIModelName(),
+          max_tokens: 4096,
+          tools: openAIToolDefinitions,
+          tool_choice: 'auto',
+          messages: [
+            {
+              role: 'system',
+              content: SYSTEM_PROMPT,
+            },
+            {
+              role: 'user',
+              content: buildExpansionUserContent(
+                prompt,
+                outgoingToolCalls,
+                assistantText,
+                expansionReasons,
+              ),
+            },
+          ],
+        },
+        'ai.generate.expansion-plan.openai',
+        {
+          ...commonMetadata,
+          previousToolCallCount: outgoingToolCalls.length,
+          validationIssueCount: validationIssues.length,
+        },
+      );
+      const expandedToolCalls = extractOpenAIToolCalls(expandedCompletion);
+      const expandedIssues = validateToolCalls(expandedToolCalls);
+      const initialScore = getPlanQualityScore(outgoingToolCalls, validationIssues);
+      const expandedScore = getPlanQualityScore(expandedToolCalls, expandedIssues);
+
+      if (expandedScore < initialScore) {
+        finalCompletion = expandedCompletion;
+        outgoingToolCalls = expandedToolCalls;
+        assistantText = extractOpenAITextMessage(expandedCompletion);
+        validationIssues = expandedIssues;
+      }
+    }
+
+    return {
+      toolCalls: outgoingToolCalls,
+      message: assistantText,
+      stopReason: extractOpenAIStopReason(finalCompletion),
+      provider,
+    };
+  }
+
+  const initialMessage = await createAnthropicPlanningMessage(
+    {
+      model: getAnthropicModelName(),
+      max_tokens: 4096,
+      tools: toolDefinitions,
+      system: SYSTEM_PROMPT,
+      messages: [
+        {
+          role: 'user',
+          content: buildInitialUserContent(prompt, truncatedBoardState),
+        },
+      ],
+    },
+    'ai.generate.initial-plan.anthropic',
+    commonMetadata,
+  );
+
+  let finalMessage = initialMessage;
+  let outgoingToolCalls = extractToolCalls(initialMessage);
+  let assistantText = extractTextMessage(initialMessage);
+  let validationIssues = validateToolCalls(outgoingToolCalls);
+
+  const expansionReasons: string[] = [];
+  if (shouldRequestPlanExpansion(prompt, outgoingToolCalls)) {
+    expansionReasons.push('The tool plan is likely under-scoped for a complex request.');
+  }
+  if (validationIssues.length > 0) {
+    expansionReasons.push(
+      `Tool calls have validation issues: ${validationIssues
+        .map((issue) => `${issue.toolName} (${issue.reason})`)
+        .join('; ')}`,
+    );
+  }
+
+  if (MAX_PLANNING_ATTEMPTS > 1 && expansionReasons.length > 0) {
+    const expandedMessage = await createAnthropicPlanningMessage(
+      {
+        model: getAnthropicModelName(),
+        max_tokens: 4096,
+        tools: toolDefinitions,
+        system: SYSTEM_PROMPT,
+        messages: [
+          {
+            role: 'user',
+            content: buildExpansionUserContent(
+              prompt,
+              outgoingToolCalls,
+              assistantText,
+              expansionReasons,
+            ),
+          },
+        ],
+      },
+      'ai.generate.expansion-plan.anthropic',
+      {
+        ...commonMetadata,
+        previousToolCallCount: outgoingToolCalls.length,
+        validationIssueCount: validationIssues.length,
+      },
+    );
+    const expandedToolCalls = extractToolCalls(expandedMessage);
+    const expandedIssues = validateToolCalls(expandedToolCalls);
+    const initialScore = getPlanQualityScore(outgoingToolCalls, validationIssues);
+    const expandedScore = getPlanQualityScore(expandedToolCalls, expandedIssues);
+
+    if (expandedScore < initialScore) {
+      finalMessage = expandedMessage;
+      outgoingToolCalls = expandedToolCalls;
+      assistantText = extractTextMessage(expandedMessage);
+      validationIssues = expandedIssues;
+    }
+  }
+
+  return {
+    toolCalls: outgoingToolCalls,
+    message: assistantText,
+    stopReason: finalMessage.stop_reason,
+    provider,
+  };
+}
+
+const generatePlan = LANGSMITH_TRACING_ENABLED
+  ? traceable(generatePlanCore, {
+      name: 'ai.generate.pipeline',
+      project_name: getLangSmithProjectName(),
+      run_type: 'chain',
+      tags: LANGSMITH_TAGS,
+      metadata: {
+        route: '/api/ai/generate',
+      },
+      processInputs: (inputs) => ({
+        boardId: typeof inputs.boardId === 'string' ? inputs.boardId : '',
+        actorUserId: typeof inputs.actorUserId === 'string' ? inputs.actorUserId : '',
+        provider: typeof inputs.provider === 'string' ? inputs.provider : '',
+        promptLength: typeof inputs.prompt === 'string' ? inputs.prompt.length : 0,
+        promptPreview:
+          typeof inputs.prompt === 'string' ? inputs.prompt.slice(0, Math.min(160, inputs.prompt.length)) : '',
+        boardObjectCount: getBoardObjectCount(inputs.truncatedBoardState),
+      }),
+      processOutputs: (outputs) => ({
+        toolCallCount: Array.isArray(outputs.toolCalls) ? outputs.toolCalls.length : 0,
+        stopReason: outputs.stopReason,
+        provider: outputs.provider,
+        assistantMessageLength: typeof outputs.message === 'string' ? outputs.message.length : 0,
+      }),
+    })
+  : generatePlanCore;
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -392,10 +838,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return res.status(500).json({ error: 'AI service not configured' });
   }
 
   const { prompt, boardState, boardId } = req.body ?? {};
@@ -473,72 +915,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
+  const provider = chooseProviderForRequest(trimmedBoardId, actorUserId);
+  if (provider === 'anthropic' && !process.env.ANTHROPIC_API_KEY) {
+    return res.status(500).json({ error: 'AI service not configured' });
+  }
+  if (provider === 'openai' && !process.env.OPENAI_API_KEY) {
+    return res.status(500).json({ error: 'AI service not configured for OpenAI provider' });
+  }
+
   try {
-    const initialMessage = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 4096,
-      tools: toolDefinitions,
-      system: SYSTEM_PROMPT,
-      messages: [
-        {
-          role: 'user',
-          content: buildInitialUserContent(prompt, truncatedBoardState),
-        },
-      ],
+    const result = await generatePlan({
+      prompt,
+      truncatedBoardState,
+      boardId: trimmedBoardId,
+      actorUserId,
+      provider,
     });
-
-    let finalMessage = initialMessage;
-    let outgoingToolCalls = extractToolCalls(initialMessage);
-    let assistantText = extractTextMessage(initialMessage);
-    let validationIssues = validateToolCalls(outgoingToolCalls);
-
-    const expansionReasons: string[] = [];
-    if (shouldRequestPlanExpansion(prompt, outgoingToolCalls)) {
-      expansionReasons.push('The tool plan is likely under-scoped for a complex request.');
-    }
-    if (validationIssues.length > 0) {
-      expansionReasons.push(
-        `Tool calls have validation issues: ${validationIssues
-          .map((issue) => `${issue.toolName} (${issue.reason})`)
-          .join('; ')}`,
-      );
-    }
-
-    if (MAX_PLANNING_ATTEMPTS > 1 && expansionReasons.length > 0) {
-      const expandedMessage = await anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 4096,
-        tools: toolDefinitions,
-        system: SYSTEM_PROMPT,
-        messages: [
-          {
-            role: 'user',
-            content: buildExpansionUserContent(
-              prompt,
-              outgoingToolCalls,
-              assistantText,
-              expansionReasons,
-            ),
-          },
-        ],
-      });
-      const expandedToolCalls = extractToolCalls(expandedMessage);
-      const expandedIssues = validateToolCalls(expandedToolCalls);
-      const initialScore = getPlanQualityScore(outgoingToolCalls, validationIssues);
-      const expandedScore = getPlanQualityScore(expandedToolCalls, expandedIssues);
-
-      if (expandedScore < initialScore) {
-        finalMessage = expandedMessage;
-        outgoingToolCalls = expandedToolCalls;
-        assistantText = extractTextMessage(expandedMessage);
-        validationIssues = expandedIssues;
-      }
-    }
+    res.setHeader('X-AI-Provider', result.provider);
 
     return res.status(200).json({
-      toolCalls: outgoingToolCalls,
-      message: assistantText,
-      stopReason: finalMessage.stop_reason,
+      toolCalls: result.toolCalls,
+      message: result.message,
+      stopReason: result.stopReason,
     });
   } catch (err) {
     console.error('[ai/generate] Error:', err);

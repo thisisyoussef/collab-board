@@ -7,6 +7,26 @@ vi.mock('@anthropic-ai/sdk', () => ({
     messages: { create: mockCreate },
   })),
 }));
+const mockOpenAIChatCreate = vi.fn();
+vi.mock('openai', () => ({
+  default: vi.fn().mockImplementation(() => ({
+    chat: {
+      completions: { create: mockOpenAIChatCreate },
+    },
+  })),
+}));
+const mockWrapAnthropic = vi.fn((client) => client);
+const mockTraceable = vi.fn((fn) => fn);
+vi.mock('langsmith/wrappers/anthropic', () => ({
+  wrapAnthropic: mockWrapAnthropic,
+}));
+const mockWrapOpenAI = vi.fn((client) => client);
+vi.mock('langsmith/wrappers/openai', () => ({
+  wrapOpenAI: mockWrapOpenAI,
+}));
+vi.mock('langsmith/traceable', () => ({
+  traceable: mockTraceable,
+}));
 
 const mockVerifyIdToken = vi.fn();
 const mockGetApps = vi.fn();
@@ -55,6 +75,14 @@ describe('AI Generate API Endpoint', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.ANTHROPIC_API_KEY = 'test-key';
+    process.env.OPENAI_API_KEY = 'test-openai-key';
+    delete process.env.LANGCHAIN_TRACING_V2;
+    delete process.env.LANGCHAIN_API_KEY;
+    delete process.env.LANGCHAIN_PROJECT;
+    delete process.env.AI_PROVIDER_MODE;
+    delete process.env.AI_OPENAI_PERCENT;
+    delete process.env.ANTHROPIC_MODEL;
+    delete process.env.OPENAI_MODEL;
     mockGetApps.mockReturnValue([{}]);
     mockVerifyIdToken.mockResolvedValue({ uid: 'user-123' });
     mockBoardGet.mockResolvedValue({
@@ -461,6 +489,75 @@ describe('AI Generate API Endpoint', () => {
     });
   });
 
+  describe('Provider Routing', () => {
+    it('uses OpenAI when AI_PROVIDER_MODE is openai', async () => {
+      vi.resetModules();
+      process.env.ANTHROPIC_API_KEY = 'test-key';
+      process.env.OPENAI_API_KEY = 'test-openai-key';
+      process.env.AI_PROVIDER_MODE = 'openai';
+
+      mockOpenAIChatCreate.mockResolvedValueOnce({
+        choices: [
+          {
+            finish_reason: 'tool_calls',
+            message: {
+              content: null,
+              tool_calls: [
+                {
+                  id: 'openai-1',
+                  type: 'function',
+                  function: {
+                    name: 'createStickyNote',
+                    arguments: JSON.stringify({ text: 'From OpenAI', x: 40, y: 50 }),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      });
+
+      const handler = (await import('../../api/ai/generate')).default;
+      const req = createMockReq();
+      const res = createMockRes();
+
+      await handler(req as never, res as never);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(mockOpenAIChatCreate).toHaveBeenCalledTimes(1);
+      expect(mockCreate).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledWith({
+        toolCalls: [
+          {
+            id: 'openai-1',
+            name: 'createStickyNote',
+            input: { text: 'From OpenAI', x: 40, y: 50 },
+          },
+        ],
+        message: null,
+        stopReason: 'tool_calls',
+      });
+    });
+
+    it('returns 500 when openai mode is enabled but OPENAI_API_KEY is missing', async () => {
+      vi.resetModules();
+      process.env.ANTHROPIC_API_KEY = 'test-key';
+      delete process.env.OPENAI_API_KEY;
+      process.env.AI_PROVIDER_MODE = 'openai';
+
+      const handler = (await import('../../api/ai/generate')).default;
+      const req = createMockReq();
+      const res = createMockRes();
+
+      await handler(req as never, res as never);
+
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(res.json).toHaveBeenCalledWith({
+        error: 'AI service not configured for OpenAI provider',
+      });
+    });
+  });
+
   describe('Error Handling', () => {
     it('returns 429 for rate limit errors', async () => {
       const rateLimitError = new Error('Rate limited');
@@ -549,6 +646,35 @@ describe('AI Generate API Endpoint', () => {
       expect(toolNames).toContain('changeColor');
       expect(toolNames).toContain('deleteObject');
       expect(toolNames).toContain('getBoardState');
+    });
+  });
+
+  describe('LangSmith Tracing Wiring', () => {
+    it('wraps anthropic and traceable pipeline when tracing env is enabled', async () => {
+      vi.resetModules();
+      mockWrapAnthropic.mockClear();
+      mockWrapOpenAI.mockClear();
+      mockTraceable.mockClear();
+
+      process.env.ANTHROPIC_API_KEY = 'test-key';
+      process.env.LANGCHAIN_TRACING_V2 = 'true';
+      process.env.LANGCHAIN_API_KEY = 'ls-test-key';
+      process.env.LANGCHAIN_PROJECT = 'collab-board-test';
+
+      mockCreate.mockResolvedValue({
+        content: [],
+        stop_reason: 'end_turn',
+      });
+
+      const handler = (await import('../../api/ai/generate')).default;
+      const req = createMockReq();
+      const res = createMockRes();
+
+      await handler(req as never, res as never);
+
+      expect(mockWrapAnthropic).toHaveBeenCalledTimes(1);
+      expect(mockWrapOpenAI).toHaveBeenCalledTimes(1);
+      expect(mockTraceable).toHaveBeenCalled();
     });
   });
 });

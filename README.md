@@ -69,6 +69,28 @@ npx -y firebase-tools@latest deploy --only firestore:rules,firestore:indexes --p
 
 See `.env.example` for required variables.
 
+### Optional: LangSmith Tracing (AI Observability)
+
+To trace `/api/ai/generate` requests and Anthropic planning calls in LangSmith:
+
+1. Set `LANGCHAIN_TRACING_V2=true`
+2. Set `LANGCHAIN_API_KEY=<your-langsmith-api-key>`
+3. Set `LANGCHAIN_PROJECT=collab-board-dev` (or your environment-specific project name)
+
+Tracing is server-side only and should be configured in Vercel environment variables for production.
+
+### Optional: Multi-Provider AI Routing (Anthropic + OpenAI)
+
+You can run the AI endpoint with Anthropic only, OpenAI only, or deterministic A/B routing:
+
+1. Set `AI_PROVIDER_MODE=anthropic` (default), `openai`, or `ab`.
+2. If using OpenAI or A/B, set `OPENAI_API_KEY` and optionally `OPENAI_MODEL`.
+3. If using A/B, set `AI_OPENAI_PERCENT` (0-100) to control OpenAI traffic split.
+
+Recommended for observability:
+- Keep LangSmith tracing enabled.
+- Filter traces by metadata tag `provider` to compare quality, latency, and tool-call reliability between providers.
+
 ## Architecture
 
 ```
