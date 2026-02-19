@@ -252,7 +252,7 @@ const importMetaEnv =
 
 const isDev = importMetaEnv?.DEV === true;
 const enableLogsFromEnv =
-  String(importMetaEnv?.VITE_ENABLE_LOGS || '').toLowerCase() === 'true';
+  String(importMetaEnv?.VITE_ENABLE_LOGS || '').trim().toLowerCase() === 'true';
 
 export const logger = createLogger({
   maxEntries: 1000,

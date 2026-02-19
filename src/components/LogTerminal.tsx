@@ -63,7 +63,7 @@ const importMetaEnv =
     ? (import.meta.env as Record<string, unknown>)
     : undefined;
 
-const enableLogsFromEnv = String(importMetaEnv?.VITE_ENABLE_LOGS || '').toLowerCase() === 'true';
+const enableLogsFromEnv = String(importMetaEnv?.VITE_ENABLE_LOGS || '').trim().toLowerCase() === 'true';
 const shouldShowLogs = importMetaEnv?.DEV === true || enableLogsFromEnv;
 
 // --------------------------------------------------------------------------

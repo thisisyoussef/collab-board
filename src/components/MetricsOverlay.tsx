@@ -15,7 +15,7 @@ interface MetricsOverlayProps {
 }
 
 const enableMetricsFromEnv =
-  String(import.meta.env.VITE_ENABLE_METRICS || '').toLowerCase() === 'true';
+  String(import.meta.env.VITE_ENABLE_METRICS || '').trim().toLowerCase() === 'true';
 const shouldShowMetrics = import.meta.env.DEV || enableMetricsFromEnv;
 
 export function MetricsOverlay({
