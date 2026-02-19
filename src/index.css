@@ -726,9 +726,91 @@ button {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 64px 1fr 260px;
+  grid-template-columns: minmax(0, 1fr) 300px;
   gap: 0.8rem;
   padding: 0.8rem;
+  padding-bottom: 5.4rem;
+  position: relative;
+}
+
+.board-tool-dock {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 9500;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.15);
+  padding: 0.45rem 0.5rem;
+  backdrop-filter: blur(8px);
+}
+
+.dock-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: #374151;
+  cursor: pointer;
+  font-size: 0.92rem;
+}
+
+.dock-btn.active,
+.dock-btn:hover {
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
+
+.dock-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.board-zoom-chip {
+  position: fixed;
+  left: 16px;
+  bottom: 20px;
+  z-index: 9500;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.14);
+  backdrop-filter: blur(8px);
+}
+
+.zoom-chip-btn,
+.zoom-chip-value {
+  height: 34px;
+  border: 0;
+  border-right: 1px solid var(--border);
+  background: transparent;
+  color: #334155;
+  font-size: 0.82rem;
+  cursor: pointer;
+  padding: 0 0.65rem;
+}
+
+.zoom-chip-value {
+  min-width: 64px;
+  font-weight: 600;
+}
+
+.zoom-chip-btn:last-child {
+  border-right: 0;
+}
+
+.zoom-chip-btn:hover,
+.zoom-chip-value:hover {
+  background: #f8fafc;
 }
 
 .reconnect-banner {
@@ -1296,7 +1378,7 @@ button {
   }
 
   .figma-board-workspace {
-    grid-template-columns: 64px 1fr;
+    grid-template-columns: 1fr;
   }
 
   .figma-right-panel {

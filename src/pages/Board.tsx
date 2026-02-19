@@ -11,6 +11,9 @@ import {
 } from 'react-konva';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AICommandCenter } from '../components/AICommandCenter';
+import { BoardInspectorPanel } from '../components/BoardInspectorPanel';
+import { BoardToolDock, type BoardTool } from '../components/BoardToolDock';
+import { BoardZoomChip } from '../components/BoardZoomChip';
 import { MetricsOverlay } from '../components/MetricsOverlay';
 import { PresenceAvatars } from '../components/PresenceAvatars';
 import { ReconnectBanner } from '../components/ReconnectBanner';
@@ -87,7 +90,7 @@ import type {
   ObjectUpdatePayload,
 } from '../types/realtime';
 
-type ActiveTool = 'select' | 'sticky' | 'rect' | 'circle' | 'line' | 'text' | 'frame' | 'connector';
+type ActiveTool = BoardTool;
 
 interface EditingTextState {
   id: string;
@@ -4026,6 +4029,54 @@ export function Board() {
     scheduleViewportSave();
   }
 
+  function applyZoomFromCenter(nextScale: number) {
+    const stage = stageRef.current;
+    if (!stage) {
+      return;
+    }
+
+    const oldScale = stage.scaleX() || 1;
+    const clampedScale = Math.max(0.1, Math.min(5, nextScale));
+    const centerScreen = {
+      x: stage.width() / 2,
+      y: stage.height() / 2,
+    };
+    const centerWorld = {
+      x: (centerScreen.x - stage.x()) / oldScale,
+      y: (centerScreen.y - stage.y()) / oldScale,
+    };
+
+    stage.scale({ x: clampedScale, y: clampedScale });
+    stage.position({
+      x: centerScreen.x - centerWorld.x * clampedScale,
+      y: centerScreen.y - centerWorld.y * clampedScale,
+    });
+    stage.batchDraw();
+    setZoomPercent(Math.round(clampedScale * 100));
+    scheduleViewportSave();
+    setBoardRevision((value) => value + 1);
+  }
+
+  const handleZoomIn = () => {
+    const stage = stageRef.current;
+    if (!stage) {
+      return;
+    }
+    applyZoomFromCenter((stage.scaleX() || 1) * 1.08);
+  };
+
+  const handleZoomOut = () => {
+    const stage = stageRef.current;
+    if (!stage) {
+      return;
+    }
+    applyZoomFromCenter((stage.scaleX() || 1) / 1.08);
+  };
+
+  const handleZoomReset = () => {
+    applyZoomFromCenter(1);
+  };
+
   const handleSaveTitle = async () => {
     if (!boardId) {
       return;
@@ -4136,6 +4187,97 @@ export function Board() {
     if (saved) {
       setCanvasNotice('Board saved to your workspace.');
     }
+  };
+
+  const updateObjectProperties = (objectId: string, patch: Partial<BoardObject>) => {
+    if (!canEditBoard) {
+      return;
+    }
+
+    const current = objectsRef.current.get(objectId);
+    if (!current) {
+      return;
+    }
+
+    if (current.type === 'connector') {
+      updateConnectorProperties(objectId, patch);
+      return;
+    }
+
+    const beforeState = captureManualHistoryBaseline();
+    const nextCandidate = sanitizeBoardObjectForFirestore({
+      ...current,
+      ...patch,
+      updatedAt: new Date().toISOString(),
+    });
+    const nextObject =
+      normalizeLoadedObject(nextCandidate, current.createdBy) ||
+      ({
+        ...current,
+        ...patch,
+        updatedAt: new Date().toISOString(),
+      } as BoardObject);
+
+    objectsRef.current.set(objectId, nextObject);
+
+    const node = stageRef.current?.findOne(`#${objectId}`);
+    if (node) {
+      if (nextObject.type === 'sticky' && node instanceof Konva.Group) {
+        const body = node.findOne('.sticky-body') as Konva.Rect | null;
+        const label = node.findOne('.sticky-label') as Konva.Text | null;
+        body?.setAttrs({
+          fill: nextObject.color,
+        });
+        label?.setAttrs({
+          fill: getStickyRenderColor(nextObject.text),
+          text: getStickyRenderText(nextObject.text),
+          fontSize: nextObject.fontSize || 14,
+        });
+      } else if (
+        (nextObject.type === 'rect' || nextObject.type === 'circle') &&
+        node instanceof Konva.Rect
+      ) {
+        node.setAttrs({
+          fill: nextObject.color,
+          stroke: nextObject.stroke || RECT_DEFAULT_STROKE,
+          strokeWidth: nextObject.strokeWidth || RECT_DEFAULT_STROKE_WIDTH,
+          cornerRadius:
+            nextObject.type === 'circle'
+              ? Math.min(nextObject.width, nextObject.height) / 2
+              : 0,
+        });
+      } else if (nextObject.type === 'line' && (node instanceof Konva.Line || node instanceof Konva.Arrow)) {
+        node.setAttrs({
+          stroke: nextObject.color,
+          fill: nextObject.color,
+          strokeWidth: nextObject.strokeWidth || 2,
+        });
+      } else if (nextObject.type === 'text' && node instanceof Konva.Text) {
+        node.setAttrs({
+          fill: nextObject.color,
+          fontSize: nextObject.fontSize || TEXT_DEFAULT_FONT_SIZE,
+          text: nextObject.text || 'Text',
+        });
+      } else if (nextObject.type === 'frame' && node instanceof Konva.Group) {
+        const body = node.findOne('.frame-body') as Konva.Rect | null;
+        const title = node.findOne('.frame-title') as Konva.Text | null;
+        body?.setAttrs({
+          fill: nextObject.color,
+          stroke: nextObject.stroke || FRAME_DEFAULT_STROKE,
+          strokeWidth: nextObject.strokeWidth || 2,
+        });
+        title?.setAttrs({
+          text: nextObject.title || 'Frame',
+        });
+      }
+    }
+
+    objectsLayerRef.current?.batchDraw();
+    setBoardRevision((value) => value + 1);
+    aiExecutor.invalidateUndo();
+    emitObjectUpdate(nextObject, true);
+    scheduleBoardSave();
+    commitBoardHistory('manual', beforeState);
   };
 
   const updateConnectorProperties = (connectorId: string, patch: Partial<BoardObject>) => {
@@ -4265,7 +4407,7 @@ export function Board() {
     canvasNotice ||
     titleError ||
     (canEditBoard
-      ? 'Select a tool from the left rail to start adding objects.'
+      ? 'Select a tool from the bottom dock to start adding objects.'
       : 'Read-only mode. You can pan, zoom, and inspect this board.');
   const gridCellSize = Math.max(8, Math.min(72, 24 * (zoomPercent / 100)));
   const connectorFromHandle = getSelectedConnectorHandle('from');
@@ -4422,10 +4564,6 @@ export function Board() {
           >
             Redo
           </button>
-          <button className="chip-btn">Move</button>
-          <button className="chip-btn">Frame</button>
-          <button className="chip-btn">Text</button>
-          <button className="chip-btn">Shape</button>
         </div>
 
         <div className="topbar-cluster right">
@@ -4452,72 +4590,6 @@ export function Board() {
       </header>
 
       <section className="figma-board-workspace">
-        <aside className="figma-left-rail">
-          <button
-            className={`rail-btn ${activeTool === 'select' ? 'active' : ''}`}
-            aria-label="Select tool"
-            onClick={() => setActiveTool('select')}
-          >
-            ↖
-          </button>
-          <button
-            className={`rail-btn ${activeTool === 'sticky' ? 'active' : ''}`}
-            aria-label="Sticky note tool"
-            disabled={!canEditBoard}
-            onClick={() => setActiveTool('sticky')}
-          >
-            □
-          </button>
-          <button
-            className={`rail-btn ${activeTool === 'rect' ? 'active' : ''}`}
-            aria-label="Rectangle tool"
-            disabled={!canEditBoard}
-            onClick={() => setActiveTool('rect')}
-          >
-            ○
-          </button>
-          <button
-            className={`rail-btn ${activeTool === 'circle' ? 'active' : ''}`}
-            aria-label="Circle tool"
-            disabled={!canEditBoard}
-            onClick={() => setActiveTool('circle')}
-          >
-            ◯
-          </button>
-          <button
-            className={`rail-btn ${activeTool === 'line' ? 'active' : ''}`}
-            aria-label="Line tool"
-            disabled={!canEditBoard}
-            onClick={() => setActiveTool('line')}
-          >
-            ／
-          </button>
-          <button
-            className={`rail-btn ${activeTool === 'text' ? 'active' : ''}`}
-            aria-label="Text tool"
-            disabled={!canEditBoard}
-            onClick={() => setActiveTool('text')}
-          >
-            T
-          </button>
-          <button
-            className={`rail-btn ${activeTool === 'frame' ? 'active' : ''}`}
-            aria-label="Frame tool"
-            disabled={!canEditBoard}
-            onClick={() => setActiveTool('frame')}
-          >
-            ⌗
-          </button>
-          <button
-            className={`rail-btn ${activeTool === 'connector' ? 'active' : ''}`}
-            aria-label="Connector tool"
-            disabled={!canEditBoard}
-            onClick={() => setActiveTool('connector')}
-          >
-            ↔
-          </button>
-        </aside>
-
         <section className="figma-canvas-shell">
           <div className="canvas-top-info">
             <span>User: {displayName}</span>
@@ -4809,209 +4881,29 @@ export function Board() {
             }}
             onClear={aiCommandCenter.clearResult}
           />
-
-          <section className="properties-panel">
-            <h3>Properties</h3>
-            {selectedIds.length === 0 ? (
-              <>
-                <div className="property-row">
-                  <span>Selection</span>
-                  <strong>None</strong>
-                </div>
-                <div className="property-row">
-                  <span>Zoom</span>
-                  <strong>{zoomPercent}%</strong>
-                </div>
-                <div className="property-row">
-                  <span>Grid</span>
-                  <strong>On</strong>
-                </div>
-              </>
-            ) : selectedIds.length > 1 ? (
-              <>
-                <div className="property-row">
-                  <span>Selection</span>
-                  <strong>{selectedIds.length} objects</strong>
-                </div>
-                <button
-                  className="danger-btn property-delete-btn"
-                  disabled={!canEditBoard}
-                  onClick={() => removeObjects(selectedIds, true)}
-                >
-                  Delete Selected
-                </button>
-              </>
-            ) : selectedObject ? (
-              <>
-                <div className="property-row">
-                  <span>Selection</span>
-                  <strong>
-                    {selectedObject.type === 'sticky'
-                      ? 'Sticky Note'
-                      : selectedObject.type === 'rect'
-                        ? 'Rectangle'
-                        : selectedObject.type === 'circle'
-                          ? 'Circle'
-                          : selectedObject.type === 'line'
-                            ? 'Line'
-                            : selectedObject.type === 'text'
-                              ? 'Text'
-                              : selectedObject.type === 'frame'
-                                ? 'Frame'
-                                : 'Connector'}
-                  </strong>
-                </div>
-                <div className="property-row">
-                  <span>X</span>
-                  <strong>{Math.round(selectedObject.x)}</strong>
-                </div>
-                <div className="property-row">
-                  <span>Y</span>
-                  <strong>{Math.round(selectedObject.y)}</strong>
-                </div>
-                <div className="property-row">
-                  <span>W</span>
-                  <strong>{Math.round(selectedObject.width)}</strong>
-                </div>
-                <div className="property-row">
-                  <span>H</span>
-                  <strong>{Math.round(selectedObject.height)}</strong>
-                </div>
-                <div className="property-row">
-                  <span>Rotation</span>
-                  <strong>{Math.round(selectedObject.rotation)}°</strong>
-                </div>
-                <div className="property-row">
-                  <span>Color</span>
-                  <strong className="property-color-value">
-                    <span className="property-color-dot" style={{ background: selectedObject.color }} />
-                    {selectedObject.color}
-                  </strong>
-                </div>
-                {selectedObject.type === 'connector' ? (
-                  <>
-                    <label className="property-row" htmlFor="connector-type">
-                      <span>Path</span>
-                      <select
-                        id="connector-type"
-                        value={getConnectorPathType(selectedObject)}
-                        disabled={!canEditBoard}
-                        onChange={(event) =>
-                          updateConnectorProperties(selectedObject.id, {
-                            connectorType: event.target.value as ConnectorPathType,
-                          })
-                        }
-                      >
-                        <option value="straight">Straight</option>
-                        <option value="bent">Bent</option>
-                        <option value="curved">Curved</option>
-                      </select>
-                    </label>
-                    <label className="property-row" htmlFor="connector-stroke-style">
-                      <span>Stroke</span>
-                      <select
-                        id="connector-stroke-style"
-                        value={getConnectorStrokeStyle(selectedObject)}
-                        disabled={!canEditBoard}
-                        onChange={(event) =>
-                          updateConnectorProperties(selectedObject.id, {
-                            strokeStyle: event.target.value as 'solid' | 'dashed',
-                            style: event.target.value === 'dashed' ? 'dashed' : selectedObject.style,
-                          })
-                        }
-                      >
-                        <option value="solid">Solid</option>
-                        <option value="dashed">Dashed</option>
-                      </select>
-                    </label>
-                    <label className="property-row" htmlFor="connector-start-arrow">
-                      <span>Start Arrow</span>
-                      <select
-                        id="connector-start-arrow"
-                        value={getConnectorArrowHead(selectedObject, 'start')}
-                        disabled={!canEditBoard}
-                        onChange={(event) =>
-                          updateConnectorProperties(selectedObject.id, {
-                            startArrow: event.target.value as BoardObject['startArrow'],
-                          })
-                        }
-                      >
-                        <option value="none">None</option>
-                        <option value="solid">Solid</option>
-                        <option value="line">Line</option>
-                        <option value="triangle">Triangle</option>
-                        <option value="diamond">Diamond</option>
-                      </select>
-                    </label>
-                    <label className="property-row" htmlFor="connector-end-arrow">
-                      <span>End Arrow</span>
-                      <select
-                        id="connector-end-arrow"
-                        value={getConnectorArrowHead(selectedObject, 'end')}
-                        disabled={!canEditBoard}
-                        onChange={(event) =>
-                          updateConnectorProperties(selectedObject.id, {
-                            endArrow: event.target.value as BoardObject['endArrow'],
-                          })
-                        }
-                      >
-                        <option value="none">None</option>
-                        <option value="solid">Solid</option>
-                        <option value="line">Line</option>
-                        <option value="triangle">Triangle</option>
-                        <option value="diamond">Diamond</option>
-                      </select>
-                    </label>
-                    <label className="property-row" htmlFor="connector-label">
-                      <span>Label</span>
-                      <input
-                        id="connector-label"
-                        type="text"
-                        value={selectedObject.label || ''}
-                        placeholder="Connector label"
-                        disabled={!canEditBoard}
-                        onChange={(event) =>
-                          updateConnectorProperties(selectedObject.id, {
-                            label: event.target.value,
-                          })
-                        }
-                      />
-                    </label>
-                    <label className="property-row" htmlFor="connector-label-position">
-                      <span>Label Pos</span>
-                      <input
-                        id="connector-label-position"
-                        type="range"
-                        min={0}
-                        max={100}
-                        step={1}
-                        value={
-                          Number.isFinite(selectedObject.labelPosition)
-                            ? Number(selectedObject.labelPosition)
-                            : CONNECTOR_DEFAULT_LABEL_POSITION
-                        }
-                        disabled={!canEditBoard}
-                        onChange={(event) =>
-                          updateConnectorProperties(selectedObject.id, {
-                            labelPosition: Number(event.target.value),
-                          })
-                        }
-                      />
-                    </label>
-                  </>
-                ) : null}
-                <button
-                  className="danger-btn property-delete-btn"
-                  disabled={!canEditBoard}
-                  onClick={() => removeObjects([selectedObject.id], true)}
-                >
-                  Delete
-                </button>
-              </>
-            ) : null}
-          </section>
+          <BoardInspectorPanel
+            selectedIds={selectedIds}
+            selectedObject={selectedObject}
+            zoomPercent={zoomPercent}
+            canEditBoard={canEditBoard}
+            onDeleteSelected={() => removeObjects(selectedIds, true)}
+            onDeleteObject={(objectId) => removeObjects([objectId], true)}
+            onUpdateObject={updateObjectProperties}
+            onUpdateConnector={updateConnectorProperties}
+          />
         </aside>
       </section>
+      <BoardToolDock
+        activeTool={activeTool}
+        canEditBoard={canEditBoard}
+        onSelectTool={(tool) => setActiveTool(tool)}
+      />
+      <BoardZoomChip
+        zoomPercent={zoomPercent}
+        onZoomOut={handleZoomOut}
+        onZoomIn={handleZoomIn}
+        onReset={handleZoomReset}
+      />
     </main>
   );
 }

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { getDoc, setDoc } from 'firebase/firestore/lite';
 import type { ReactNode } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -137,7 +137,12 @@ async function renderBoardReady(boardId = 'board-abc', authOverrides: Partial<Au
 
 describe('Board', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    mockNavigate.mockReset();
+    mockClipboardWriteText.mockReset();
+    mockFetch.mockReset();
+    vi.mocked(getDoc).mockReset();
+    vi.mocked(setDoc).mockReset();
+
     vi.mocked(getDoc).mockResolvedValue({
       exists: () => true,
       data: () => ({ title: 'Test Board Title' }),
@@ -165,7 +170,7 @@ describe('Board', () => {
 
     // Verify layout elements
     expect(screen.getByText('CollabBoard')).toBeInTheDocument();
-    expect(screen.getByText('Properties')).toBeInTheDocument();
+    expect(screen.getByText('Inspector')).toBeInTheDocument();
     expect(screen.getByText('AI Command Center')).toBeInTheDocument();
     expect(screen.getByTestId('konva-stage')).toBeInTheDocument();
   });
@@ -182,36 +187,36 @@ describe('Board', () => {
 
     expect(screen.getByRole('button', { name: 'Undo' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Redo' })).toBeDisabled();
-    expect(screen.getByText('Move')).toBeInTheDocument();
-    expect(screen.getByText('Frame')).toBeInTheDocument();
-    expect(screen.getByText('Text')).toBeInTheDocument();
-    expect(screen.getByText('Shape')).toBeInTheDocument();
   });
 
-  it('renders the left rail buttons', async () => {
+  it('renders the bottom tool dock buttons', async () => {
     await renderBoardReady();
 
-    // Rail buttons
-    expect(screen.getByText('↖')).toBeInTheDocument();
-    expect(screen.getByText('□')).toBeInTheDocument();
-    expect(screen.getByText('○')).toBeInTheDocument();
-    expect(screen.getByText('◯')).toBeInTheDocument();
-    expect(screen.getByText('／')).toBeInTheDocument();
-    expect(screen.getByText('T')).toBeInTheDocument();
-    expect(screen.getByText('⌗')).toBeInTheDocument();
-    const railButtons = document.querySelectorAll('.rail-btn');
-    expect(railButtons.length).toBe(8);
-    expect(screen.getByText('↔')).toBeInTheDocument();
+    expect(screen.getByRole('toolbar', { name: 'Board tools' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Select tool')).toBeInTheDocument();
+    expect(screen.getByLabelText('Sticky note tool')).toBeInTheDocument();
+    expect(screen.getByLabelText('Rectangle tool')).toBeInTheDocument();
+    expect(screen.getByLabelText('Circle tool')).toBeInTheDocument();
+    expect(screen.getByLabelText('Line tool')).toBeInTheDocument();
+    expect(screen.getByLabelText('Text tool')).toBeInTheDocument();
+    expect(screen.getByLabelText('Frame tool')).toBeInTheDocument();
+    expect(screen.getByLabelText('Connector tool')).toBeInTheDocument();
   });
 
-  it('renders the right properties panel', async () => {
+  it('renders the right inspector panel', async () => {
     await renderBoardReady();
 
-    expect(screen.getByText('Properties')).toBeInTheDocument();
-    expect(screen.getByText('Selection')).toBeInTheDocument();
-    expect(screen.getByText('None')).toBeInTheDocument();
-    expect(screen.getByText('Zoom')).toBeInTheDocument();
-    expect(screen.getByText('100%')).toBeInTheDocument();
+    const inspectorHeading = screen.getByRole('heading', { name: 'Inspector' });
+    const inspectorPanel = inspectorHeading.closest('section');
+    expect(inspectorPanel).not.toBeNull();
+    if (!inspectorPanel) {
+      throw new Error('Inspector panel missing');
+    }
+    const inspector = within(inspectorPanel);
+    expect(inspector.getByText('Selection')).toBeInTheDocument();
+    expect(inspector.getByText('None')).toBeInTheDocument();
+    expect(inspector.getByText('Zoom')).toBeInTheDocument();
+    expect(inspector.getByText('100%')).toBeInTheDocument();
   });
 
   it('shows the presence avatar in the topbar', async () => {

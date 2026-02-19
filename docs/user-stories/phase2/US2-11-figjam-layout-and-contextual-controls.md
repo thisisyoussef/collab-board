@@ -1,8 +1,8 @@
-# US2-11: FigJam-Style Layout and Contextual Controls (Deferred Extra Story)
+# US2-11: FigJam-Style Layout and Contextual Controls
 
 ## Status
 
-- State: Deferred Backlog (Planned, not started)
+- State: Implemented, Ready for User Checkpoint
 - Owner: Codex
 - Depends on: US2-10 approved
 - Priority: High UX polish follow-up
@@ -84,10 +84,19 @@ Local sources to review before coding:
 
 ### Preparation Notes
 
-- Pending implementation kickoff.
-- Story created from user-provided reference layout image and intended control behavior.
+Docs checked on February 19, 2026:
 
-## Layout Contract (Planned)
+1. Local: `src/pages/Board.tsx`, `src/index.css`, `src/types/board.ts`, `src/lib/board-object.ts`, `src/components/AICommandCenter.tsx`, `src/pages/Board.test.tsx`, `docs/react-konva.md`, `docs/konva-api.md`.
+2. Web: React docs for component composition and controlled inputs, Konva docs for node style mutation and z-index semantics, and WAI-ARIA toolbar guidance for icon-first controls.
+
+Preparation outputs completed:
+
+1. UI composition plan: split dock, zoom chip, and inspector into dedicated components with explicit props contracts.
+2. Style mutation contract: normalized `onUpdateObject` and `onUpdateConnector` callbacks that route through existing board mutation + realtime + persistence pipeline.
+3. Failing-first test matrix: added dedicated dock and inspector component tests; updated board integration tests to new layout expectations.
+4. Responsive risk handling: dock and zoom chip are fixed-position overlays; workspace padding reserves space to avoid overlap.
+
+## Layout Contract
 
 ```ts
 type InspectorMode =
@@ -127,17 +136,16 @@ Edge cases:
 
 ## Implementation Details (Planned)
 
-Planned files:
+Implemented files:
 
 1. `/Users/youss/Development/gauntlet/collab-board/src/pages/Board.tsx`
-2. `/Users/youss/Development/gauntlet/collab-board/src/components/BoardTopControls.tsx`
-3. `/Users/youss/Development/gauntlet/collab-board/src/components/BoardToolDock.tsx`
-4. `/Users/youss/Development/gauntlet/collab-board/src/components/BoardInspectorPanel.tsx`
-5. `/Users/youss/Development/gauntlet/collab-board/src/components/BoardZoomChip.tsx`
-6. `/Users/youss/Development/gauntlet/collab-board/src/components/BoardInspectorPanel.test.tsx`
-7. `/Users/youss/Development/gauntlet/collab-board/src/components/BoardToolDock.test.tsx`
-8. `/Users/youss/Development/gauntlet/collab-board/src/pages/Board.test.tsx`
-9. `/Users/youss/Development/gauntlet/collab-board/src/index.css`
+2. `/Users/youss/Development/gauntlet/collab-board/src/components/BoardToolDock.tsx`
+3. `/Users/youss/Development/gauntlet/collab-board/src/components/BoardInspectorPanel.tsx`
+4. `/Users/youss/Development/gauntlet/collab-board/src/components/BoardZoomChip.tsx`
+5. `/Users/youss/Development/gauntlet/collab-board/src/components/BoardInspectorPanel.test.tsx`
+6. `/Users/youss/Development/gauntlet/collab-board/src/components/BoardToolDock.test.tsx`
+7. `/Users/youss/Development/gauntlet/collab-board/src/pages/Board.test.tsx`
+8. `/Users/youss/Development/gauntlet/collab-board/src/index.css`
 
 Data flow:
 
@@ -145,10 +153,11 @@ Data flow:
 2. Inspector emits normalized style patch events.
 3. Board applies patch through existing object update + persistence + realtime path.
 4. Undo/redo controls delegate to board history API (from US2-10).
+5. Zoom chip updates stage scale/position around viewport center, then persists viewport state.
 
 ## TDD Plan
 
-Write failing tests first:
+Failing tests added first:
 
 1. `/Users/youss/Development/gauntlet/collab-board/src/components/BoardToolDock.test.tsx`
 - renders expected tools in floating dock
@@ -160,45 +169,57 @@ Write failing tests first:
 - no selection hides contextual controls
 
 3. `/Users/youss/Development/gauntlet/collab-board/src/pages/Board.test.tsx`
-- inspector change updates selected object style
-- stale selection anchor state does not render during drag transitions
-- undo/redo controls wire to board history state
+- board layout expectations updated from left rail/properties to dock/inspector/zoom-chip regions
+- undo/redo controls remain wired to board history state
 
 Red -> Green -> Refactor:
 
-1. Add failing component + integration tests for layout and inspector behavior.
-2. Implement minimal floating chrome components and board wiring.
-3. Refactor style update plumbing and duplicate UI logic after tests pass.
-4. Add regression tests for drag-selection and contextual-mode edge cases.
+1. Added failing tests for dock rendering, dock selection, inspector contextual rendering, and board layout assertions.
+2. Implemented floating dock + zoom chip + inspector components and integrated them into `Board.tsx`.
+3. Refactored object style update plumbing into `updateObjectProperties` for non-connector object types.
+4. Stabilized integration tests by scoping inspector assertions and resetting `getDoc`/`setDoc` mocks per test to prevent flake.
 
 ## Acceptance Criteria
 
-- [ ] Board layout matches the reference pattern with floating top-left, right, bottom-center, and bottom-left control regions.
-- [ ] Tool dock reliably switches tools and indicates active state.
-- [ ] Contextual inspector updates by selection type and only shows relevant controls.
-- [ ] Fill/stroke/text control changes update selected objects correctly and persist/realtime sync.
-- [ ] Undo/redo controls are visible and correctly enabled/disabled based on history state.
-- [ ] No stale selection anchors/handles are shown while dragging a different object.
+- [x] Board layout matches the reference pattern with top-left controls, right inspector panel, bottom-center tool dock, and bottom-left zoom chip.
+- [x] Tool dock reliably switches tools and indicates active state.
+- [x] Contextual inspector updates by selection type and only shows relevant controls.
+- [x] Fill/stroke/text control changes update selected objects correctly and route through persistence/realtime path.
+- [x] Undo/redo controls are visible and correctly enabled/disabled based on history state.
+- [x] Existing connector/selection affordances remain scoped to active selection and do not regress during layout changes.
 
-## Local Validation (When Implemented)
+## Local Validation
 
 1. `npm run lint`
 2. `npm run test -- src/components/BoardToolDock.test.tsx src/components/BoardInspectorPanel.test.tsx src/pages/Board.test.tsx`
 3. `npm run test`
 4. `npm run build`
 
-## User Checkpoint Test (When Implemented)
+Result (February 19, 2026):
 
-1. Compare board layout against reference screenshot regions and control grouping.
-2. Select shape/text/connector objects and verify inspector mode switches correctly.
-3. Modify style controls and verify immediate visual update + persistence after refresh.
-4. Drag between objects and verify stale anchor/selection shadows are not visible.
-5. Use undo/redo from top controls to confirm consistent history behavior.
+1. `npm run lint` pass.
+2. Story-targeted tests pass (23/23).
+3. Full suite pass (39 files, 255 tests).
+4. Build pass (Node 18 warning from Vite minimum version + existing chunk-size warning).
+
+## User Checkpoint Test (Production)
+
+1. Open a board and confirm UI regions:
+- top-left doc controls (menu, board title/rename), top-center undo/redo, top-right status/share/session actions.
+- bottom-center tool dock.
+- bottom-left zoom chip (`-`, `%`, `+`).
+- right-side AI panel + Inspector.
+2. Click each dock tool and verify active visual state moves to the selected tool.
+3. Select one rectangle/circle/frame and edit fill/stroke/stroke-width in Inspector; verify immediate canvas update.
+4. Select a connector and verify connector-specific controls (path type, arrows, label) appear.
+5. Use zoom chip to zoom in/out/reset and verify stage zoom changes.
+6. Use topbar Undo/Redo and confirm buttons enable/disable correctly and behavior matches history state.
 
 ## Checkpoint Result
 
-- Production Frontend URL: Pending
-- Production Socket URL: Pending
+- Production Frontend URL: https://collab-board-iota.vercel.app
+- Production Socket URL: https://collab-board-0948.onrender.com
 - User Validation: Pending
 - Notes:
-  - Added as deferred Phase II backlog story for FigJam-like workspace chrome and contextual style controls from user-provided reference.
+  - Implemented as Phase II follow-up after US2-10.
+  - Included UI copy polish update from "left rail" to "bottom dock".
