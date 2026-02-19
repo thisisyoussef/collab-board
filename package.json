@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "ab:run": "node scripts/run-ai-ab-suite.mjs"
+    "ab:run": "node scripts/run-ai-ab-suite.mjs",
+    "ab:deploy": "node scripts/run-ai-ab-suite.mjs --wait-ready"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.75.0",

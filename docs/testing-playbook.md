@@ -128,28 +128,41 @@ Use this to generate reproducible Anthropic vs OpenAI benchmark evidence.
 
 ### Inputs Required
 
-1. Firebase ID token with editor access to the target boards (`AI_AUTH_TOKEN`).
-2. Existing board IDs to test (`AB_BOARD_IDS=id1,id2,...`).
-3. Provider mode env vars in runtime (`AI_PROVIDER_MODE`, `AI_OPENAI_PERCENT`).
+1. Auth for benchmark calls:
+`AI_AUTH_TOKEN`, or Firebase service-account values + `FIREBASE_WEB_API_KEY` + `BENCHMARK_USER_ID`.
+2. Board scope:
+`AB_BOARD_IDS=id1,id2,...` or auto-create boards with `AB_AUTO_CREATE_BOARDS`.
+3. Benchmark matrix and volume:
+`AB_MODEL_MATRIX`, `AB_ROUNDS`, `AB_CONCURRENCY`.
+4. Deployed API must allow request overrides:
+`AI_ALLOW_EXPERIMENT_OVERRIDES=true` in Vercel env.
 
 ### Run Command
 
 ```bash
-AI_AUTH_TOKEN=\"<firebase-id-token>\" \
-AB_BOARD_IDS=\"board-a,board-b,board-c,board-d\" \
 npm run ab:run
 ```
 
 Optional flags:
 
 ```bash
-npm run ab:run -- \
+npm run ab:deploy -- \
   --base-url https://collab-board-iota.vercel.app \
+  --wait-ready \
   --prompt-suite scripts/ab-prompt-suite.json \
-  --delay-ms 150 \
-  --timeout-ms 30000 \
+  --matrix anthropic:claude-sonnet-4-20250514,openai:gpt-4.1-mini,openai:gpt-4.1 \
+  --rounds 4 \
+  --concurrency 8 \
+  --auto-create-boards 6 \
+  --delay-ms 0 \
+  --timeout-ms 45000 \
   --max-requests 0
 ```
+
+Deploy automation workflow:
+
+- `/Users/youss/Development/gauntlet/collab-board/.github/workflows/ai-benchmark-on-deploy.yml`
+- Triggered on successful production deployment status (and manually via workflow dispatch).
 
 ### Outputs
 

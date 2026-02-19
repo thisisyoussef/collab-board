@@ -86,10 +86,33 @@ You can run the AI endpoint with Anthropic only, OpenAI only, or deterministic A
 1. Set `AI_PROVIDER_MODE=anthropic` (default), `openai`, or `ab`.
 2. If using OpenAI or A/B, set `OPENAI_API_KEY` and optionally `OPENAI_MODEL`.
 3. If using A/B, set `AI_OPENAI_PERCENT` (0-100) to control OpenAI traffic split.
+4. For scripted benchmark runs that force provider/model per request, set `AI_ALLOW_EXPERIMENT_OVERRIDES=true`.
 
 Recommended for observability:
 - Keep LangSmith tracing enabled.
 - Filter traces by metadata tag `provider` to compare quality, latency, and tool-call reliability between providers.
+
+### Deploy-Time Benchmark Automation (High-Volume LangSmith Traces)
+
+This repo includes an automated benchmark workflow that runs after production deployment and generates many traces across provider/model combinations.
+
+1. Enable request-level benchmark overrides in Vercel:
+`AI_ALLOW_EXPERIMENT_OVERRIDES=true`
+2. Keep LangSmith enabled in Vercel:
+`LANGCHAIN_TRACING_V2=true`, `LANGCHAIN_API_KEY=...`, `LANGCHAIN_PROJECT=...`
+3. Configure GitHub secrets for benchmark auth:
+`AI_AUTH_TOKEN` OR `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`, `FIREBASE_WEB_API_KEY`, `BENCHMARK_USER_ID`
+4. Optional GitHub repository variables:
+`AB_MODEL_MATRIX`, `AB_ROUNDS`, `AB_AUTO_CREATE_BOARDS`, `AB_CONCURRENCY`, `AB_MAX_REQUESTS`, `AB_DEPLOY_BASE_URL`
+
+Workflow file:
+`/Users/youss/Development/gauntlet/collab-board/.github/workflows/ai-benchmark-on-deploy.yml`
+
+Local/manual run:
+
+```bash
+npm run ab:deploy
+```
 
 ## Architecture
 

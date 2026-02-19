@@ -1,0 +1,103 @@
+name: AI Benchmark On Deploy
+
+on:
+  deployment_status:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: Optional deployed base URL override
+        required: false
+        type: string
+      max_requests:
+        description: Optional cap on total requests (0 = full matrix)
+        required: false
+        type: string
+
+jobs:
+  run-benchmark:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'deployment_status' &&
+       github.event.deployment_status.state == 'success' &&
+       (contains(github.event.deployment.environment, 'Production') ||
+        contains(github.event.deployment.environment, 'production')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    concurrency:
+      group: ai-benchmark-${{ github.event.deployment.id || github.run_id }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Resolve benchmark target URL
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BASE_URL=""
+          if [ "${{ github.event_name }}" = "deployment_status" ]; then
+            BASE_URL="${{ github.event.deployment_status.environment_url }}"
+            if [ -z "$BASE_URL" ] || [ "$BASE_URL" = "null" ]; then
+              BASE_URL="${{ github.event.deployment_status.target_url }}"
+            fi
+          fi
+
+          if [ -z "$BASE_URL" ] || [ "$BASE_URL" = "null" ]; then
+            BASE_URL="${{ github.event.inputs.base_url }}"
+          fi
+
+          if [ -z "$BASE_URL" ] || [ "$BASE_URL" = "null" ]; then
+            BASE_URL="${{ vars.AB_DEPLOY_BASE_URL }}"
+          fi
+
+          if [ -z "$BASE_URL" ] || [ "$BASE_URL" = "null" ]; then
+            BASE_URL="https://collab-board-iota.vercel.app"
+          fi
+
+          echo "AI_BASE_URL=$BASE_URL" >> "$GITHUB_ENV"
+          echo "Benchmark target URL: $BASE_URL"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run high-volume deploy benchmark
+        env:
+          AI_AUTH_TOKEN: ${{ secrets.AI_AUTH_TOKEN }}
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
+          FIREBASE_PRIVATE_KEY: ${{ secrets.FIREBASE_PRIVATE_KEY }}
+          FIREBASE_WEB_API_KEY: ${{ secrets.FIREBASE_WEB_API_KEY }}
+          BENCHMARK_USER_ID: ${{ secrets.BENCHMARK_USER_ID }}
+          AB_BOARD_IDS: ${{ vars.AB_BOARD_IDS }}
+          AB_AUTO_CREATE_BOARDS: ${{ vars.AB_AUTO_CREATE_BOARDS || '6' }}
+          AB_BOARD_PREFIX: ${{ vars.AB_BOARD_PREFIX || 'ab-bench' }}
+          AB_ROUNDS: ${{ vars.AB_ROUNDS || '4' }}
+          AB_CONCURRENCY: ${{ vars.AB_CONCURRENCY || '8' }}
+          AB_DELAY_MS: ${{ vars.AB_DELAY_MS || '0' }}
+          AB_TIMEOUT_MS: ${{ vars.AB_TIMEOUT_MS || '45000' }}
+          AB_MAX_REQUESTS: ${{ github.event.inputs.max_requests || vars.AB_MAX_REQUESTS || '0' }}
+          AB_WAIT_READY: "true"
+          AB_READY_TIMEOUT_MS: ${{ vars.AB_READY_TIMEOUT_MS || '900000' }}
+          AB_READY_INTERVAL_MS: ${{ vars.AB_READY_INTERVAL_MS || '10000' }}
+          AB_MODEL_MATRIX: ${{ vars.AB_MODEL_MATRIX || 'anthropic:claude-sonnet-4-20250514,anthropic:claude-3-5-haiku-latest,openai:gpt-4.1-mini,openai:gpt-4.1,openai:gpt-4o-mini' }}
+          AB_PROMPT_SUITE: scripts/ab-prompt-suite.json
+          AB_OUTPUT_DIR: docs/submission/ab-results
+        run: npm run ab:deploy
+
+      - name: Upload benchmark report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-ab-reports-${{ github.run_id }}
+          path: docs/submission/ab-results/ab-report-*
+          if-no-files-found: warn

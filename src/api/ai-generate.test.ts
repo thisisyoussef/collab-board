@@ -90,6 +90,7 @@ describe('AI Generate API Endpoint', () => {
     delete process.env.AI_OPENAI_PERCENT;
     delete process.env.ANTHROPIC_MODEL;
     delete process.env.OPENAI_MODEL;
+    delete process.env.AI_ALLOW_EXPERIMENT_OVERRIDES;
     mockGetApps.mockReturnValue([{}]);
     mockVerifyIdToken.mockResolvedValue({ uid: 'user-123' });
     mockBoardGet.mockResolvedValue({
@@ -292,6 +293,8 @@ describe('AI Generate API Endpoint', () => {
         ],
         message: null,
         stopReason: 'tool_use',
+        provider: 'anthropic',
+        model: 'claude-sonnet-4-20250514',
       });
     });
 
@@ -467,6 +470,8 @@ describe('AI Generate API Endpoint', () => {
         ],
         message: null,
         stopReason: 'tool_use',
+        provider: 'anthropic',
+        model: 'claude-sonnet-4-20250514',
       });
     });
   });
@@ -492,6 +497,10 @@ describe('AI Generate API Endpoint', () => {
       expect(res.setHeader).toHaveBeenCalledWith(
         'Access-Control-Allow-Headers',
         'Content-Type, Authorization',
+      );
+      expect(res.setHeader).toHaveBeenCalledWith(
+        'Access-Control-Expose-Headers',
+        'X-AI-Provider, X-AI-Model',
       );
     });
   });
@@ -543,6 +552,79 @@ describe('AI Generate API Endpoint', () => {
         ],
         message: null,
         stopReason: 'tool_calls',
+        provider: 'openai',
+        model: 'gpt-4.1-mini',
+      });
+    });
+
+    it('allows provider and model overrides when experiments are enabled', async () => {
+      vi.resetModules();
+      process.env.ANTHROPIC_API_KEY = 'test-key';
+      process.env.OPENAI_API_KEY = 'test-openai-key';
+      process.env.AI_ALLOW_EXPERIMENT_OVERRIDES = 'true';
+
+      mockOpenAIChatCreate.mockResolvedValueOnce({
+        choices: [
+          {
+            finish_reason: 'tool_calls',
+            message: {
+              content: null,
+              tool_calls: [
+                {
+                  id: 'openai-override-1',
+                  type: 'function',
+                  function: {
+                    name: 'createShape',
+                    arguments: JSON.stringify({ type: 'rect', x: 10, y: 20, width: 100, height: 80 }),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      });
+
+      const handler = (await import('../../api/ai/generate')).default;
+      const req = createMockReq({
+        body: {
+          prompt: 'Create one rectangle',
+          boardId: 'board-1',
+          boardState: {},
+          providerOverride: 'openai',
+          modelOverride: 'gpt-4.1',
+        },
+      });
+      const res = createMockRes();
+
+      await handler(req as never, res as never);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(mockOpenAIChatCreate).toHaveBeenCalledTimes(1);
+      const createPayload = mockOpenAIChatCreate.mock.calls[0][0] as { model: string };
+      expect(createPayload.model).toBe('gpt-4.1');
+      expect(res.setHeader).toHaveBeenCalledWith('X-AI-Provider', 'openai');
+      expect(res.setHeader).toHaveBeenCalledWith('X-AI-Model', 'gpt-4.1');
+    });
+
+    it('rejects provider/model overrides when experiments are disabled', async () => {
+      const handler = (await import('../../api/ai/generate')).default;
+      const req = createMockReq({
+        body: {
+          prompt: 'Create one rectangle',
+          boardId: 'board-1',
+          boardState: {},
+          providerOverride: 'openai',
+          modelOverride: 'gpt-4.1',
+        },
+      });
+      const res = createMockRes();
+
+      await handler(req as never, res as never);
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith({
+        error:
+          'Model/provider overrides are disabled. Set AI_ALLOW_EXPERIMENT_OVERRIDES=true to enable benchmarking overrides.',
       });
     });
 

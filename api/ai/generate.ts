@@ -10,12 +10,33 @@ import { wrapAnthropic } from 'langsmith/wrappers/anthropic';
 import { wrapOpenAI } from 'langsmith/wrappers/openai';
 import { normalizeBoardRole, resolveBoardAccess } from '../../src/lib/access.js';
 
+// --------------------------------------------------------------------------
+// API Logger — structured JSON logging for Vercel function logs
+// --------------------------------------------------------------------------
+const API_LOG_LEVEL_PRIORITY: Record<string, number> = { debug: 0, info: 1, warn: 2, error: 3 };
+const API_CURRENT_LEVEL = process.env.LOG_LEVEL || 'info';
+
+function apiLog(level: string, category: string, message: string, context?: Record<string, unknown>) {
+  if ((API_LOG_LEVEL_PRIORITY[level] ?? 1) < (API_LOG_LEVEL_PRIORITY[API_CURRENT_LEVEL] ?? 1)) return;
+  const entry = { timestamp: new Date().toISOString(), level, category, message, ...(context || {}) };
+  const line = JSON.stringify(entry);
+  if (level === 'error') { console.error(line); } else { console.log(line); }
+}
+
+const apiLogger = {
+  debug: (cat: string, msg: string, ctx?: Record<string, unknown>) => apiLog('debug', cat, msg, ctx),
+  info: (cat: string, msg: string, ctx?: Record<string, unknown>) => apiLog('info', cat, msg, ctx),
+  warn: (cat: string, msg: string, ctx?: Record<string, unknown>) => apiLog('warn', cat, msg, ctx),
+  error: (cat: string, msg: string, ctx?: Record<string, unknown>) => apiLog('error', cat, msg, ctx),
+};
+
 const LANGSMITH_PROJECT_FALLBACK = 'collab-board-dev';
 const LANGSMITH_TAGS = ['collab-board', 'api', 'ai-generate'];
 const AI_PROVIDER_MODE_FALLBACK = 'anthropic';
 const AI_OPENAI_PERCENT_FALLBACK = 50;
 const ANTHROPIC_MODEL_FALLBACK = 'claude-sonnet-4-20250514';
 const OPENAI_MODEL_FALLBACK = 'gpt-4.1-mini';
+const MODEL_NAME_PATTERN = /^[a-zA-Z0-9._:-]{1,128}$/;
 const LANGSMITH_TRACING_ENABLED =
   process.env.LANGCHAIN_TRACING_V2 === 'true' &&
   typeof process.env.LANGCHAIN_API_KEY === 'string' &&
@@ -24,6 +45,10 @@ const TRACE_FLUSH_TIMEOUT_MS = 900;
 
 type AIProvider = 'anthropic' | 'openai';
 type AIProviderMode = AIProvider | 'ab';
+
+function isExperimentOverridesEnabled(): boolean {
+  return process.env.AI_ALLOW_EXPERIMENT_OVERRIDES === 'true';
+}
 
 function getLangSmithProjectName(): string {
   const value = process.env.LANGCHAIN_PROJECT;
@@ -67,6 +92,23 @@ function chooseProviderForRequest(boardId: string, actorUserId: string): AIProvi
   const openAIPercent = getOpenAIPercent();
   const bucket = deterministicPercentBucket(`${boardId}:${actorUserId}`);
   return bucket < openAIPercent ? 'openai' : 'anthropic';
+}
+
+function isAIProvider(value: unknown): value is AIProvider {
+  return value === 'anthropic' || value === 'openai';
+}
+
+function sanitizeModelName(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed || !MODEL_NAME_PATTERN.test(trimmed)) {
+    return null;
+  }
+
+  return trimmed;
 }
 
 function getAnthropicModelName(): string {
@@ -330,6 +372,7 @@ interface PlanGenerationInput {
   boardId: string;
   actorUserId: string;
   provider: AIProvider;
+  modelOverride: string | null;
 }
 
 interface PlanGenerationResult {
@@ -337,6 +380,7 @@ interface PlanGenerationResult {
   message: string | null;
   stopReason: string | null;
   provider: AIProvider;
+  model: string;
 }
 
 function getFirebasePrivateKey(): string | null {
@@ -598,7 +642,7 @@ async function flushLangSmithTracesBestEffort() {
   try {
     await Promise.race([langSmithClient.awaitPendingTraceBatches(), timeout]);
   } catch (err) {
-    console.warn('[ai/generate] LangSmith flush warning:', err);
+    apiLogger.warn('AI', `LangSmith trace flush warning: ${err instanceof Error ? err.message : 'Unknown error'}`);
   }
 }
 
@@ -644,20 +688,23 @@ async function generatePlanCore({
   boardId,
   actorUserId,
   provider,
+  modelOverride,
 }: PlanGenerationInput): Promise<PlanGenerationResult> {
+  const resolvedModel = modelOverride || (provider === 'openai' ? getOpenAIModelName() : getAnthropicModelName());
   const commonMetadata = {
     boardId,
     actorUserId,
     promptLength: prompt.length,
     boardObjectCount: getBoardObjectCount(truncatedBoardState),
     provider,
+    model: resolvedModel,
     providerMode: getProviderMode(),
   };
 
   if (provider === 'openai') {
     const initialCompletion = await createOpenAIPlanningMessage(
       {
-        model: getOpenAIModelName(),
+        model: resolvedModel,
         max_tokens: 4096,
         tools: openAIToolDefinitions,
         tool_choice: 'auto',
@@ -696,7 +743,7 @@ async function generatePlanCore({
     if (MAX_PLANNING_ATTEMPTS > 1 && expansionReasons.length > 0) {
       const expandedCompletion = await createOpenAIPlanningMessage(
         {
-          model: getOpenAIModelName(),
+          model: resolvedModel,
           max_tokens: 4096,
           tools: openAIToolDefinitions,
           tool_choice: 'auto',
@@ -741,12 +788,13 @@ async function generatePlanCore({
       message: assistantText,
       stopReason: extractOpenAIStopReason(finalCompletion),
       provider,
+      model: resolvedModel,
     };
   }
 
   const initialMessage = await createAnthropicPlanningMessage(
     {
-      model: getAnthropicModelName(),
+      model: resolvedModel,
       max_tokens: 4096,
       tools: toolDefinitions,
       system: SYSTEM_PROMPT,
@@ -781,7 +829,7 @@ async function generatePlanCore({
   if (MAX_PLANNING_ATTEMPTS > 1 && expansionReasons.length > 0) {
     const expandedMessage = await createAnthropicPlanningMessage(
       {
-        model: getAnthropicModelName(),
+        model: resolvedModel,
         max_tokens: 4096,
         tools: toolDefinitions,
         system: SYSTEM_PROMPT,
@@ -822,6 +870,7 @@ async function generatePlanCore({
     message: assistantText,
     stopReason: finalMessage.stop_reason,
     provider,
+    model: resolvedModel,
   };
 }
 
@@ -839,6 +888,7 @@ const generatePlan = LANGSMITH_TRACING_ENABLED
         boardId: typeof inputs.boardId === 'string' ? inputs.boardId : '',
         actorUserId: typeof inputs.actorUserId === 'string' ? inputs.actorUserId : '',
         provider: typeof inputs.provider === 'string' ? inputs.provider : '',
+        modelOverride: typeof inputs.modelOverride === 'string' ? inputs.modelOverride : '',
         promptLength: typeof inputs.prompt === 'string' ? inputs.prompt.length : 0,
         promptPreview:
           typeof inputs.prompt === 'string' ? inputs.prompt.slice(0, Math.min(160, inputs.prompt.length)) : '',
@@ -851,6 +901,7 @@ const generatePlan = LANGSMITH_TRACING_ENABLED
           : [],
         stopReason: outputs.stopReason,
         provider: outputs.provider,
+        model: outputs.model,
         assistantMessageLength: typeof outputs.message === 'string' ? outputs.message.length : 0,
         assistantMessagePreview:
           typeof outputs.message === 'string'
@@ -865,7 +916,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  res.setHeader('Access-Control-Expose-Headers', 'X-AI-Provider');
+  res.setHeader('Access-Control-Expose-Headers', 'X-AI-Provider, X-AI-Model');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -875,20 +926,51 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { prompt, boardState, boardId } = req.body ?? {};
+  const { prompt, boardState, boardId, providerOverride, modelOverride } = req.body ?? {};
 
   if (!prompt || typeof prompt !== 'string') {
+    apiLogger.warn('AI', 'Request rejected: missing or invalid prompt');
     return res.status(400).json({ error: 'Missing or invalid prompt' });
   }
 
   if (!boardId || typeof boardId !== 'string' || !boardId.trim()) {
+    apiLogger.warn('AI', 'Request rejected: missing or invalid boardId');
     return res.status(400).json({ error: 'Missing or invalid boardId' });
   }
 
   if (prompt.length > MAX_PROMPT_LENGTH) {
+    apiLogger.warn('AI', `Request rejected: prompt too long (${prompt.length}/${MAX_PROMPT_LENGTH})`, { promptLength: prompt.length });
     return res
       .status(400)
       .json({ error: `Prompt too long (max ${MAX_PROMPT_LENGTH} characters)` });
+  }
+
+  apiLogger.info('AI', `AI generate request received: '${prompt.slice(0, 60)}${prompt.length > 60 ? '...' : ''}'`, {
+    boardId: boardId.trim(),
+    promptLength: prompt.length,
+    boardObjectCount: getBoardObjectCount(boardState),
+  });
+
+  const requestedProvider = providerOverride;
+  const requestedModel = modelOverride;
+  const hasRequestedOverride =
+    (requestedProvider !== undefined && requestedProvider !== null) ||
+    (requestedModel !== undefined && requestedModel !== null);
+
+  if (hasRequestedOverride && !isExperimentOverridesEnabled()) {
+    return res.status(403).json({
+      error:
+        'Model/provider overrides are disabled. Set AI_ALLOW_EXPERIMENT_OVERRIDES=true to enable benchmarking overrides.',
+    });
+  }
+
+  if (requestedProvider !== undefined && requestedProvider !== null && !isAIProvider(requestedProvider)) {
+    return res.status(400).json({ error: 'Invalid providerOverride. Must be anthropic or openai.' });
+  }
+
+  const sanitizedModelOverride = sanitizeModelName(requestedModel);
+  if ((requestedModel !== undefined && requestedModel !== null) && !sanitizedModelOverride) {
+    return res.status(400).json({ error: 'Invalid modelOverride format.' });
   }
 
   const trimmedBoardId = boardId.trim();
@@ -902,10 +984,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     ensureFirebaseAdmin();
     const decoded = await getAuth().verifyIdToken(token);
     actorUserId = decoded.uid;
+    apiLogger.info('AUTH', `Auth token verified for user`, { userId: actorUserId, boardId: trimmedBoardId });
   } catch (err) {
     if (err instanceof Error && err.message.includes('Firebase Admin is not configured')) {
+      apiLogger.error('AUTH', 'Firebase Admin is not configured — cannot verify tokens');
       return res.status(500).json({ error: 'Auth service not configured' });
     }
+    apiLogger.warn('AUTH', `Auth token verification failed: ${err instanceof Error ? err.message : 'Unknown error'}`, { boardId: trimmedBoardId });
     return res.status(401).json({ error: 'Invalid or expired auth token' });
   }
 
@@ -934,10 +1019,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     if (!access.canApplyAI) {
+      apiLogger.warn('AI', `Access denied: user does not have AI editor access`, { boardId: trimmedBoardId, userId: actorUserId, effectiveRole: access.effectiveRole });
       return res.status(403).json({ error: 'You do not have editor access for AI on this board.' });
     }
+
+    apiLogger.info('AI', `Board access verified: role=${access.effectiveRole}`, { boardId: trimmedBoardId, userId: actorUserId, effectiveRole: access.effectiveRole });
   } catch (err) {
-    console.error('[ai/generate] Access check failed:', err);
+    apiLogger.error('AI', `Board access check failed: ${err instanceof Error ? err.message : 'Unknown error'}`, { boardId: trimmedBoardId, userId: actorUserId });
     return res.status(500).json({ error: 'Unable to validate board access' });
   }
 
@@ -946,11 +1034,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (boardState && typeof boardState === 'object') {
     const entries = Object.entries(boardState);
     if (entries.length > MAX_BOARD_STATE_OBJECTS) {
+      apiLogger.warn('AI', `Board state truncated: ${entries.length} objects → ${MAX_BOARD_STATE_OBJECTS} (max)`, {
+        boardId: trimmedBoardId,
+        originalCount: entries.length,
+        truncatedTo: MAX_BOARD_STATE_OBJECTS,
+      });
       truncatedBoardState = Object.fromEntries(entries.slice(0, MAX_BOARD_STATE_OBJECTS));
     }
   }
 
-  const provider = chooseProviderForRequest(trimmedBoardId, actorUserId);
+  const provider = isAIProvider(requestedProvider)
+    ? requestedProvider
+    : chooseProviderForRequest(trimmedBoardId, actorUserId);
   res.setHeader('X-AI-Provider', provider);
   if (provider === 'anthropic' && !process.env.ANTHROPIC_API_KEY) {
     return res.status(500).json({ error: 'AI service not configured' });
@@ -960,29 +1055,60 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
+    apiLogger.info('AI', `Generating AI plan via ${provider} (model: ${sanitizedModelOverride || 'default'})`, {
+      boardId: trimmedBoardId,
+      provider,
+      modelOverride: sanitizedModelOverride,
+      promptLength: prompt.length,
+      boardObjectCount: getBoardObjectCount(truncatedBoardState),
+    });
+
+    const planStartMs = Date.now();
     const result = await generatePlan({
       prompt,
       truncatedBoardState,
       boardId: trimmedBoardId,
       actorUserId,
       provider,
+      modelOverride: sanitizedModelOverride,
     });
+    const planDurationMs = Date.now() - planStartMs;
+
+    apiLogger.info('AI', `AI plan generated: ${result.toolCalls.length} tool call(s) via ${result.provider}/${result.model} in ${planDurationMs}ms`, {
+      boardId: trimmedBoardId,
+      toolCallCount: result.toolCalls.length,
+      toolNames: result.toolCalls.slice(0, 10).map((tc) => tc.name),
+      provider: result.provider,
+      model: result.model,
+      stopReason: result.stopReason,
+      durationMs: planDurationMs,
+    });
+
+    res.setHeader('X-AI-Model', result.model);
     await flushLangSmithTracesBestEffort();
 
     return res.status(200).json({
       toolCalls: result.toolCalls,
       message: result.message,
       stopReason: result.stopReason,
+      provider: result.provider,
+      model: result.model,
     });
   } catch (err) {
-    console.error('[ai/generate] Error:', err);
-
     const isRateLimit =
       err instanceof Error && 'status' in err && (err as { status: number }).status === 429;
 
     if (isRateLimit) {
+      apiLogger.warn('AI', `Rate limit hit for AI request`, { boardId: trimmedBoardId, provider, userId: actorUserId });
       return res.status(429).json({ error: 'AI rate limit reached. Please try again shortly.' });
     }
+
+    apiLogger.error('AI', `AI plan generation failed: ${err instanceof Error ? err.message : 'Unknown error'}`, {
+      boardId: trimmedBoardId,
+      provider,
+      userId: actorUserId,
+      error: err instanceof Error ? err.message : String(err),
+    });
 
     return res.status(500).json({ error: 'AI request failed' });
   }
