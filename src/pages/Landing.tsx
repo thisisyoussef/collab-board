@@ -2,12 +2,32 @@ import { useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 
+const RETURN_TO_STORAGE_KEY = 'collab-board-return-to';
+
 function resolveReturnTo(search: string): string | null {
   const value = new URLSearchParams(search).get('returnTo');
   if (!value || !value.startsWith('/') || value.startsWith('//')) {
     return null;
   }
   return value;
+}
+
+function readStoredReturnTo(): string | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  const value = window.sessionStorage.getItem(RETURN_TO_STORAGE_KEY);
+  if (!value || !value.startsWith('/') || value.startsWith('//')) {
+    return null;
+  }
+  return value;
+}
+
+function clearStoredReturnTo() {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  window.sessionStorage.removeItem(RETURN_TO_STORAGE_KEY);
 }
 
 export function Landing() {
@@ -17,8 +37,17 @@ export function Landing() {
   const returnTo = resolveReturnTo(location.search);
 
   useEffect(() => {
+    if (!returnTo || typeof window === 'undefined') {
+      return;
+    }
+    window.sessionStorage.setItem(RETURN_TO_STORAGE_KEY, returnTo);
+  }, [returnTo]);
+
+  useEffect(() => {
     if (!loading && user) {
-      navigate(returnTo || '/dashboard', { replace: true });
+      const target = returnTo || readStoredReturnTo() || '/dashboard';
+      clearStoredReturnTo();
+      navigate(target, { replace: true });
     }
   }, [loading, user, navigate, returnTo]);
 

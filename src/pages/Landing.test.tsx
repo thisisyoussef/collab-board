@@ -34,6 +34,11 @@ function renderLandingAt(path: string, authOverrides: Partial<AuthContextValue> 
 }
 
 describe('Landing', () => {
+  beforeEach(() => {
+    mockNavigate.mockReset();
+    window.sessionStorage.clear();
+  });
+
   it('renders the sign-in button when not authenticated', () => {
     renderLanding();
 
@@ -72,6 +77,14 @@ describe('Landing', () => {
     renderLandingAt('/?returnTo=https%3A%2F%2Fevil.example.com', { user: mockUser });
 
     expect(mockNavigate).toHaveBeenCalledWith('/dashboard', { replace: true });
+  });
+
+  it('uses stored returnTo when query param is absent', () => {
+    window.sessionStorage.setItem('collab-board-return-to', '/board/recover-me');
+    const mockUser = { uid: 'u1', displayName: 'Test' } as AuthContextValue['user'];
+    renderLandingAt('/', { user: mockUser });
+
+    expect(mockNavigate).toHaveBeenCalledWith('/board/recover-me', { replace: true });
   });
 
   it('calls signInWithGoogle when the sign-in button is clicked', () => {
