@@ -15,3 +15,16 @@ export interface ShareMemberRoleEntry {
   userId: string;
   role: Exclude<BoardRole, 'none'>;
 }
+
+export type SharedBoardSource = 'explicit' | 'recent';
+
+export interface SharedBoardDashboardEntry {
+  id: string;
+  title: string;
+  ownerId: string;
+  createdAtMs: number;
+  updatedAtMs: number;
+  source: SharedBoardSource;
+  role?: Exclude<BoardRole, 'none'>;
+  lastOpenedAtMs?: number;
+}

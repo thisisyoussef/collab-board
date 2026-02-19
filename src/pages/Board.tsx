@@ -12,6 +12,7 @@ import { ShareSettingsPanel } from '../components/ShareSettingsPanel';
 import { useAuth } from '../hooks/useAuth';
 import { useAICommandCenter } from '../hooks/useAICommandCenter';
 import { useAIExecutor, type AICommitMeta } from '../hooks/useAIExecutor';
+import { useBoardRecents } from '../hooks/useBoardRecents';
 import { useBoardSharing } from '../hooks/useBoardSharing';
 import { useCursors } from '../hooks/useCursors';
 import { usePresence } from '../hooks/usePresence';
@@ -49,6 +50,7 @@ import {
 } from '../lib/board-object';
 import { toFirestoreUserMessage, withFirestoreTimeout } from '../lib/firestore-client';
 import { db } from '../lib/firebase';
+import { logger } from '../lib/logger';
 import { loadViewportState, saveViewportState } from '../lib/viewport';
 import {
   buildRealtimeEventSignature,
@@ -379,6 +381,11 @@ export function Board() {
       setCanvasNotice('Share settings saved.');
     },
   });
+  useBoardRecents({
+    boardId,
+    userId: user?.uid ?? null,
+    enabled: Boolean(canReadBoard && user?.uid),
+  });
 
   const handleApplyAIPlan = async (actions: AIActionPreview[] = aiCommandCenter.actions) => {
     if (!canApplyAI) {
@@ -516,6 +523,7 @@ export function Board() {
     setIsResolvingAccess(true);
 
     const resolveAccess = async () => {
+      logger.info('FIRESTORE', `Loading board '${boardId}'...`, { boardId });
       try {
         const boardSnapshot = await withFirestoreTimeout(
           'Loading board access',
@@ -526,6 +534,7 @@ export function Board() {
         }
 
         if (!boardSnapshot.exists()) {
+          logger.warn('FIRESTORE', `Board '${boardId}' not found`, { boardId });
           setBoardAccess(null);
           setBoardMissing(true);
           setCanvasNotice('Board not found.');
@@ -567,8 +576,15 @@ export function Board() {
           sharing: boardData.sharing ?? null,
         });
 
+        logger.info('AUTH', `Board access resolved: role='${access.effectiveRole}', canEdit=${access.canEdit}`, {
+          boardId,
+          effectiveRole: access.effectiveRole,
+          canEdit: access.canEdit,
+          canRead: access.canRead,
+        });
         setBoardAccess(access);
         if (!access.canRead && shouldRedirectToSignIn(access, Boolean(user))) {
+          logger.info('AUTH', 'Board requires authentication, redirecting to sign-in', { boardId });
           navigate(`/?returnTo=${encodeURIComponent(buildBoardReturnToPath(boardId))}`, {
             replace: true,
           });
@@ -592,6 +608,7 @@ export function Board() {
         }
 
         if (permissionDenied) {
+          logger.warn('AUTH', `Board access denied for '${boardId}'`, { boardId, errorCode });
           setBoardMissing(false);
           setBoardAccess(
             resolveBoardAccess({
@@ -603,6 +620,8 @@ export function Board() {
           );
           setCanvasNotice('You do not have access to this board.');
         } else {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          logger.error('FIRESTORE', `Failed to load board: ${errMsg}`, { boardId });
           setBoardMissing(false);
           setCanvasNotice(toFirestoreUserMessage('Unable to load board access.', err));
         }
@@ -686,11 +705,15 @@ export function Board() {
         }
 
         const rawObjects = (snapshot.data() as { objects?: BoardObjectsRecord }).objects || {};
+        const objectCount = Object.keys(rawObjects).length;
+        logger.info('FIRESTORE', `Board loaded with ${objectCount} objects`, { boardId, objectCount });
         hydrateBoardObjects(rawObjects, user?.uid || 'guest');
       } catch (err) {
         if (cancelled) {
           return;
         }
+        const errMsg = err instanceof Error ? err.message : String(err);
+        logger.error('FIRESTORE', `Failed to load board objects: ${errMsg}`, { boardId });
         setCanvasNotice(toFirestoreUserMessage('Unable to load board objects.', err));
       }
     };
@@ -909,6 +932,12 @@ export function Board() {
       }
 
       recordRemoteObjectLatency(payload._ts);
+      logger.info('SYNC', `Remote object created: ${normalized.type} '${normalized.id}' by ${payload.actorUserId || 'unknown'}`, {
+        objectId: normalized.id,
+        objectType: normalized.type,
+        actorUserId: payload.actorUserId,
+        latencyMs: Math.max(0, Date.now() - (payload._ts || 0)),
+      });
       applyRemoteObjectUpsert(normalized, payload._ts);
     };
 
@@ -934,6 +963,13 @@ export function Board() {
         return;
       }
 
+      const latencyMs = Math.max(0, Date.now() - (payload._ts || 0));
+      if (latencyMs > 200) {
+        logger.warn('PERFORMANCE', `Object sync latency spike: ${latencyMs}ms for '${normalized.id}'`, {
+          latencyMs,
+          objectId: normalized.id,
+        });
+      }
       recordRemoteObjectLatency(payload._ts);
       applyRemoteObjectUpsert(normalized, payload._ts);
     };
@@ -956,6 +992,10 @@ export function Board() {
       }
 
       recordRemoteObjectLatency(payload._ts);
+      logger.info('SYNC', `Remote object deleted: '${objectId}'`, {
+        objectId,
+        actorUserId: payload.actorUserId,
+      });
       applyRemoteObjectDelete(objectId, payload._ts);
     };
 
@@ -1038,6 +1078,7 @@ export function Board() {
     let cancelled = false;
 
     const resyncFromFirestore = async () => {
+      logger.info('FIRESTORE', `Resyncing board from Firestore after reconnect`, { boardId });
       try {
         const snapshot = await withFirestoreTimeout(
           'Resyncing board after reconnect',
@@ -1049,11 +1090,15 @@ export function Board() {
         }
 
         const rawObjects = (snapshot.data() as { objects?: BoardObjectsRecord }).objects || {};
+        const count = Object.keys(rawObjects).length;
+        logger.info('FIRESTORE', `Board resync complete: ${count} objects loaded`, { boardId, objectCount: count });
         hydrateBoardObjects(rawObjects, user?.uid || 'guest');
       } catch (err) {
         if (cancelled) {
           return;
         }
+        const errMsg = err instanceof Error ? err.message : String(err);
+        logger.error('FIRESTORE', `Board resync failed: ${errMsg}`, { boardId });
         setCanvasNotice(toFirestoreUserMessage('Unable to resync board after reconnect.', err));
       }
     };
@@ -1181,6 +1226,11 @@ export function Board() {
     const now = Date.now();
     const payloadObject = sanitizeBoardObjectForFirestore(object);
     realtimeObjectEmitAtRef.current[payloadObject.id] = now;
+    logger.info('SYNC', `Broadcasting object create: ${object.type} '${object.id}'`, {
+      objectId: object.id,
+      objectType: object.type,
+      boardId: liveBoardId,
+    });
     socket.emit('object:create', {
       boardId: liveBoardId,
       object: payloadObject,
@@ -1222,6 +1272,7 @@ export function Board() {
       return;
     }
 
+    logger.info('SYNC', `Broadcasting object delete: '${objectId}'`, { objectId, boardId: liveBoardId });
     delete realtimeObjectEmitAtRef.current[objectId];
     socket.emit('object:delete', {
       boardId: liveBoardId,
@@ -1240,6 +1291,12 @@ export function Board() {
   }
 
   function applyAIBoardStateCommit(nextBoardState: BoardObjectsRecord, meta: AICommitMeta) {
+    logger.info('AI', `AI commit applied: ${meta.diff.createdIds.length} created, ${meta.diff.updatedIds.length} updated, ${meta.diff.deletedIds.length} deleted (txId: ${meta.txId})`, {
+      txId: meta.txId,
+      createdCount: meta.diff.createdIds.length,
+      updatedCount: meta.diff.updatedIds.length,
+      deletedCount: meta.diff.deletedIds.length,
+    });
     hydrateBoardObjects(nextBoardState, user?.uid || 'guest');
     setSelectedIds([]);
     const realtimeMeta: RealtimeObjectEventMeta = {
@@ -1276,12 +1333,16 @@ export function Board() {
     }
 
     if (saveInFlightRef.current) {
+      logger.debug('FIRESTORE', 'Board save queued (another save in progress)', { boardId: liveBoardId });
       saveQueuedRef.current = true;
       return;
     }
 
     saveInFlightRef.current = true;
     const objectsRecord = serializeBoardObjects();
+    const count = Object.keys(objectsRecord).length;
+    const saveStartMs = Date.now();
+    logger.info('FIRESTORE', `Saving board to Firestore (${count} objects)...`, { boardId: liveBoardId, objectCount: count });
 
     try {
       await withFirestoreTimeout(
@@ -1291,6 +1352,12 @@ export function Board() {
           updatedAt: serverTimestamp(),
         }),
       );
+      const saveTimeMs = Date.now() - saveStartMs;
+      logger.info('FIRESTORE', `Board saved successfully (${count} objects, ${saveTimeMs}ms)`, {
+        boardId: liveBoardId,
+        objectCount: count,
+        saveTimeMs,
+      });
       hasUnsavedChangesRef.current = false;
       setCanvasNotice(null);
       const socket = socketRef.current;
@@ -1303,6 +1370,11 @@ export function Board() {
         });
       }
     } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      logger.error('FIRESTORE', `Board save failed: ${errMsg} — edits may not be persisted`, {
+        boardId: liveBoardId,
+        objectCount: count,
+      });
       hasUnsavedChangesRef.current = true;
       setCanvasNotice(toFirestoreUserMessage('Unable to save board changes.', err));
     } finally {

@@ -194,5 +194,34 @@ service cloud.firestore {
         resource.data.boardId is string &&
         isBoardOwner(resource.data.boardId);
     }
+
+    match /boardRecents/{recentId} {
+      allow read: if isSignedIn() &&
+        (
+          recentId.matches('^' + request.auth.uid + '_.+$') ||
+          (
+            resource.data.userId is string &&
+            resource.data.userId == request.auth.uid
+          )
+        );
+
+      allow create: if isSignedIn() &&
+        request.resource.data.userId is string &&
+        request.resource.data.boardId is string &&
+        request.resource.data.userId == request.auth.uid &&
+        recentId == request.resource.data.userId + "_" + request.resource.data.boardId;
+
+      allow update: if isSignedIn() &&
+        resource.data.userId is string &&
+        resource.data.boardId is string &&
+        resource.data.userId == request.auth.uid &&
+        request.resource.data.userId == resource.data.userId &&
+        request.resource.data.boardId == resource.data.boardId &&
+        recentId == request.resource.data.userId + "_" + request.resource.data.boardId;
+
+      allow delete: if isSignedIn() &&
+        resource.data.userId is string &&
+        resource.data.userId == request.auth.uid;
+    }
   }
 }

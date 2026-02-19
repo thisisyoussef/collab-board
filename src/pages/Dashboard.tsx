@@ -1,7 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useBoards } from '../hooks/useBoards';
+import { useSharedBoards } from '../hooks/useSharedBoards';
+import type { SharedBoardDashboardEntry } from '../types/sharing';
+
+type DashboardView = 'owned' | 'shared';
 
 function formatDate(ms: number): string {
   if (!ms) return 'Just now';
@@ -14,11 +18,69 @@ function formatDate(ms: number): string {
   }).format(ms);
 }
 
+function boardCountLabel(count: number): string {
+  if (count === 1) {
+    return '1 board';
+  }
+  return `${count} boards`;
+}
+
+interface SharedSectionProps {
+  title: string;
+  emptyText: string;
+  boards: SharedBoardDashboardEntry[];
+  onOpenBoard: (boardId: string) => void;
+}
+
+function SharedBoardsSection({ title, emptyText, boards, onOpenBoard }: SharedSectionProps) {
+  return (
+    <section className="shared-section">
+      <header className="shared-section-head">
+        <h2>{title}</h2>
+      </header>
+
+      {boards.length === 0 ? (
+        <div className="shared-section-empty">{emptyText}</div>
+      ) : (
+        <div className="board-list">
+          {boards.map((board) => (
+            <article key={`${board.source}-${board.id}`} className="board-card">
+              <div className="board-card-main">
+                <h3>{board.title}</h3>
+                <p>
+                  Updated {formatDate(board.updatedAtMs)}
+                  {board.source === 'recent' && board.lastOpenedAtMs
+                    ? ` • Opened ${formatDate(board.lastOpenedAtMs)}`
+                    : ''}
+                </p>
+              </div>
+
+              <div className="board-card-actions">
+                <button
+                  className="secondary-btn"
+                  aria-label={`Open shared board ${board.title}`}
+                  onClick={() => onOpenBoard(board.id)}
+                >
+                  Open
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export function Dashboard() {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const { boards, loading, error, createBoard, renameBoard, removeBoard } = useBoards(user?.uid);
+  const { explicitBoards, recentBoards, loading: sharedLoading, error: sharedError } = useSharedBoards(
+    user?.uid,
+  );
 
+  const [activeView, setActiveView] = useState<DashboardView>('owned');
   const [newBoardName, setNewBoardName] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
   const [editingBoardId, setEditingBoardId] = useState<string | null>(null);
@@ -28,11 +90,10 @@ export function Dashboard() {
 
   const displayName = user?.displayName || user?.email || 'Unknown';
   const userInitial = displayName.charAt(0).toUpperCase();
-
-  const boardCountLabel = useMemo(() => {
-    if (boards.length === 1) return '1 board';
-    return `${boards.length} boards`;
-  }, [boards.length]);
+  const sharedCount = explicitBoards.length + recentBoards.length;
+  const heading = activeView === 'owned' ? 'Boards' : 'Shared with me';
+  const countLabel = activeView === 'owned' ? boardCountLabel(boards.length) : boardCountLabel(sharedCount);
+  const visibleError = activeView === 'owned' ? error || actionError : sharedError;
 
   const openBoard = (boardId: string) => {
     navigate(`/board/${boardId}`);
@@ -85,6 +146,82 @@ export function Dashboard() {
     }
   };
 
+  const ownedBoardCards = boards.map((board) => {
+    const isEditing = editingBoardId === board.id;
+
+    return (
+      <article key={board.id} className="board-card">
+        <div className="board-card-main">
+          {isEditing ? (
+            <input
+              className="board-input"
+              value={editingName}
+              onChange={(event) => setEditingName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  void handleRenameBoard(board.id);
+                }
+                if (event.key === 'Escape') {
+                  setEditingBoardId(null);
+                  setEditingName('');
+                }
+              }}
+              autoFocus
+            />
+          ) : (
+            <h3>{board.title}</h3>
+          )}
+          <p>Updated {formatDate(board.updatedAtMs || board.createdAtMs)}</p>
+        </div>
+
+        <div className="board-card-actions">
+          <button className="secondary-btn" onClick={() => openBoard(board.id)}>
+            Open
+          </button>
+
+          {isEditing ? (
+            <>
+              <button
+                className="primary-btn"
+                disabled={renamingBoardId === board.id}
+                onClick={() => void handleRenameBoard(board.id)}
+              >
+                {renamingBoardId === board.id ? 'Saving...' : 'Save'}
+              </button>
+              <button
+                className="secondary-btn"
+                onClick={() => {
+                  setEditingBoardId(null);
+                  setEditingName('');
+                }}
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <button
+              className="secondary-btn"
+              onClick={() => {
+                setEditingBoardId(board.id);
+                setEditingName(board.title);
+              }}
+            >
+              Rename
+            </button>
+          )}
+
+          <button
+            className="danger-btn"
+            onClick={() => void handleDeleteBoard(board.id, board.title)}
+          >
+            Delete
+          </button>
+        </div>
+      </article>
+    );
+  });
+
   return (
     <main className="dashboard-root">
       <header className="dashboard-topbar">
@@ -107,9 +244,17 @@ export function Dashboard() {
           <h2>Your Workspace</h2>
           <p className="landing-muted">Create and manage all your boards.</p>
           <div className="sidebar-list">
-            <button className="sidebar-item active">All boards</button>
-            <button className="sidebar-item" disabled>
-              Shared with me (soon)
+            <button
+              className={`sidebar-item ${activeView === 'owned' ? 'active' : ''}`}
+              onClick={() => setActiveView('owned')}
+            >
+              All boards
+            </button>
+            <button
+              className={`sidebar-item ${activeView === 'shared' ? 'active' : ''}`}
+              onClick={() => setActiveView('shared')}
+            >
+              Shared with me
             </button>
             <button className="sidebar-item" disabled>
               Templates (soon)
@@ -120,111 +265,60 @@ export function Dashboard() {
         <section className="dashboard-main">
           <div className="dashboard-main-head">
             <div>
-              <h1>Boards</h1>
-              <p className="landing-muted">{boardCountLabel}</p>
+              <h1>{heading}</h1>
+              <p className="landing-muted">{countLabel}</p>
             </div>
-            <form
-              className="create-board-row"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void handleCreateBoard();
-              }}
-            >
-              <input
-                value={newBoardName}
-                onChange={(event) => setNewBoardName(event.target.value)}
-                placeholder="New board name"
-                className="board-input"
-              />
-              <button className="primary-btn" type="submit" disabled={isCreating}>
-                {isCreating ? 'Creating...' : 'Create Board'}
-              </button>
-            </form>
+            {activeView === 'owned' ? (
+              <form
+                className="create-board-row"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void handleCreateBoard();
+                }}
+              >
+                <input
+                  value={newBoardName}
+                  onChange={(event) => setNewBoardName(event.target.value)}
+                  placeholder="New board name"
+                  className="board-input"
+                />
+                <button className="primary-btn" type="submit" disabled={isCreating}>
+                  {isCreating ? 'Creating...' : 'Create Board'}
+                </button>
+              </form>
+            ) : null}
           </div>
 
-          {(error || actionError) && <p className="auth-error">{error || actionError}</p>}
+          {visibleError ? <p className="auth-error">{visibleError}</p> : null}
 
-          {loading ? (
-            <div className="dashboard-empty">Loading your boards...</div>
-          ) : boards.length === 0 ? (
-            <div className="dashboard-empty">No boards yet. Create your first board above.</div>
+          {activeView === 'owned' ? (
+            loading ? (
+              <div className="dashboard-empty">Loading your boards...</div>
+            ) : boards.length === 0 ? (
+              <div className="dashboard-empty">No boards yet. Create your first board above.</div>
+            ) : (
+              <div className="board-list">{ownedBoardCards}</div>
+            )
+          ) : sharedLoading ? (
+            <div className="dashboard-empty">Loading shared boards...</div>
+          ) : explicitBoards.length === 0 && recentBoards.length === 0 ? (
+            <div className="dashboard-empty">
+              No shared boards yet. Open a shared board link or ask an owner to add you.
+            </div>
           ) : (
-            <div className="board-list">
-              {boards.map((board) => {
-                const isEditing = editingBoardId === board.id;
-
-                return (
-                  <article key={board.id} className="board-card">
-                    <div className="board-card-main">
-                      {isEditing ? (
-                        <input
-                          className="board-input"
-                          value={editingName}
-                          onChange={(event) => setEditingName(event.target.value)}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter') {
-                              event.preventDefault();
-                              void handleRenameBoard(board.id);
-                            }
-                            if (event.key === 'Escape') {
-                              setEditingBoardId(null);
-                              setEditingName('');
-                            }
-                          }}
-                          autoFocus
-                        />
-                      ) : (
-                        <h3>{board.title}</h3>
-                      )}
-                      <p>Updated {formatDate(board.updatedAtMs || board.createdAtMs)}</p>
-                    </div>
-
-                    <div className="board-card-actions">
-                      <button className="secondary-btn" onClick={() => openBoard(board.id)}>
-                        Open
-                      </button>
-
-                      {isEditing ? (
-                        <>
-                          <button
-                            className="primary-btn"
-                            disabled={renamingBoardId === board.id}
-                            onClick={() => void handleRenameBoard(board.id)}
-                          >
-                            {renamingBoardId === board.id ? 'Saving...' : 'Save'}
-                          </button>
-                          <button
-                            className="secondary-btn"
-                            onClick={() => {
-                              setEditingBoardId(null);
-                              setEditingName('');
-                            }}
-                          >
-                            Cancel
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          className="secondary-btn"
-                          onClick={() => {
-                            setEditingBoardId(board.id);
-                            setEditingName(board.title);
-                          }}
-                        >
-                          Rename
-                        </button>
-                      )}
-
-                      <button
-                        className="danger-btn"
-                        onClick={() => void handleDeleteBoard(board.id, board.title)}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </article>
-                );
-              })}
+            <div className="shared-boards-list">
+              <SharedBoardsSection
+                title="Shared directly"
+                boards={explicitBoards}
+                emptyText="No explicit shared boards yet."
+                onOpenBoard={openBoard}
+              />
+              <SharedBoardsSection
+                title="Recent shared links"
+                boards={recentBoards}
+                emptyText="No recent shared links yet."
+                onOpenBoard={openBoard}
+              />
             </div>
           )}
         </section>

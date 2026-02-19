@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { AuthContext, type AuthContextValue } from '../context/auth-context';
+import type { SharedBoardDashboardEntry } from '../types/sharing';
 
 // Mock useBoards
 const mockCreateBoard = vi.fn();
@@ -18,6 +19,18 @@ let mockBoardsReturn = {
 
 vi.mock('../hooks/useBoards', () => ({
   useBoards: () => mockBoardsReturn,
+}));
+
+let mockSharedBoardsReturn = {
+  explicitBoards: [] as SharedBoardDashboardEntry[],
+  recentBoards: [] as SharedBoardDashboardEntry[],
+  loading: false,
+  error: null as string | null,
+  reload: vi.fn().mockResolvedValue(undefined),
+};
+
+vi.mock('../hooks/useSharedBoards', () => ({
+  useSharedBoards: () => mockSharedBoardsReturn,
 }));
 
 const mockNavigate = vi.fn();
@@ -46,6 +59,7 @@ const baseAuth: AuthContextValue = {
 function renderDashboard(
   authOverrides: Partial<AuthContextValue> = {},
   boardsOverrides: Partial<typeof mockBoardsReturn> = {},
+  sharedBoardsOverrides: Partial<typeof mockSharedBoardsReturn> = {},
 ) {
   mockBoardsReturn = {
     boards: [],
@@ -55,6 +69,14 @@ function renderDashboard(
     renameBoard: mockRenameBoard,
     removeBoard: mockRemoveBoard,
     ...boardsOverrides,
+  };
+  mockSharedBoardsReturn = {
+    explicitBoards: [],
+    recentBoards: [],
+    loading: false,
+    error: null,
+    reload: vi.fn().mockResolvedValue(undefined),
+    ...sharedBoardsOverrides,
   };
 
   return render(
@@ -82,6 +104,78 @@ describe('Dashboard', () => {
     renderDashboard({}, { loading: true });
 
     expect(screen.getByText('Loading your boards...')).toBeInTheDocument();
+  });
+
+  it('renders Shared with me tab as available', () => {
+    renderDashboard();
+
+    const sharedButton = screen.getByRole('button', { name: 'Shared with me' });
+    expect(sharedButton).toBeInTheDocument();
+    expect(sharedButton).toBeEnabled();
+  });
+
+  it('renders shared dashboard sections when Shared with me is selected', () => {
+    renderDashboard(
+      {},
+      {},
+      {
+        explicitBoards: [
+          {
+            id: 'shared-1',
+            title: 'Shared Planning',
+            ownerId: 'owner-1',
+            createdAtMs: 1000,
+            updatedAtMs: 3000,
+            role: 'viewer',
+            source: 'explicit',
+          },
+        ],
+        recentBoards: [
+          {
+            id: 'recent-1',
+            title: 'Recent Retro',
+            ownerId: 'owner-2',
+            createdAtMs: 1200,
+            updatedAtMs: 2200,
+            lastOpenedAtMs: 5000,
+            source: 'recent',
+          },
+        ],
+      },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+
+    expect(screen.getByRole('heading', { name: 'Shared with me' })).toBeInTheDocument();
+    expect(screen.getByText('Shared directly')).toBeInTheDocument();
+    expect(screen.getByText('Recent shared links')).toBeInTheDocument();
+    expect(screen.getByText('Shared Planning')).toBeInTheDocument();
+    expect(screen.getByText('Recent Retro')).toBeInTheDocument();
+  });
+
+  it('opens shared board cards from Shared with me view', () => {
+    renderDashboard(
+      {},
+      {},
+      {
+        explicitBoards: [
+          {
+            id: 'shared-2',
+            title: 'Shared Execution',
+            ownerId: 'owner-3',
+            createdAtMs: 1000,
+            updatedAtMs: 3000,
+            role: 'editor',
+            source: 'explicit',
+          },
+        ],
+      },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open shared board Shared Execution' }));
+
+    expect(mockNavigate).toHaveBeenCalledWith('/board/shared-2');
   });
 
   it('shows empty state when no boards exist', () => {

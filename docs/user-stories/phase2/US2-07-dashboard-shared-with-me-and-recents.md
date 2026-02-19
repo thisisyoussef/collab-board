@@ -2,7 +2,7 @@
 
 ## Status
 
-- State: Pending
+- State: Ready for User Checkpoint
 - Owner: Codex
 - Depends on: US2-06 approved
 
@@ -116,11 +116,11 @@ Red -> Green -> Refactor:
 
 ## Acceptance Criteria
 
-- [ ] Shared with me section is active.
-- [ ] Explicit shared boards are shown.
-- [ ] Recent shared boards are shown.
-- [ ] Dedupe and sorting follow listing contract.
-- [ ] Opening boards updates recents tracking.
+- [x] Shared with me section is active.
+- [x] Explicit shared boards are shown.
+- [x] Recent shared boards are shown.
+- [x] Dedupe and sorting follow listing contract.
+- [x] Opening boards updates recents tracking.
 
 ## Local Validation
 
@@ -138,7 +138,22 @@ Red -> Green -> Refactor:
 
 ## Checkpoint Result
 
-- Production Frontend URL: Pending
-- Production Socket URL: Pending
+- Production Frontend URL: https://collab-board-iota.vercel.app
+- Production Socket URL: https://collab-board-0948.onrender.com
 - User Validation: Pending
-- Notes: Pending implementation.
+- Notes:
+  - Implemented `useSharedBoards` with explicit-membership + recents merge/dedupe contract.
+  - Activated dashboard `Shared with me` tab with sectioned rendering:
+    - `Shared directly`
+    - `Recent shared links`
+  - Added board-recents upsert hook (`useBoardRecents`) and board-level integration for open tracking.
+  - Added Firestore rules for `boardRecents/{userId_boardId}` owner-only read/write.
+  - TDD evidence:
+    - `src/hooks/useSharedBoards.test.ts` (3)
+    - `src/hooks/useBoardRecents.test.ts` (3)
+    - `src/pages/Dashboard.test.tsx` additions (3)
+  - Local validation:
+    - `npm run lint` (pass, 1 existing warning in `src/context/AuthContext.tsx:44`)
+    - `npm run test -- src/hooks/useSharedBoards.test.ts src/hooks/useBoardRecents.test.ts src/pages/Dashboard.test.tsx` (pass)
+    - `npm run test` (pass: 35 files / 231 tests)
+    - `npm run build` (pass; Vite warns local Node 18 is below recommended version)
