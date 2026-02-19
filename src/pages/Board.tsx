@@ -1,6 +1,6 @@
 import { doc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore/lite';
 import Konva from 'konva';
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import {
   Circle as KonvaCircleShape,
   Layer,
@@ -196,6 +196,13 @@ const CONNECTOR_ROUTING_TURN_PENALTY = 18;
 const SHAPE_ANCHOR_RADIUS = 4;
 const SHAPE_ANCHOR_MATCH_EPSILON = 0.01;
 const CONNECTOR_PATH_HANDLE_RADIUS = 6;
+const CONNECTOR_LABEL_FONT_SIZE = 13;
+const CONNECTOR_LABEL_FONT_FAMILY = 'Segoe UI, sans-serif';
+const CONNECTOR_LABEL_CHAR_WIDTH_FACTOR = 0.56;
+const CONNECTOR_LABEL_PADDING_X = 8;
+const CONNECTOR_LABEL_PADDING_Y = 4;
+const CONNECTOR_LABEL_BACKGROUND_FILL = 'rgba(248, 250, 252, 0.96)';
+const CONNECTOR_LABEL_BACKGROUND_STROKE = 'rgba(148, 163, 184, 0.45)';
 
 type PendingRemoteObjectEvent =
   | { kind: 'create'; payload: ObjectCreatePayload }
@@ -225,6 +232,18 @@ function getStickyRenderText(value: string | undefined): string {
 
 function getStickyRenderColor(value: string | undefined): string {
   return isPlaceholderStickyText(value) ? '#6b7280' : '#111827';
+}
+
+function estimateConnectorLabelBounds(text: string): { width: number; height: number } {
+  const length = Math.max(1, text.length);
+  const estimatedTextWidth = Math.max(
+    CONNECTOR_LABEL_FONT_SIZE,
+    length * CONNECTOR_LABEL_FONT_SIZE * CONNECTOR_LABEL_CHAR_WIDTH_FACTOR,
+  );
+  return {
+    width: estimatedTextWidth + CONNECTOR_LABEL_PADDING_X * 2,
+    height: CONNECTOR_LABEL_FONT_SIZE + CONNECTOR_LABEL_PADDING_Y * 2,
+  };
 }
 
 function fallbackCopyToClipboard(value: string): boolean {
@@ -4080,13 +4099,16 @@ export function Board() {
         points,
         Number.isFinite(entry.labelPosition) ? Number(entry.labelPosition) : CONNECTOR_DEFAULT_LABEL_POSITION,
       );
+      const text = (entry.label || '').trim();
+      const bounds = estimateConnectorLabelBounds(text);
       return {
         id: entry.id,
         x: point.x,
         y: point.y,
-        text: entry.label || '',
+        text,
         color: entry.color || '#111827',
-        hasBackground: Boolean(entry.labelBackground),
+        width: bounds.width,
+        height: bounds.height,
       };
     });
 
@@ -4339,23 +4361,36 @@ export function Board() {
               <Layer ref={selectionLayerRef}>
                 <Transformer ref={transformerRef} rotateEnabled />
                 {connectorLabels.map((label) => (
-                  <KonvaTextShape
-                    key={`${label.id}-label`}
-                    x={label.x}
-                    y={label.y}
-                    text={label.text}
-                    fontSize={13}
-                    fontFamily="Segoe UI, sans-serif"
-                    fill={label.color}
-                    listening={false}
-                    align="center"
-                    verticalAlign="middle"
-                    offsetX={label.text.length * 3.2}
-                    offsetY={7}
-                    padding={label.hasBackground ? 3 : 0}
-                    shadowColor={label.hasBackground ? '#ffffff' : undefined}
-                    shadowBlur={label.hasBackground ? 8 : 0}
-                  />
+                  <Fragment key={`${label.id}-label`}>
+                    <KonvaRectShape
+                      x={label.x}
+                      y={label.y}
+                      width={label.width}
+                      height={label.height}
+                      offsetX={label.width / 2}
+                      offsetY={label.height / 2}
+                      cornerRadius={Math.min(8, label.height / 2)}
+                      fill={CONNECTOR_LABEL_BACKGROUND_FILL}
+                      stroke={CONNECTOR_LABEL_BACKGROUND_STROKE}
+                      strokeWidth={1}
+                      listening={false}
+                    />
+                    <KonvaTextShape
+                      x={label.x}
+                      y={label.y}
+                      width={label.width}
+                      height={label.height}
+                      offsetX={label.width / 2}
+                      offsetY={label.height / 2}
+                      text={label.text}
+                      fontSize={CONNECTOR_LABEL_FONT_SIZE}
+                      fontFamily={CONNECTOR_LABEL_FONT_FAMILY}
+                      fill={label.color}
+                      listening={false}
+                      align="center"
+                      verticalAlign="middle"
+                    />
+                  </Fragment>
                 ))}
                 {connectorShapeAnchors
                   .map((anchor) => (
