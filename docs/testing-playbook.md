@@ -164,6 +164,23 @@ Deploy automation workflow:
 - `/Users/youss/Development/gauntlet/collab-board/.github/workflows/ai-benchmark-on-deploy.yml`
 - Triggered on successful production deployment status (and manually via workflow dispatch).
 
+Vercel-native trigger (no GitHub Actions):
+
+```bash
+curl -X POST "https://collab-board-iota.vercel.app/api/ai/benchmark" \
+  -H "Content-Type: application/json" \
+  -H "X-Benchmark-Secret: $BENCHMARK_RUN_SECRET" \
+  -d '{
+    "rounds": 4,
+    "concurrency": 8,
+    "autoCreateBoards": 6,
+    "matrix": "anthropic:claude-sonnet-4-20250514,anthropic:claude-3-5-haiku-latest,openai:gpt-4.1-mini,openai:gpt-4.1,openai:gpt-4o-mini"
+  }'
+```
+
+Endpoint file:
+- `/Users/youss/Development/gauntlet/collab-board/api/ai/benchmark.ts`
+
 ### Outputs
 
 - JSON report: `/Users/youss/Development/gauntlet/collab-board/docs/submission/ab-results/ab-report-<timestamp>.json`

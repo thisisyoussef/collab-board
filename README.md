@@ -114,6 +114,31 @@ Local/manual run:
 npm run ab:deploy
 ```
 
+### Vercel-Hosted Benchmark Trigger (No GitHub Actions Required)
+
+If you want benchmark runs to execute inside Vercel (using Vercel env vars directly), use:
+
+- Endpoint: `/api/ai/benchmark`
+- Required env: `BENCHMARK_RUN_SECRET`
+- Required for benchmark auth: `AI_AUTH_TOKEN` or Firebase Admin + `FIREBASE_WEB_API_KEY` + `BENCHMARK_USER_ID`
+
+Example trigger:
+
+```bash
+curl -X POST "https://collab-board-iota.vercel.app/api/ai/benchmark" \
+  -H "Content-Type: application/json" \
+  -H "X-Benchmark-Secret: $BENCHMARK_RUN_SECRET" \
+  -d '{
+    "rounds": 4,
+    "concurrency": 8,
+    "autoCreateBoards": 6,
+    "matrix": "anthropic:claude-sonnet-4-20250514,anthropic:claude-3-5-haiku-latest,openai:gpt-4.1-mini,openai:gpt-4.1,openai:gpt-4o-mini",
+    "maxRequests": 0
+  }'
+```
+
+This runs on Vercel compute and writes traces directly to your LangSmith project.
+
 ## Architecture
 
 ```
