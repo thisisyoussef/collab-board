@@ -16,6 +16,49 @@ const DEFAULT_MAX_REQUESTS = 0;
 const DEFAULT_MODEL_MATRIX =
   'anthropic:claude-sonnet-4-20250514,anthropic:claude-3-5-haiku-latest,openai:gpt-4.1-mini,openai:gpt-4.1,openai:gpt-4o-mini';
 const MODEL_NAME_PATTERN = /^[a-zA-Z0-9._:-]{1,128}$/;
+const FALLBACK_PROMPT_SUITE: PromptEntry[] = [
+  {
+    id: 'create_sticky',
+    category: 'creation',
+    prompt: "Add a yellow sticky note that says 'User Research'.",
+  },
+  {
+    id: 'create_shape',
+    category: 'creation',
+    prompt: 'Create a blue rectangle at position 100, 200.',
+  },
+  {
+    id: 'change_color',
+    category: 'manipulation',
+    prompt: 'Change the sticky note color to green.',
+  },
+  {
+    id: 'move_notes',
+    category: 'manipulation',
+    prompt: 'Move all pink sticky notes to the right side.',
+  },
+  {
+    id: 'grid_arrange',
+    category: 'layout',
+    prompt: 'Arrange these sticky notes in a grid.',
+  },
+  {
+    id: 'grid_generate',
+    category: 'layout',
+    prompt: 'Create a 2x3 grid of sticky notes for pros and cons.',
+  },
+  {
+    id: 'swot_template',
+    category: 'complex',
+    prompt: 'Create a SWOT analysis template with four quadrants.',
+  },
+  {
+    id: 'retro_template',
+    category: 'complex',
+    prompt:
+      "Set up a retrospective board with What Went Well, What Didn't, and Action Items columns.",
+  },
+];
 
 interface PromptEntry {
   id: string;
@@ -281,11 +324,20 @@ async function createBenchmarkBoards(
 }
 
 async function loadPromptSuite(promptSuitePath: string): Promise<PromptEntry[]> {
-  const absolutePath = path.isAbsolute(promptSuitePath)
-    ? promptSuitePath
-    : path.resolve(process.cwd(), promptSuitePath);
-  const raw = await fs.readFile(absolutePath, 'utf8');
-  const parsed = JSON.parse(raw);
+  let parsed: unknown;
+  try {
+    const absolutePath = path.isAbsolute(promptSuitePath)
+      ? promptSuitePath
+      : path.resolve(process.cwd(), promptSuitePath);
+    const raw = await fs.readFile(absolutePath, 'utf8');
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') {
+      return FALLBACK_PROMPT_SUITE;
+    }
+    throw err;
+  }
+
   if (!Array.isArray(parsed)) {
     throw new Error('Prompt suite must be a JSON array.');
   }
