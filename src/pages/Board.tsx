@@ -5390,6 +5390,7 @@ export function Board() {
             averageCursorLatencyMs={averageLatencyMs}
             averageObjectLatencyMs={averageObjectLatencyMs}
             averageAIApplyLatencyMs={averageAIApplyLatencyMs}
+            averageAIRequestLatencyMs={aiCommandCenter.averageRequestLatencyMs}
             aiApplyCount={aiApplyCount}
             aiDedupeDrops={aiDedupeDrops}
             userCount={members.length}

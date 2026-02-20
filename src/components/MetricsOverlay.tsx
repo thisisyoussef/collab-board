@@ -5,6 +5,7 @@ interface MetricsOverlayProps {
   averageCursorLatencyMs: number;
   averageObjectLatencyMs: number;
   averageAIApplyLatencyMs: number;
+  averageAIRequestLatencyMs: number;
   aiApplyCount: number;
   aiDedupeDrops: number;
   userCount: number;
@@ -22,6 +23,7 @@ export function MetricsOverlay({
   averageCursorLatencyMs,
   averageObjectLatencyMs,
   averageAIApplyLatencyMs,
+  averageAIRequestLatencyMs,
   aiApplyCount,
   aiDedupeDrops,
   userCount,
@@ -85,6 +87,10 @@ export function MetricsOverlay({
     () => (averageAIApplyLatencyMs < 400 ? '✅' : '⚠️'),
     [averageAIApplyLatencyMs],
   );
+  const aiRequestStatus = useMemo(
+    () => (averageAIRequestLatencyMs === 0 ? '—' : averageAIRequestLatencyMs < 2000 ? '✅' : '⚠️'),
+    [averageAIRequestLatencyMs],
+  );
 
   const statusLabel = useMemo(() => {
     if (connectionStatus !== 'connected') {
@@ -118,6 +124,9 @@ export function MetricsOverlay({
       </p>
       <p>
         AI apply avg: {averageAIApplyLatencyMs}ms {aiStatus}
+      </p>
+      <p>
+        AI request avg: {averageAIRequestLatencyMs}ms {aiRequestStatus}
       </p>
       <p>
         AI applies: {aiApplyCount} | AI dedupe drops: {aiDedupeDrops}

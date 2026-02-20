@@ -915,4 +915,69 @@ describe('AI Generate API Endpoint', () => {
       expect(mockAwaitPendingTraceBatches).toHaveBeenCalled();
     });
   });
+
+  describe('Plan expansion logic (exported helpers)', () => {
+    it('detects SWOT prompts as complex', async () => {
+      const { isLikelyComplexPlanPrompt } = await import('../../api/ai/generate');
+      expect(isLikelyComplexPlanPrompt('Create a SWOT analysis')).toBe(true);
+      expect(isLikelyComplexPlanPrompt('Make a swot template')).toBe(true);
+    });
+
+    it('detects retrospective prompts as complex', async () => {
+      const { isLikelyComplexPlanPrompt } = await import('../../api/ai/generate');
+      expect(isLikelyComplexPlanPrompt('Set up a retrospective board')).toBe(true);
+      expect(isLikelyComplexPlanPrompt('Create a retro with 3 columns')).toBe(true);
+    });
+
+    it('detects journey map prompts as complex', async () => {
+      const { isLikelyComplexPlanPrompt } = await import('../../api/ai/generate');
+      expect(isLikelyComplexPlanPrompt('Build a user journey map')).toBe(true);
+      expect(isLikelyComplexPlanPrompt('Create a journey with 5 stages')).toBe(true);
+    });
+
+    it('detects grid and layout prompts as complex', async () => {
+      const { isLikelyComplexPlanPrompt } = await import('../../api/ai/generate');
+      expect(isLikelyComplexPlanPrompt('Arrange in a grid')).toBe(true);
+      expect(isLikelyComplexPlanPrompt('Create 3 columns of stickies')).toBe(true);
+    });
+
+    it('detects numeric patterns as complex', async () => {
+      const { isLikelyComplexPlanPrompt } = await import('../../api/ai/generate');
+      expect(isLikelyComplexPlanPrompt('Create a board with 5 sections')).toBe(true);
+      expect(isLikelyComplexPlanPrompt('Include 3 sticky notes')).toBe(true);
+    });
+
+    it('does not flag simple prompts as complex', async () => {
+      const { isLikelyComplexPlanPrompt } = await import('../../api/ai/generate');
+      expect(isLikelyComplexPlanPrompt('Add a yellow sticky note')).toBe(false);
+      expect(isLikelyComplexPlanPrompt('Change the color to green')).toBe(false);
+      expect(isLikelyComplexPlanPrompt('Move the rectangle')).toBe(false);
+    });
+
+    it('returns correct minimum tool calls for SWOT', async () => {
+      const { getMinimumToolCallsForPrompt } = await import('../../api/ai/generate');
+      expect(getMinimumToolCallsForPrompt('Create a SWOT analysis')).toBe(5);
+    });
+
+    it('returns correct minimum tool calls for retro', async () => {
+      const { getMinimumToolCallsForPrompt } = await import('../../api/ai/generate');
+      expect(getMinimumToolCallsForPrompt('Set up a retrospective board')).toBe(4);
+    });
+
+    it('returns correct minimum for NxM grid patterns', async () => {
+      const { getMinimumToolCallsForPrompt } = await import('../../api/ai/generate');
+      expect(getMinimumToolCallsForPrompt('Create a 2x3 grid of notes')).toBe(6);
+      expect(getMinimumToolCallsForPrompt('Make a 3x3 matrix')).toBe(9);
+    });
+
+    it('returns correct minimum for N stages', async () => {
+      const { getMinimumToolCallsForPrompt } = await import('../../api/ai/generate');
+      expect(getMinimumToolCallsForPrompt('Build a journey with 5 stages')).toBe(5);
+    });
+
+    it('returns default minimum for generic complex prompts', async () => {
+      const { getMinimumToolCallsForPrompt } = await import('../../api/ai/generate');
+      expect(getMinimumToolCallsForPrompt('Create a workflow diagram')).toBe(2);
+    });
+  });
 });

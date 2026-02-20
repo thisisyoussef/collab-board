@@ -390,12 +390,40 @@ Guidelines:
 - Use pleasant colors. Default sticky note color: #FFEB3B (yellow). Other good colors: #81C784 (green), #64B5F6 (blue), #E57373 (red), #FFB74D (orange), #BA68C8 (purple).
 - Standard sticky note size: 150x100. Standard shape size: 120x80.
 - For line shapes, provide width + height or line endpoints (x2, y2).
-- For templates (SWOT, Kanban, Retro), create frames first, then populate with sticky notes inside.
-- When arranging in a grid, use consistent spacing (e.g. 200px horizontal, 150px vertical).
 - Always use the getBoardState tool first if you need to reference or modify existing objects.
 - Return a complete multi-step plan in a single response. Do not stop after one creation call for template requests.
 - updateText is only valid for sticky/text objects and frame titles, not rect/circle/line/connector.
-- Include stable objectId values for created objects so downstream updates can reference them.`;
+- Include stable objectId values for created objects so downstream updates can reference them.
+
+Template Instructions (follow positions exactly):
+
+SWOT Analysis — create 4 frames in a 2x2 grid, each 400x300, with 50px gap:
+  Strengths frame: x=100, y=100, width=400, height=300
+  Weaknesses frame: x=550, y=100, width=400, height=300
+  Opportunities frame: x=100, y=450, width=400, height=300
+  Threats frame: x=550, y=450, width=400, height=300
+  Place 2-3 sticky notes inside each frame. Position stickies 50px inside the frame top-left.
+
+Grid Layout — calculate positions mathematically for an NxM grid:
+  For item at row i (0-indexed), column j (0-indexed) with item width W, height H:
+    x = 100 + j * (W + 200)
+    y = 100 + i * (H + 150)
+  Use W=150, H=100 for sticky notes, W=120, H=80 for shapes.
+
+Retrospective Board — create 3 vertical frames (300x500 each, 50px gap):
+  "What Went Well": x=100, y=100, width=300, height=500, color=#81C784
+  "What Didn't Go Well": x=450, y=100, width=300, height=500, color=#E57373
+  "Action Items": x=800, y=100, width=300, height=500, color=#64B5F6
+  Place 2-3 starter sticky notes inside each frame.
+
+Kanban Board — create 3-5 vertical frames (300x600 each, 50px gap):
+  Start at x=100, y=100. Each subsequent column at x + 350.
+  Columns: "To Do", "In Progress", "Done" (or as requested).
+
+User Journey Map — create N horizontal frames (250x400 each, 30px gap):
+  Start at x=100, y=100. Each subsequent stage at x + 280.
+  Label each frame: "Stage 1: [name]", "Stage 2: [name]", etc.
+  Place 2-3 sticky notes inside each stage frame.`;
 
 const MAX_PROMPT_LENGTH = 500;
 const MAX_BOARD_STATE_OBJECTS = 100;
@@ -626,10 +654,10 @@ function getPlanQualityScore(toolCalls: OutgoingToolCall[], issues: ToolValidati
   return issues.length * 100 - toolCalls.length;
 }
 
-function isLikelyComplexPlanPrompt(prompt: string): boolean {
+export function isLikelyComplexPlanPrompt(prompt: string): boolean {
   const lower = prompt.toLowerCase();
   if (
-    /\b(template|framework|analysis|matrix|quadrant|kanban|retro|diagram|workflow|roadmap|mind map)\b/i.test(
+    /\b(templates?|frameworks?|analysis|matrix|quadrants?|kanban|retro|retrospective|diagrams?|workflows?|roadmaps?|mind map|journey|user journey|sprint|brainstorm|planning board|swot|grids?|columns?|lanes?|stages?)\b/i.test(
       lower,
     )
   ) {
@@ -643,6 +671,27 @@ function isLikelyComplexPlanPrompt(prompt: string): boolean {
   return false;
 }
 
+export function getMinimumToolCallsForPrompt(prompt: string): number {
+  const lower = prompt.toLowerCase();
+
+  if (/\bswot\b/i.test(lower)) return 5;
+  if (/\b(retro|retrospective)\b/i.test(lower)) return 4;
+  if (/\b(kanban)\b/i.test(lower)) return 4;
+
+  const gridMatch = lower.match(/(\d+)\s*x\s*(\d+)/);
+  if (gridMatch) {
+    return parseInt(gridMatch[1], 10) * parseInt(gridMatch[2], 10);
+  }
+
+  const stageMatch = lower.match(/(\d+)\s+stage/);
+  if (stageMatch) return parseInt(stageMatch[1], 10);
+
+  const columnMatch = lower.match(/(\d+)\s+column/);
+  if (columnMatch) return parseInt(columnMatch[1], 10);
+
+  return 2;
+}
+
 function shouldRequestPlanExpansion(
   prompt: string,
   toolCalls: OutgoingToolCall[],
@@ -651,7 +700,8 @@ function shouldRequestPlanExpansion(
     return false;
   }
 
-  return toolCalls.length <= 1;
+  const minimumRequired = getMinimumToolCallsForPrompt(prompt);
+  return toolCalls.length < minimumRequired;
 }
 
 function buildInitialUserContent(prompt: string, truncatedBoardState: unknown): string {

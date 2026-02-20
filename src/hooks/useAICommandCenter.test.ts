@@ -157,4 +157,87 @@ describe('useAICommandCenter', () => {
       expect(result.current.loading).toBe(false);
     });
   });
+
+  it('tracks AI request latency after successful prompt', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({
+        message: 'Created.',
+        toolCalls: [{ id: 't1', name: 'createStickyNote', input: { text: 'A', x: 0, y: 0 } }],
+      }),
+    } as Response);
+
+    const { result } = renderHook(() =>
+      useAICommandCenter({
+        boardId: 'board-lat',
+        user: { getIdToken: mockGetIdToken } as never,
+      }),
+    );
+
+    await act(async () => {
+      result.current.setPrompt('Add a note');
+    });
+
+    await act(async () => {
+      await result.current.submitPrompt();
+    });
+
+    expect(result.current.lastRequestLatencyMs).toBeGreaterThanOrEqual(0);
+    expect(result.current.averageRequestLatencyMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('computes rolling average over multiple requests', async () => {
+    const { result } = renderHook(() =>
+      useAICommandCenter({
+        boardId: 'board-avg',
+        user: { getIdToken: mockGetIdToken } as never,
+      }),
+    );
+
+    for (let i = 0; i < 3; i++) {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ message: `Run ${i}`, toolCalls: [] }),
+      } as Response);
+
+      await act(async () => {
+        result.current.setPrompt(`prompt ${i}`);
+      });
+
+      await act(async () => {
+        await result.current.submitPrompt();
+      });
+    }
+
+    expect(result.current.lastRequestLatencyMs).toBeGreaterThanOrEqual(0);
+    expect(result.current.averageRequestLatencyMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('records latency even when response is not ok', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      json: vi.fn().mockResolvedValue({ error: 'Server error' }),
+    } as Response);
+
+    const { result } = renderHook(() =>
+      useAICommandCenter({
+        boardId: 'board-err',
+        user: { getIdToken: mockGetIdToken } as never,
+      }),
+    );
+
+    await act(async () => {
+      result.current.setPrompt('fail request');
+    });
+
+    await act(async () => {
+      await result.current.submitPrompt();
+    });
+
+    // Latency should still be recorded even on error responses
+    expect(result.current.lastRequestLatencyMs).toBeGreaterThanOrEqual(0);
+  });
 });

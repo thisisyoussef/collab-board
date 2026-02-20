@@ -1,5 +1,5 @@
 import type { User } from 'firebase/auth';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { logger } from '../lib/logger';
 import type { BoardObjectsRecord } from '../types/board';
 import type {
@@ -25,6 +25,8 @@ interface UseAICommandCenterResult {
   error: string | null;
   message: string | null;
   actions: AIActionPreview[];
+  lastRequestLatencyMs: number | null;
+  averageRequestLatencyMs: number;
   setPrompt: (value: string) => void;
   setMode: (mode: AIApplyMode) => void;
   submitPrompt: () => Promise<AICommandRunResult | null>;
@@ -147,6 +149,8 @@ export function useAICommandCenter({
   const [actions, setActions] = useState<AIActionPreview[]>([]);
   const loadingRef = useRef(false);
   const lastPromptRef = useRef('');
+  const [lastRequestLatencyMs, setLastRequestLatencyMs] = useState<number | null>(null);
+  const latencyHistoryRef = useRef<number[]>([]);
 
   const setMode = useCallback((nextMode: AIApplyMode) => {
     const normalizedMode = nextMode === 'auto' ? 'auto' : 'auto';
@@ -179,6 +183,8 @@ export function useAICommandCenter({
         boardId,
         promptLength: trimmedPrompt.length,
       });
+
+      const requestStartMs = Date.now();
 
       try {
         const headers: Record<string, string> = {
@@ -221,6 +227,14 @@ export function useAICommandCenter({
         });
 
         const payload = await parseJsonPayload(response);
+        const requestLatencyMs = Date.now() - requestStartMs;
+        setLastRequestLatencyMs(requestLatencyMs);
+        latencyHistoryRef.current.push(requestLatencyMs);
+        if (latencyHistoryRef.current.length > 10) {
+          latencyHistoryRef.current.shift();
+        }
+        logger.info('AI', `AI request completed in ${requestLatencyMs}ms`, { requestLatencyMs, boardId });
+
         if (!response.ok) {
           const errMsg = parseApiError(response.status, payload.error);
           logger.error('AI', `AI request failed (HTTP ${response.status}): ${errMsg}`, {
@@ -293,6 +307,13 @@ export function useAICommandCenter({
     setActions([]);
   }, []);
 
+  const averageRequestLatencyMs = useMemo(() => {
+    const history = latencyHistoryRef.current;
+    if (history.length === 0) return 0;
+    return Math.round(history.reduce((sum, v) => sum + v, 0) / history.length);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastRequestLatencyMs]);
+
   return {
     prompt,
     mode,
@@ -300,6 +321,8 @@ export function useAICommandCenter({
     error,
     message,
     actions,
+    lastRequestLatencyMs,
+    averageRequestLatencyMs,
     setPrompt,
     setMode,
     submitPrompt,
