@@ -1,0 +1,315 @@
+{
+  "$schema": "https://design-tokens.github.io/community-group/format/",
+  "meta": {
+    "name": "CollabBoard Litigation",
+    "version": "1.0.0",
+    "updated": "2026-02-20",
+    "notes": "Design-only token set for UI reskin. No behavior or data model changes."
+  },
+  "font": {
+    "display": {
+      "$type": "fontFamily",
+      "$value": "'DM Serif Display', Georgia, serif"
+    },
+    "interface": {
+      "$type": "fontFamily",
+      "$value": "'Outfit', 'Avenir Next', 'Segoe UI', sans-serif"
+    },
+    "mono": {
+      "$type": "fontFamily",
+      "$value": "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace"
+    }
+  },
+  "color": {
+    "brand": {
+      "navy": {
+        "$type": "color",
+        "$value": "#0B1D3A"
+      },
+      "navyMid": {
+        "$type": "color",
+        "$value": "#132D54"
+      },
+      "navyLight": {
+        "$type": "color",
+        "$value": "#1A3A6A"
+      },
+      "slate": {
+        "$type": "color",
+        "$value": "#2A4A7F"
+      },
+      "amber": {
+        "$type": "color",
+        "$value": "#D4952B"
+      },
+      "amberLight": {
+        "$type": "color",
+        "$value": "#E8B35A"
+      },
+      "amberGlow": {
+        "$type": "color",
+        "$value": "#F5D08E"
+      }
+    },
+    "signal": {
+      "danger": {
+        "$type": "color",
+        "$value": "#C4453E"
+      },
+      "success": {
+        "$type": "color",
+        "$value": "#3A8F6E"
+      },
+      "info": {
+        "$type": "color",
+        "$value": "#4A8FCC"
+      },
+      "warning": {
+        "$type": "color",
+        "$value": "#D4A52B"
+      }
+    },
+    "neutral": {
+      "white": {
+        "$type": "color",
+        "$value": "#FAFAF8"
+      },
+      "cream": {
+        "$type": "color",
+        "$value": "#F2F0EB"
+      },
+      "warmGray": {
+        "$type": "color",
+        "$value": "#D6D1C8"
+      },
+      "midGray": {
+        "$type": "color",
+        "$value": "#8A8578"
+      },
+      "darkGray": {
+        "$type": "color",
+        "$value": "#4A463F"
+      },
+      "charcoal": {
+        "$type": "color",
+        "$value": "#1E1C19"
+      }
+    },
+    "darkMode": {
+      "base": {
+        "$type": "color",
+        "$value": "#070E1A"
+      },
+      "surface": {
+        "$type": "color",
+        "$value": "#0B1D3A"
+      },
+      "elevated": {
+        "$type": "color",
+        "$value": "#132D54"
+      },
+      "active": {
+        "$type": "color",
+        "$value": "#1A3A6A"
+      }
+    }
+  },
+  "semantic": {
+    "light": {
+      "bgPage": {
+        "$type": "color",
+        "$value": "{color.neutral.white}"
+      },
+      "bgPanel": {
+        "$type": "color",
+        "$value": "{color.neutral.cream}"
+      },
+      "bgElevated": {
+        "$type": "color",
+        "$value": "#FFFFFF"
+      },
+      "textPrimary": {
+        "$type": "color",
+        "$value": "{color.neutral.charcoal}"
+      },
+      "textSecondary": {
+        "$type": "color",
+        "$value": "{color.neutral.darkGray}"
+      },
+      "border": {
+        "$type": "color",
+        "$value": "{color.neutral.warmGray}"
+      },
+      "accent": {
+        "$type": "color",
+        "$value": "{color.brand.amber}"
+      },
+      "accentHover": {
+        "$type": "color",
+        "$value": "{color.brand.amberLight}"
+      }
+    },
+    "dark": {
+      "bgPage": {
+        "$type": "color",
+        "$value": "{color.darkMode.base}"
+      },
+      "bgPanel": {
+        "$type": "color",
+        "$value": "{color.darkMode.surface}"
+      },
+      "bgElevated": {
+        "$type": "color",
+        "$value": "{color.darkMode.elevated}"
+      },
+      "bgActive": {
+        "$type": "color",
+        "$value": "{color.darkMode.active}"
+      },
+      "textPrimary": {
+        "$type": "color",
+        "$value": "#F7F3EB"
+      },
+      "textSecondary": {
+        "$type": "color",
+        "$value": "#D6CDBF"
+      },
+      "border": {
+        "$type": "color",
+        "$value": "#2B4674"
+      },
+      "accent": {
+        "$type": "color",
+        "$value": "{color.brand.amber}"
+      },
+      "accentHover": {
+        "$type": "color",
+        "$value": "{color.brand.amberLight}"
+      }
+    }
+  },
+  "radius": {
+    "tag": {
+      "$type": "dimension",
+      "$value": "4px"
+    },
+    "button": {
+      "$type": "dimension",
+      "$value": "8px"
+    },
+    "card": {
+      "$type": "dimension",
+      "$value": "12px"
+    },
+    "panel": {
+      "$type": "dimension",
+      "$value": "16px"
+    },
+    "pill": {
+      "$type": "dimension",
+      "$value": "999px"
+    }
+  },
+  "space": {
+    "xs": {
+      "$type": "dimension",
+      "$value": "8px"
+    },
+    "sm": {
+      "$type": "dimension",
+      "$value": "16px"
+    },
+    "md": {
+      "$type": "dimension",
+      "$value": "24px"
+    },
+    "lg": {
+      "$type": "dimension",
+      "$value": "32px"
+    },
+    "xl": {
+      "$type": "dimension",
+      "$value": "48px"
+    },
+    "2xl": {
+      "$type": "dimension",
+      "$value": "64px"
+    },
+    "3xl": {
+      "$type": "dimension",
+      "$value": "96px"
+    }
+  },
+  "typeScale": {
+    "heroMin": {
+      "$type": "dimension",
+      "$value": "48px"
+    },
+    "heroMax": {
+      "$type": "dimension",
+      "$value": "88px"
+    },
+    "h1Min": {
+      "$type": "dimension",
+      "$value": "32px"
+    },
+    "h1Max": {
+      "$type": "dimension",
+      "$value": "52px"
+    },
+    "h2Min": {
+      "$type": "dimension",
+      "$value": "24px"
+    },
+    "h2Max": {
+      "$type": "dimension",
+      "$value": "36px"
+    },
+    "h3Min": {
+      "$type": "dimension",
+      "$value": "18px"
+    },
+    "h3Max": {
+      "$type": "dimension",
+      "$value": "24px"
+    },
+    "body": {
+      "$type": "dimension",
+      "$value": "16px"
+    },
+    "caption": {
+      "$type": "dimension",
+      "$value": "14px"
+    },
+    "mono": {
+      "$type": "dimension",
+      "$value": "12px"
+    }
+  },
+  "motion": {
+    "durationFade": {
+      "$type": "duration",
+      "$value": "150ms"
+    },
+    "durationStandard": {
+      "$type": "duration",
+      "$value": "200ms"
+    },
+    "durationSpring": {
+      "$type": "duration",
+      "$value": "300ms"
+    },
+    "easeOut": {
+      "$type": "cubicBezier",
+      "$value": [0.16, 1, 0.3, 1]
+    },
+    "easeSpring": {
+      "$type": "cubicBezier",
+      "$value": [0.34, 1.56, 0.64, 1]
+    },
+    "easeFade": {
+      "$type": "cubicBezier",
+      "$value": [0.4, 0, 1, 1]
+    }
+  }
+}

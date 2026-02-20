@@ -97,6 +97,11 @@ import {
   serializeToClipboard,
   deserializeFromClipboard,
 } from '../lib/board-clipboard';
+import {
+  buildActionLogEntry,
+  type BoardLogSource,
+  type BuildActionLogEntryInput,
+} from '../lib/board-action-log';
 import { flushScheduledViewportSave, loadViewportState, saveViewportState } from '../lib/viewport';
 import {
   buildRealtimeEventSignature,
@@ -365,6 +370,45 @@ export function Board() {
     enabled: Boolean(canReadBoard && user?.uid),
   });
   const boardHistory = useBoardHistory({ maxEntries: BOARD_HISTORY_MAX_ENTRIES });
+
+  const getActorUserId = () => user?.uid || 'guest';
+
+  function logDetailedCanvasAction(input: BuildActionLogEntryInput) {
+    const entry = buildActionLogEntry(input);
+    if (!entry) {
+      return;
+    }
+
+    logger.info('CANVAS', entry.message, entry.context);
+  }
+
+  function logCanvasBatchSummary(
+    source: BoardLogSource,
+    action: 'copy' | 'paste' | 'duplicate' | 'delete',
+    objectIds: string[],
+    extraContext?: Record<string, unknown>,
+  ) {
+    if (objectIds.length === 0) {
+      return;
+    }
+
+    const verb =
+      action === 'copy'
+        ? 'Copied'
+        : action === 'paste'
+          ? 'Pasted'
+          : action === 'duplicate'
+            ? 'Duplicated'
+            : 'Deleted';
+
+    logger.info('CANVAS', `${verb} ${objectIds.length} object(s).`, {
+      source,
+      action,
+      count: objectIds.length,
+      objectIds,
+      ...extraContext,
+    });
+  }
 
   const handleApplyAIPlan = async (actions: AIActionPreview[] = aiCommandCenter.actions) => {
     if (!canApplyAI) {
@@ -930,7 +974,10 @@ export function Board() {
         actorUserId: payload.actorUserId,
         latencyMs: Math.max(0, Date.now() - (payload._ts || 0)),
       });
-      applyRemoteObjectUpsert(normalized, payload._ts);
+      applyRemoteObjectUpsert(normalized, payload._ts, {
+        source: 'remote',
+        actorUserId: payload.actorUserId,
+      });
     };
 
     const handleRemoteUpdate = (payload: ObjectUpdatePayload) => {
@@ -963,7 +1010,10 @@ export function Board() {
         });
       }
       recordRemoteObjectLatency(payload._ts);
-      applyRemoteObjectUpsert(normalized, payload._ts);
+      applyRemoteObjectUpsert(normalized, payload._ts, {
+        source: 'remote',
+        actorUserId: payload.actorUserId,
+      });
     };
 
     const handleRemoteDelete = (payload: ObjectDeletePayload) => {
@@ -988,7 +1038,10 @@ export function Board() {
         objectId,
         actorUserId: payload.actorUserId,
       });
-      applyRemoteObjectDelete(objectId, payload._ts);
+      applyRemoteObjectDelete(objectId, payload._ts, {
+        source: 'remote',
+        actorUserId: payload.actorUserId,
+      });
     };
 
     socket.on('object:create', handleRemoteCreate);
@@ -1466,12 +1519,56 @@ export function Board() {
 
   function applyAIBoardStateCommit(nextBoardState: BoardObjectsRecord, meta: AICommitMeta) {
     const beforeState = serializeBoardObjects();
+    const detailSource: BoardLogSource = meta.source === 'ai' ? 'ai' : 'local';
+    const actorUserId = getActorUserId();
     logger.info('AI', `AI commit applied: ${meta.diff.createdIds.length} created, ${meta.diff.updatedIds.length} updated, ${meta.diff.deletedIds.length} deleted (txId: ${meta.txId})`, {
       txId: meta.txId,
       createdCount: meta.diff.createdIds.length,
       updatedCount: meta.diff.updatedIds.length,
       deletedCount: meta.diff.deletedIds.length,
     });
+
+    meta.diff.createdIds.forEach((objectId) => {
+      const created = nextBoardState[objectId];
+      if (!created) {
+        return;
+      }
+      logDetailedCanvasAction({
+        source: detailSource,
+        action: 'create',
+        object: created,
+        actorUserId,
+      });
+    });
+
+    meta.diff.updatedIds.forEach((objectId) => {
+      const before = beforeState[objectId];
+      const after = nextBoardState[objectId];
+      if (!before || !after) {
+        return;
+      }
+      logDetailedCanvasAction({
+        source: detailSource,
+        action: 'update',
+        before,
+        after,
+        actorUserId,
+      });
+    });
+
+    meta.diff.deletedIds.forEach((objectId) => {
+      const deleted = beforeState[objectId];
+      if (!deleted) {
+        return;
+      }
+      logDetailedCanvasAction({
+        source: detailSource,
+        action: 'delete',
+        before: deleted,
+        actorUserId,
+      });
+    });
+
     hydrateBoardObjects(nextBoardState, user?.uid || 'guest');
     setSelectedIds([]);
     const realtimeMeta: RealtimeObjectEventMeta = {
@@ -1681,9 +1778,14 @@ export function Board() {
     setAverageObjectLatencyMs(Math.round(average));
   }
 
-  function applyRemoteObjectUpsert(entry: BoardObject, eventTs?: number): boolean {
+  function applyRemoteObjectUpsert(
+    entry: BoardObject,
+    eventTs?: number,
+    meta?: { source?: BoardLogSource; actorUserId?: string },
+  ): boolean {
     let normalized = sanitizeBoardObjectForFirestore(entry);
     const existing = objectsRef.current.get(normalized.id);
+    const source = meta?.source || 'remote';
     const applyDecision = applyIncomingObjectUpsert({
       existing,
       incoming: normalized,
@@ -1852,11 +1954,32 @@ export function Board() {
       syncConnectedConnectors(normalized.id, false, false);
     }
 
+    if (!existing) {
+      logDetailedCanvasAction({
+        source,
+        action: 'create',
+        object: normalized,
+        actorUserId: meta?.actorUserId,
+      });
+    } else {
+      logDetailedCanvasAction({
+        source,
+        action: 'update',
+        before: existing,
+        after: normalized,
+        actorUserId: meta?.actorUserId,
+      });
+    }
+
     setBoardRevision((value) => value + 1);
     return true;
   }
 
-  function applyRemoteObjectDelete(objectId: string, eventTs?: number): boolean {
+  function applyRemoteObjectDelete(
+    objectId: string,
+    eventTs?: number,
+    meta?: { source?: BoardLogSource; actorUserId?: string },
+  ): boolean {
     const object = objectsRef.current.get(objectId);
     if (!object) {
       return false;
@@ -1866,6 +1989,13 @@ export function Board() {
     if (Number.isFinite(eventTs) && localUpdatedAtMs && Number(eventTs) < localUpdatedAtMs) {
       return false;
     }
+
+    logDetailedCanvasAction({
+      source: meta?.source || 'remote',
+      action: 'delete',
+      before: object,
+      actorUserId: meta?.actorUserId,
+    });
 
     const node = stageRef.current?.findOne(`#${objectId}`);
     node?.destroy();
@@ -1896,7 +2026,10 @@ export function Board() {
         const normalized = normalizeLoadedObject(event.payload.object, 'guest');
         if (normalized) {
           recordRemoteObjectLatency(event.payload._ts);
-          applyRemoteObjectUpsert(normalized, event.payload._ts);
+          applyRemoteObjectUpsert(normalized, event.payload._ts, {
+            source: 'remote',
+            actorUserId: event.payload.actorUserId,
+          });
         }
         return;
       }
@@ -1905,13 +2038,19 @@ export function Board() {
         const normalized = normalizeLoadedObject(event.payload.object, 'guest');
         if (normalized) {
           recordRemoteObjectLatency(event.payload._ts);
-          applyRemoteObjectUpsert(normalized, event.payload._ts);
+          applyRemoteObjectUpsert(normalized, event.payload._ts, {
+            source: 'remote',
+            actorUserId: event.payload.actorUserId,
+          });
         }
         return;
       }
 
       recordRemoteObjectLatency(event.payload._ts);
-      applyRemoteObjectDelete(event.payload.objectId, event.payload._ts);
+      applyRemoteObjectDelete(event.payload.objectId, event.payload._ts, {
+        source: 'remote',
+        actorUserId: event.payload.actorUserId,
+      });
     });
   }
 
@@ -2207,6 +2346,13 @@ export function Board() {
       emitObjectUpdate(nextObject, persist);
     }
     if (persist) {
+      logDetailedCanvasAction({
+        source: 'local',
+        action: 'update',
+        before: current,
+        after: nextObject,
+        actorUserId: getActorUserId(),
+      });
       aiExecutor.invalidateUndo();
       scheduleBoardSave();
       commitBoardHistory('manual', beforeState || undefined);
@@ -2263,6 +2409,13 @@ export function Board() {
       emitObjectUpdate(nextObject, persist);
     }
     if (persist) {
+      logDetailedCanvasAction({
+        source: 'local',
+        action: 'update',
+        before: current,
+        after: nextObject,
+        actorUserId: getActorUserId(),
+      });
       aiExecutor.invalidateUndo();
       scheduleBoardSave();
       commitBoardHistory('manual', beforeState || undefined);
@@ -2410,6 +2563,13 @@ export function Board() {
       emitObjectUpdate(nextObject, persist);
     }
     if (persist) {
+      logDetailedCanvasAction({
+        source: 'local',
+        action: 'update',
+        before: current,
+        after: nextObject,
+        actorUserId: getActorUserId(),
+      });
       aiExecutor.invalidateUndo();
       scheduleBoardSave();
       commitBoardHistory('manual', beforeState || undefined);
@@ -3031,6 +3191,12 @@ export function Board() {
     setBoardRevision((value) => value + 1);
 
     if (persist) {
+      logDetailedCanvasAction({
+        source: 'local',
+        action: 'create',
+        object,
+        actorUserId: getActorUserId(),
+      });
       aiExecutor.invalidateUndo();
       emitObjectCreate(object);
       scheduleBoardSave();
@@ -3047,6 +3213,9 @@ export function Board() {
       return;
     }
     const beforeState = persist ? captureManualHistoryBaseline() : null;
+    const removedObjects = objectIds
+      .map((id) => objectsRef.current.get(id))
+      .filter((entry): entry is BoardObject => Boolean(entry));
 
     const removeSet = new Set(objectIds);
     objectIds.forEach((objectId) => {
@@ -3063,6 +3232,20 @@ export function Board() {
     setBoardRevision((value) => value + 1);
 
     if (persist) {
+      removedObjects.forEach((object) => {
+        logDetailedCanvasAction({
+          source: 'local',
+          action: 'delete',
+          before: object,
+          actorUserId: getActorUserId(),
+        });
+      });
+      logCanvasBatchSummary(
+        'local',
+        'delete',
+        removedObjects.map((entry) => entry.id),
+        { actorUserId: getActorUserId() },
+      );
       aiExecutor.invalidateUndo();
       objectIds.forEach((objectId) => {
         emitObjectDelete(objectId);
@@ -3099,6 +3282,15 @@ export function Board() {
       objectsLayerRef.current?.add(node);
       emitObjectCreate(clone);
     }
+    clones.forEach((clone, index) => {
+      logDetailedCanvasAction({
+        source: 'local',
+        action: 'duplicate',
+        object: clone,
+        sourceObjectId: originals[index]?.id,
+        actorUserId: getActorUserId(),
+      });
+    });
     syncObjectsLayerZOrder();
     objectsLayerRef.current?.batchDraw();
     setObjectCount(objectsRef.current.size);
@@ -3107,10 +3299,15 @@ export function Board() {
     aiExecutor.invalidateUndo();
     scheduleBoardSave();
     commitBoardHistory('manual', beforeState);
-    logger.info('CANVAS', `Duplicated ${clones.length} object(s)`, {
-      count: clones.length,
-      ids: clones.map((c) => c.id),
-    });
+    logCanvasBatchSummary(
+      'local',
+      'duplicate',
+      clones.map((entry) => entry.id),
+      {
+        sourceObjectIds: originals.map((entry) => entry.id),
+        actorUserId: getActorUserId(),
+      },
+    );
   }
 
   function handleCopy() {
@@ -3124,9 +3321,20 @@ export function Board() {
       return;
     }
     serializeToClipboard(originals);
-    logger.info('CANVAS', `Copied ${originals.length} object(s) to clipboard`, {
-      count: originals.length,
+    originals.forEach((object) => {
+      logDetailedCanvasAction({
+        source: 'local',
+        action: 'copy',
+        object,
+        actorUserId: getActorUserId(),
+      });
     });
+    logCanvasBatchSummary(
+      'local',
+      'copy',
+      originals.map((entry) => entry.id),
+      { actorUserId: getActorUserId() },
+    );
   }
 
   function handlePaste() {
@@ -3176,6 +3384,15 @@ export function Board() {
       objectsLayerRef.current?.add(node);
       emitObjectCreate(clone);
     }
+    clones.forEach((clone, index) => {
+      logDetailedCanvasAction({
+        source: 'local',
+        action: 'paste',
+        object: clone,
+        sourceObjectId: originals[index]?.id,
+        actorUserId: getActorUserId(),
+      });
+    });
     syncObjectsLayerZOrder();
     objectsLayerRef.current?.batchDraw();
     setObjectCount(objectsRef.current.size);
@@ -3184,11 +3401,16 @@ export function Board() {
     aiExecutor.invalidateUndo();
     scheduleBoardSave();
     commitBoardHistory('manual', beforeState);
-    logger.info('CANVAS', `Pasted ${clones.length} object(s) at cursor position`, {
-      count: clones.length,
-      ids: clones.map((c) => c.id),
-      pastedAtCursor: !!pointer,
-    });
+    logCanvasBatchSummary(
+      'local',
+      'paste',
+      clones.map((entry) => entry.id),
+      {
+        sourceObjectIds: originals.map((entry) => entry.id),
+        pastedAtCursor: !!pointer,
+        actorUserId: getActorUserId(),
+      },
+    );
   }
 
   function commitTextEdit(saveChanges: boolean) {
@@ -3235,6 +3457,13 @@ export function Board() {
     setBoardRevision((value) => value + 1);
 
     if (saveChanges) {
+      logDetailedCanvasAction({
+        source: 'local',
+        action: 'update',
+        before: current,
+        after: nextObject,
+        actorUserId: getActorUserId(),
+      });
       aiExecutor.invalidateUndo();
       emitObjectUpdate(nextObject, true);
       scheduleBoardSave();
@@ -3449,6 +3678,12 @@ export function Board() {
     setActiveTool('select');
     setSelectedIds([nextObject.id]);
     setBoardRevision((value) => value + 1);
+    logDetailedCanvasAction({
+      source: 'local',
+      action: 'create',
+      object: nextObject,
+      actorUserId: getActorUserId(),
+    });
     aiExecutor.invalidateUndo();
     emitObjectCreate(nextObject);
     scheduleBoardSave();
@@ -3642,6 +3877,12 @@ export function Board() {
     setActiveTool('select');
     setSelectedIds([draft.id]);
     setBoardRevision((value) => value + 1);
+    logDetailedCanvasAction({
+      source: 'local',
+      action: 'create',
+      object: finalizedObject,
+      actorUserId: getActorUserId(),
+    });
     aiExecutor.invalidateUndo();
     emitObjectCreate(finalizedObject);
     scheduleBoardSave();
@@ -4296,6 +4537,13 @@ export function Board() {
 
     objectsLayerRef.current?.batchDraw();
     setBoardRevision((value) => value + 1);
+    logDetailedCanvasAction({
+      source: 'local',
+      action: 'update',
+      before: current,
+      after: nextObject,
+      actorUserId: getActorUserId(),
+    });
     aiExecutor.invalidateUndo();
     emitObjectUpdate(nextObject, true);
     scheduleBoardSave();
@@ -4352,6 +4600,13 @@ export function Board() {
 
     objectsLayerRef.current?.batchDraw();
     setBoardRevision((value) => value + 1);
+    logDetailedCanvasAction({
+      source: 'local',
+      action: 'update',
+      before: current,
+      after: nextObject,
+      actorUserId: getActorUserId(),
+    });
     aiExecutor.invalidateUndo();
     emitObjectUpdate(nextObject, true);
     scheduleBoardSave();

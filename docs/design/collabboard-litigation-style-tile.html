@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en" data-cb-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CollabBoard Litigation Style Tile</title>
+    <link rel="stylesheet" href="./tokens/collabboard-litigation.css" />
+    <style>
+      body {
+        margin: 0;
+        background: var(--cb-bg-page);
+        color: var(--cb-text-primary);
+        font-family: var(--cb-font-interface);
+      }
+
+      .page {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: var(--cb-space-5) var(--cb-space-3);
+        display: grid;
+        gap: var(--cb-space-3);
+      }
+
+      .header {
+        border: 1px solid var(--cb-border-default);
+        border-radius: var(--cb-radius-panel);
+        background: linear-gradient(130deg, var(--cb-bg-panel), var(--cb-bg-elevated));
+        padding: var(--cb-space-3);
+        display: grid;
+        gap: var(--cb-space-2);
+      }
+
+      .header h1 {
+        margin: 0;
+        font-family: var(--cb-font-display);
+        font-size: clamp(2rem, 4vw, 3.2rem);
+        font-weight: 400;
+      }
+
+      .header p {
+        margin: 0;
+        max-width: 72ch;
+        color: var(--cb-text-secondary);
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(12, 1fr);
+        gap: var(--cb-space-2);
+      }
+
+      .panel {
+        border: 1px solid var(--cb-border-default);
+        border-radius: var(--cb-radius-card);
+        background: var(--cb-bg-elevated);
+        padding: var(--cb-space-2);
+      }
+
+      .span-4 {
+        grid-column: span 4;
+      }
+
+      .span-6 {
+        grid-column: span 6;
+      }
+
+      .span-8 {
+        grid-column: span 8;
+      }
+
+      .span-12 {
+        grid-column: span 12;
+      }
+
+      .panel h2 {
+        margin: 0 0 var(--cb-space-2);
+        font-size: 1rem;
+        color: var(--cb-text-secondary);
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+      }
+
+      .swatches {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(120px, 1fr));
+        gap: 10px;
+      }
+
+      .swatch {
+        border: 1px solid var(--cb-border-default);
+        border-radius: var(--cb-radius-button);
+        overflow: hidden;
+        background: var(--cb-bg-panel);
+      }
+
+      .swatch-color {
+        height: 52px;
+      }
+
+      .swatch-meta {
+        padding: 8px;
+        font-family: var(--cb-font-mono);
+        font-size: 12px;
+        color: var(--cb-text-secondary);
+      }
+
+      .type-line {
+        margin: 0 0 10px;
+      }
+
+      .display {
+        font-family: var(--cb-font-display);
+        font-size: 42px;
+        line-height: 1.1;
+      }
+
+      .ui {
+        font-family: var(--cb-font-interface);
+        font-size: 16px;
+        line-height: 1.5;
+      }
+
+      .mono {
+        font-family: var(--cb-font-mono);
+        font-size: 12px;
+        letter-spacing: 0.04em;
+      }
+
+      .btn-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      button {
+        padding: 10px 14px;
+        font-size: 14px;
+        cursor: pointer;
+      }
+
+      .cb-btn-primary,
+      .cb-btn-secondary {
+        min-width: 150px;
+      }
+
+      .status-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .tag {
+        border-radius: var(--cb-radius-pill);
+        padding: 6px 10px;
+        border: 1px solid transparent;
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .tag-danger {
+        color: #ffd7d4;
+        background: color-mix(in srgb, #c4453e 24%, transparent);
+        border-color: color-mix(in srgb, #c4453e 55%, transparent);
+      }
+
+      .tag-success {
+        color: #d9f2e8;
+        background: color-mix(in srgb, #3a8f6e 24%, transparent);
+        border-color: color-mix(in srgb, #3a8f6e 55%, transparent);
+      }
+
+      .tag-warning {
+        color: #f8edcf;
+        background: color-mix(in srgb, #d4a52b 24%, transparent);
+        border-color: color-mix(in srgb, #d4a52b 55%, transparent);
+      }
+
+      .tag-info {
+        color: #d4e8f7;
+        background: color-mix(in srgb, #4a8fcc 24%, transparent);
+        border-color: color-mix(in srgb, #4a8fcc 55%, transparent);
+      }
+
+      @media (max-width: 1024px) {
+        .span-4,
+        .span-6,
+        .span-8 {
+          grid-column: span 12;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="header">
+        <h1>CollabBoard Litigation</h1>
+        <p>
+          Built for clarity under pressure. This style tile captures the visual direction for the
+          upcoming screen-by-screen reskin.
+        </p>
+        <p class="mono">v1.0 · February 2026 · Confidential</p>
+      </section>
+
+      <section class="grid">
+        <article class="panel span-8">
+          <h2>Core Palette</h2>
+          <div class="swatches">
+            <div class="swatch">
+              <div class="swatch-color" style="background: #0b1d3a"></div>
+              <div class="swatch-meta">Navy · #0B1D3A</div>
+            </div>
+            <div class="swatch">
+              <div class="swatch-color" style="background: #132d54"></div>
+              <div class="swatch-meta">Navy Mid · #132D54</div>
+            </div>
+            <div class="swatch">
+              <div class="swatch-color" style="background: #1a3a6a"></div>
+              <div class="swatch-meta">Navy Light · #1A3A6A</div>
+            </div>
+            <div class="swatch">
+              <div class="swatch-color" style="background: #d4952b"></div>
+              <div class="swatch-meta">Amber · #D4952B</div>
+            </div>
+            <div class="swatch">
+              <div class="swatch-color" style="background: #e8b35a"></div>
+              <div class="swatch-meta">Amber Light · #E8B35A</div>
+            </div>
+            <div class="swatch">
+              <div class="swatch-color" style="background: #f5d08e"></div>
+              <div class="swatch-meta">Amber Glow · #F5D08E</div>
+            </div>
+          </div>
+        </article>
+
+        <article class="panel span-4">
+          <h2>Signals</h2>
+          <div class="status-row">
+            <span class="tag tag-danger">Contradiction</span>
+            <span class="tag tag-success">Verified</span>
+            <span class="tag tag-warning">Needs Review</span>
+            <span class="tag tag-info">Info</span>
+          </div>
+        </article>
+
+        <article class="panel span-6">
+          <h2>Typography</h2>
+          <p class="type-line display">See the whole case.</p>
+          <p class="type-line ui">
+            Outfit is the UI workhorse for dense interfaces and panel copy.
+          </p>
+          <p class="type-line mono">EX-047 · DEP-2024-0312 · P.122-145</p>
+        </article>
+
+        <article class="panel span-6">
+          <h2>Actions</h2>
+          <div class="btn-row">
+            <button class="cb-btn-primary">Primary Action</button>
+            <button class="cb-btn-secondary">Secondary</button>
+            <button class="cb-btn-secondary" style="border-color: #c4453e; color: #ffd7d4">
+              Destructive
+            </button>
+          </div>
+        </article>
+
+        <article class="panel span-12">
+          <h2>Voice Sample</h2>
+          <p class="ui" style="margin: 0">
+            3 contradictions detected between witness timeline and Exhibit EX-047. No supporting
+            evidence linked to Argument Node C.
+          </p>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>
