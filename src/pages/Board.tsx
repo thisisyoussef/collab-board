@@ -2440,6 +2440,13 @@ export function Board() {
       };
     } else {
       frameDragContextRef.current = null;
+
+      // Bring dragged non-frame object to top so it renders above frames
+      const node = stageRef.current?.findOne(`#${objectId}`);
+      if (node) {
+        node.moveToTop();
+        objectsLayerRef.current?.batchDraw();
+      }
     }
   }
 
