@@ -169,7 +169,8 @@ describe('Board', () => {
     await renderBoardReady();
 
     // Verify layout elements
-    expect(screen.getByText('CollabBoard')).toBeInTheDocument();
+    expect(screen.getByText('CollabBoard')).toHaveClass('topbar-title-text');
+    expect(screen.getByText('Test Board Title')).toHaveClass('topbar-title-text');
     expect(screen.getByText('Inspector')).toBeInTheDocument();
     expect(screen.getByText('AI Command Center')).toBeInTheDocument();
     expect(screen.getByTestId('konva-stage')).toBeInTheDocument();

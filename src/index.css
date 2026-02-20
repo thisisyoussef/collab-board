@@ -780,6 +780,8 @@ button {
 
 .figma-board-topbar {
   height: 56px;
+  --topbar-text: #1e1c19;
+  --topbar-kicker: #8a8578;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   display: grid;
@@ -828,6 +830,24 @@ button {
   padding: 0 0.7rem;
   font-size: 0.78rem;
   white-space: nowrap;
+}
+
+.file-pill,
+.doc-chip {
+  color: var(--topbar-text);
+}
+
+.board-brand-kicker {
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.61rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--topbar-kicker);
+  padding-left: 0.3rem;
+}
+
+.topbar-title-text {
+  color: var(--topbar-text);
 }
 
 .doc-chip {

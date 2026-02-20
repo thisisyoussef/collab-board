@@ -4528,7 +4528,7 @@ export function Board() {
           <div className="board-brand-meta">
             <div className="file-pill">
               <span className="logo-dot small" />
-              <span>CollabBoard</span>
+              <span className="topbar-title-text">CollabBoard</span>
             </div>
             <span className="board-brand-kicker">Canvas workspace</span>
           </div>
@@ -4569,7 +4569,7 @@ export function Board() {
             </form>
           ) : (
             <div className="board-title-display">
-              <span className="doc-chip">{boardTitle}</span>
+              <span className="doc-chip topbar-title-text">{boardTitle}</span>
               {canEditBoard ? (
                 <button
                   className="chip-btn"

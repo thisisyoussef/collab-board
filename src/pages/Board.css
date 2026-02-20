@@ -12,6 +12,8 @@
 
 .figma-board-topbar {
   min-height: 74px;
+  --topbar-text: #f7f3eb;
+  --topbar-kicker: #d8ccb9;
   background: linear-gradient(160deg, #071329 0%, #0b1d3a 60%, #132d54 100%);
   border-bottom: 1px solid rgba(214, 209, 200, 0.24);
   display: grid;
@@ -63,7 +65,7 @@
   border-radius: 999px;
   border: 1px solid rgba(214, 209, 200, 0.28);
   background: rgba(255, 255, 255, 0.08);
-  color: #f7f3eb;
+  color: var(--topbar-text);
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
@@ -88,7 +90,7 @@
   font-size: 0.61rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #d8ccb9;
+  color: var(--topbar-kicker);
   padding-left: 0.3rem;
 }
 
@@ -96,7 +98,7 @@
   border-radius: 999px;
   border: 1px solid rgba(214, 209, 200, 0.3);
   background: rgba(255, 255, 255, 0.1);
-  color: #f7f3eb;
+  color: var(--topbar-text);
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
@@ -107,6 +109,10 @@
   max-width: 240px;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.topbar-title-text {
+  color: var(--topbar-text);
 }
 
 .board-title-display {
