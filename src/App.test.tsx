@@ -47,6 +47,13 @@ describe('App routes', () => {
     expect(screen.getByText('Board Page')).toBeInTheDocument();
   });
 
+  it('does not render the log terminal overlay', () => {
+    window.history.pushState({}, '', '/');
+    render(<App />);
+    expect(screen.queryByTitle('Open log terminal')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Application log terminal')).not.toBeInTheDocument();
+  });
+
   it('redirects unknown routes to landing', () => {
     window.history.pushState({}, '', '/does-not-exist');
     render(<App />);
