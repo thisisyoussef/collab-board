@@ -3,6 +3,7 @@ import type { SocketStatus } from '../hooks/useSocket';
 import { CAPACITY_WARNING_THRESHOLD, MAX_OBJECT_CAPACITY } from '../lib/board-constants';
 
 interface MetricsOverlayProps {
+  visible?: boolean;
   averageCursorLatencyMs: number;
   averageObjectLatencyMs: number;
   averageAIApplyLatencyMs: number;
@@ -21,6 +22,7 @@ const enableMetricsFromEnv =
 const shouldShowMetrics = import.meta.env.DEV || enableMetricsFromEnv;
 
 export function MetricsOverlay({
+  visible = false,
   averageCursorLatencyMs,
   averageObjectLatencyMs,
   averageAIApplyLatencyMs,
@@ -37,7 +39,7 @@ export function MetricsOverlay({
   const [uptimeTickMs, setUptimeTickMs] = useState(0);
 
   useEffect(() => {
-    if (!shouldShowMetrics) {
+    if (!visible || !shouldShowMetrics) {
       return;
     }
 
@@ -61,10 +63,10 @@ export function MetricsOverlay({
     return () => {
       window.cancelAnimationFrame(frame);
     };
-  }, []);
+  }, [visible]);
 
   useEffect(() => {
-    if (connectionStatus !== 'connected' || !connectedSinceMs) {
+    if (!visible || connectionStatus !== 'connected' || !connectedSinceMs) {
       return;
     }
 
@@ -74,7 +76,7 @@ export function MetricsOverlay({
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [connectedSinceMs, connectionStatus]);
+  }, [connectedSinceMs, connectionStatus, visible]);
 
   const cursorStatus = useMemo(
     () => (averageCursorLatencyMs < 50 ? '✅' : '⚠️'),
@@ -119,7 +121,7 @@ export function MetricsOverlay({
     return `Status: Connected (${formatted})`;
   }, [connectedSinceMs, connectionStatus, uptimeTickMs]);
 
-  if (!shouldShowMetrics) {
+  if (!visible || !shouldShowMetrics) {
     return null;
   }
 

@@ -184,6 +184,12 @@ describe('Board', () => {
     expect(screen.getByText('Session note')).toBeInTheDocument();
   });
 
+  it('does not render the realtime metrics overlay panel', async () => {
+    await renderBoardReady();
+
+    expect(screen.queryByLabelText('Realtime metrics overlay')).not.toBeInTheDocument();
+  });
+
   it('renders the socket status indicator', async () => {
     await renderBoardReady();
 

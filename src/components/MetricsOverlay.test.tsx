@@ -5,6 +5,7 @@ import { MetricsOverlay } from './MetricsOverlay';
 /** Helper: render MetricsOverlay with sensible defaults, overriding specific props. */
 function renderOverlay(overrides: Record<string, unknown> = {}) {
   const defaults = {
+    visible: true,
     averageCursorLatencyMs: 24,
     averageObjectLatencyMs: 42,
     averageAIApplyLatencyMs: 120,
