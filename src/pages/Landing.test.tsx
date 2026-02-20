@@ -51,6 +51,13 @@ describe('Landing', () => {
     expect(screen.getByText('CollabBoard')).toBeInTheDocument();
   });
 
+  it('renders the litigation design-system header treatment', () => {
+    renderLanding();
+
+    expect(screen.getByText('Design System Preview')).toBeInTheDocument();
+    expect(screen.getByText('Built for clarity under pressure')).toBeInTheDocument();
+  });
+
   it('shows loading state while auth is checking', () => {
     renderLanding({ loading: true });
 
@@ -116,5 +123,12 @@ describe('Landing', () => {
     expect(screen.getByText('User Flow')).toBeInTheDocument();
     expect(screen.getByText('Pain Points')).toBeInTheDocument();
     expect(screen.getByText('MVP Scope')).toBeInTheDocument();
+  });
+
+  it('renders the updated hero messaging and auth metadata', () => {
+    renderLanding();
+
+    expect(screen.getByRole('heading', { name: 'See the whole board, act with confidence.' })).toBeInTheDocument();
+    expect(screen.getByText('Secure sign-in via Google authentication.')).toBeInTheDocument();
   });
 });

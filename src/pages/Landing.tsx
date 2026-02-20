@@ -1,3 +1,8 @@
+// Landing page — the public entry point at "/".
+// Shows Google Sign-In button. Supports ?returnTo= parameter to redirect back
+// to a shared board after sign-in (e.g., /board/:id redirects here with returnTo
+// when auth_link visibility requires sign-in). Persists returnTo in localStorage
+// across the OAuth redirect flow.
 import { useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
@@ -59,44 +64,70 @@ export function Landing() {
     <main className="landing-root">
       <header className="landing-topbar">
         <div className="landing-brand">
-          <span className="logo-dot" />
-          <span>CollabBoard</span>
+          <span className="logo-mark" aria-hidden="true">
+            <span className="logo-square logo-square-back" />
+            <span className="logo-square logo-square-front" />
+          </span>
+          <div className="landing-brand-copy">
+            <span className="landing-brand-name">CollabBoard</span>
+            <span className="landing-brand-subtitle">Design System Preview</span>
+          </div>
         </div>
         <div className="landing-top-actions">
-          <span className="landing-muted">Figma-style multiplayer shell</span>
+          <span className="landing-muted landing-top-caption">Built for clarity under pressure</span>
         </div>
       </header>
 
       <section className="landing-content-grid">
         <aside className="landing-sidebar">
-          <h2>Workspace</h2>
+          <p className="landing-sidebar-kicker">Workspace</p>
+          <h2>Command center</h2>
           <p className="landing-muted">Recent boards and quick links</p>
-          <div className="sidebar-list">
-            <button className="sidebar-item active">Product Planning</button>
-            <button className="sidebar-item">Research Notes</button>
-            <button className="sidebar-item">Design Critique</button>
-            <button className="sidebar-item">Retrospective</button>
+          <div className="landing-sidebar-list">
+            <button className="landing-sidebar-item active">
+              <span>Product Planning</span>
+              <span className="landing-sidebar-tag">Active</span>
+            </button>
+            <button className="landing-sidebar-item">
+              <span>Research Notes</span>
+              <span className="landing-sidebar-tag">Review</span>
+            </button>
+            <button className="landing-sidebar-item">
+              <span>Design Critique</span>
+              <span className="landing-sidebar-tag">Ready</span>
+            </button>
+            <button className="landing-sidebar-item">
+              <span>Retrospective</span>
+              <span className="landing-sidebar-tag">Draft</span>
+            </button>
           </div>
         </aside>
 
         <section className="landing-main-panel">
           <div className="landing-hero">
-            <h1>Collaborate on a canvas, Figma-style</h1>
+            <p className="landing-kicker">Collaborative canvas</p>
+            <h1>See the whole board, act with confidence.</h1>
             <p>
               Sign in to access your dashboard where you can create, rename, open, and delete
               boards.
             </p>
 
-            <button className="primary-btn" onClick={() => void signInWithGoogle()}>
-              Sign in with Google
-            </button>
+            <div className="auth-actions">
+              <button className="primary-btn landing-primary-btn" onClick={() => void signInWithGoogle()}>
+                Sign in with Google
+              </button>
+            </div>
 
             {error && <p className="auth-error">{error}</p>}
+            <p className="landing-auth-meta">Secure sign-in via Google authentication.</p>
           </div>
 
           <div className="landing-preview">
             <div className="preview-toolbar">
-              <span>Prototype Board Preview</span>
+              <div className="preview-toolbar-copy">
+                <span className="preview-toolbar-title">Prototype Board Preview</span>
+                <span className="preview-toolbar-meta">Live collaboration demo</span>
+              </div>
               <div className="preview-dots">
                 <span />
                 <span />
@@ -104,9 +135,18 @@ export function Landing() {
               </div>
             </div>
             <div className="preview-canvas">
-              <div className="preview-card sticky-a">User Flow</div>
-              <div className="preview-card sticky-b">Pain Points</div>
-              <div className="preview-card sticky-c">MVP Scope</div>
+              <div className="preview-card sticky-a">
+                <strong>User Flow</strong>
+                <span>Core path</span>
+              </div>
+              <div className="preview-card sticky-b">
+                <strong>Pain Points</strong>
+                <span>Open questions</span>
+              </div>
+              <div className="preview-card sticky-c">
+                <strong>MVP Scope</strong>
+                <span>Release window</span>
+              </div>
               <div className="preview-line" />
             </div>
           </div>
