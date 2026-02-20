@@ -1,5 +1,5 @@
 /** Returns a valid hex color or fallback. */
-export function safeColor(value: string | undefined, fallback = '#64748b'): string {
+export function safeColor(value: string | undefined, fallback = '#2A4A7F'): string {
   if (typeof value !== 'string') {
     return fallback;
   }

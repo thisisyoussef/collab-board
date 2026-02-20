@@ -65,6 +65,7 @@ import {
   FRAME_MIN_WIDTH,
   getObjectSideAnchorCandidates,
   getObjectBounds,
+  LINE_DEFAULT_COLOR,
   normalizeLoadedObject as normalizeBoardObject,
   RECT_DEFAULT_STROKE,
   RECT_DEFAULT_STROKE_WIDTH,
@@ -135,8 +136,14 @@ import type {
 } from '../types/realtime';
 import {
   AI_APPLY_LATENCY_SAMPLE_WINDOW,
+  BOARD_FONT_FAMILY,
   BOARD_HISTORY_MAX_ENTRIES,
   BOARD_SAVE_DEBOUNCE_MS,
+  CONNECTOR_ANCHOR_ACTIVE_FILL,
+  CONNECTOR_ANCHOR_ACTIVE_STROKE,
+  CONNECTOR_ANCHOR_IDLE_FILL,
+  CONNECTOR_ANCHOR_IDLE_STROKE,
+  CONNECTOR_DEFAULT_STROKE,
   CONNECTOR_HANDLE_RADIUS,
   CONNECTOR_HANDLE_STROKE,
   CONNECTOR_HOVER_LOCK_DELAY_MS,
@@ -145,6 +152,7 @@ import {
   CONNECTOR_LABEL_FONT_FAMILY,
   CONNECTOR_LABEL_FONT_SIZE,
   CONNECTOR_PATH_HANDLE_RADIUS,
+  CONNECTOR_PATH_HANDLE_STROKE,
   FRAME_HIGHLIGHT_STROKE,
   LINE_CLICK_DEFAULT_WIDTH,
   OBJECT_LATENCY_SAMPLE_WINDOW,
@@ -155,6 +163,8 @@ import {
   RECT_CLICK_DRAG_THRESHOLD,
   SHAPE_ANCHOR_MATCH_EPSILON,
   SHAPE_ANCHOR_RADIUS,
+  SELECTION_RECT_FILL,
+  SELECTION_RECT_STROKE,
   SHARE_FEEDBACK_RESET_MS,
   STICKY_PLACEHOLDER_TEXT,
   VIEWPORT_SAVE_DEBOUNCE_MS,
@@ -2288,7 +2298,7 @@ export function Board() {
       node.pointerAtEnding(endArrow !== 'none');
       node.pointerLength(Math.max(6, (entry.strokeWidth || 2) * 4));
       node.pointerWidth(Math.max(6, (entry.strokeWidth || 2) * 4));
-      node.fill(entry.color || '#64748b');
+      node.fill(entry.color || CONNECTOR_DEFAULT_STROKE);
     }
 
     node.dash(isConnectorDashed(entry) ? [10, 6] : []);
@@ -2897,7 +2907,7 @@ export function Board() {
       height: object.height,
       fill: getStickyRenderColor(object.text),
       fontSize: object.fontSize || 14,
-      fontFamily: 'Segoe UI, sans-serif',
+      fontFamily: BOARD_FONT_FAMILY,
       padding: 8,
       align: 'left',
       verticalAlign: 'top',
@@ -3069,7 +3079,7 @@ export function Board() {
       x: object.x,
       y: object.y,
       points: object.points || [0, 0, object.width, object.height],
-      stroke: object.color || '#0f172a',
+      stroke: object.color || LINE_DEFAULT_COLOR,
       strokeWidth: object.strokeWidth || 2,
       lineCap: 'round',
       lineJoin: 'round',
@@ -3124,7 +3134,7 @@ export function Board() {
       height: object.height,
       fill: object.color || TEXT_DEFAULT_COLOR,
       fontSize: object.fontSize || TEXT_DEFAULT_FONT_SIZE,
-      fontFamily: 'Segoe UI, sans-serif',
+      fontFamily: BOARD_FONT_FAMILY,
       align: 'left',
       verticalAlign: 'top',
       padding: 6,
@@ -3188,7 +3198,7 @@ export function Board() {
       name: 'frame-body',
       width: object.width,
       height: object.height,
-      fill: object.color || '#fff',
+      fill: object.color || '#FAFAF8',
       stroke: object.stroke || FRAME_DEFAULT_STROKE,
       strokeWidth: object.strokeWidth || 2,
       cornerRadius: 8,
@@ -3201,10 +3211,10 @@ export function Board() {
       y: 8,
       width: Math.max(60, object.width - 20),
       text: object.title || 'Frame',
-      fill: '#1f2937',
+      fill: '#1E1C19',
       fontSize: 14,
       fontStyle: 'bold',
-      fontFamily: 'Segoe UI, sans-serif',
+      fontFamily: BOARD_FONT_FAMILY,
     });
 
     group.add(body);
@@ -3308,8 +3318,8 @@ export function Board() {
       id: object.id,
       name: 'board-object connector-object',
       points,
-      stroke: object.color || '#64748b',
-      fill: object.color || '#64748b',
+      stroke: object.color || CONNECTOR_DEFAULT_STROKE,
+      fill: object.color || CONNECTOR_DEFAULT_STROKE,
       strokeWidth: object.strokeWidth || 2,
       hitStrokeWidth: 20,
       lineCap: 'round' as const,
@@ -5231,8 +5241,8 @@ export function Board() {
                             ? SHAPE_ANCHOR_RADIUS + 1
                             : SHAPE_ANCHOR_RADIUS
                       }
-                      fill={anchor.endpoint ? '#dbeafe' : '#ffffff'}
-                      stroke={anchor.endpoint ? '#2563eb' : '#93c5fd'}
+                      fill={anchor.endpoint ? CONNECTOR_ANCHOR_ACTIVE_FILL : CONNECTOR_ANCHOR_IDLE_FILL}
+                      stroke={anchor.endpoint ? CONNECTOR_ANCHOR_ACTIVE_STROKE : CONNECTOR_ANCHOR_IDLE_STROKE}
                       strokeWidth={1.5}
                       listening={canStartConnectorFromAnchor}
                       hitStrokeWidth={canStartConnectorFromAnchor ? 16 : 0}
@@ -5318,7 +5328,7 @@ export function Board() {
                     y={connectorPathHandle.y}
                     radius={CONNECTOR_PATH_HANDLE_RADIUS}
                     fill="#ffffff"
-                    stroke="#2563eb"
+                    stroke={CONNECTOR_PATH_HANDLE_STROKE}
                     strokeWidth={2}
                     draggable={activeTool === 'select' && canEditBoard}
                     onMouseDown={(event) => {
@@ -5335,8 +5345,8 @@ export function Board() {
                 <KonvaRectShape
                   ref={selectionRectRef}
                   visible={false}
-                  fill="rgba(37, 99, 235, 0.1)"
-                  stroke="#2563eb"
+                  fill={SELECTION_RECT_FILL}
+                  stroke={SELECTION_RECT_STROKE}
                   strokeWidth={1}
                   dash={[4, 4]}
                 />

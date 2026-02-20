@@ -1,6 +1,8 @@
 import type { BoardObject } from '../types/board';
 import { isApplicableToAll } from '../lib/style-applicability';
 import { safeColor } from '../lib/color-utils';
+import { CONNECTOR_DEFAULT_STROKE } from '../lib/board-constants';
+import { RECT_DEFAULT_STROKE } from '../lib/board-object';
 import { ColorPicker } from './ColorPicker';
 
 export interface StylePanelProps {
@@ -15,9 +17,9 @@ export interface StylePanelProps {
  */
 function getStrokeColorValue(obj: BoardObject): string {
   if (obj.type === 'connector' || obj.type === 'line') {
-    return safeColor(obj.color, '#64748b');
+    return safeColor(obj.color, CONNECTOR_DEFAULT_STROKE);
   }
-  return safeColor(obj.stroke, '#334155');
+  return safeColor(obj.stroke, RECT_DEFAULT_STROKE);
 }
 
 /**

@@ -265,6 +265,31 @@ describe('StylePanel', () => {
     expect(onStyleChange).toHaveBeenCalledWith(['s1', 's2'], { color: '#F44336' });
   });
 
+  it('uses brand default stroke color when line has invalid color', () => {
+    render(
+      <StylePanel
+        selectedObjects={[makeObject({ type: 'line', color: 'bad-color' })]}
+        onStyleChange={vi.fn()}
+      />,
+    );
+    const strokeSection = screen.getByText('Stroke').closest('.style-panel-section')!;
+    const strokeInput = strokeSection.querySelector('.hex-input') as HTMLInputElement;
+    expect(strokeInput.value).toBe('4A8FCC');
+  });
+
+  it('uses brand default stroke color when shape has invalid stroke', () => {
+    render(
+      <StylePanel
+        selectedObjects={[makeObject({ type: 'rect', stroke: 'bad-color' })]}
+        onStyleChange={vi.fn()}
+      />,
+    );
+    const sections = screen.getAllByText('Stroke');
+    const strokeSection = sections[0].closest('.style-panel-section')!;
+    const strokeInput = strokeSection.querySelector('.hex-input') as HTMLInputElement;
+    expect(strokeInput.value).toBe('2A4A7F');
+  });
+
   // --- Disabled ---
   it('disabled: no controls are interactive', () => {
     render(

@@ -11,15 +11,15 @@ describe('safeColor', () => {
   });
 
   it('returns fallback for undefined', () => {
-    expect(safeColor(undefined)).toBe('#64748b');
+    expect(safeColor(undefined)).toBe('#2A4A7F');
   });
 
   it('returns fallback for empty string', () => {
-    expect(safeColor('')).toBe('#64748b');
+    expect(safeColor('')).toBe('#2A4A7F');
   });
 
   it('returns fallback for garbage string', () => {
-    expect(safeColor('not-a-color')).toBe('#64748b');
+    expect(safeColor('not-a-color')).toBe('#2A4A7F');
   });
 
   it('returns custom fallback when provided', () => {
