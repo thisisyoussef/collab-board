@@ -3,6 +3,7 @@ import type { BoardObject } from '../types/board';
 import {
   isContainedInFrame,
   getFrameChildren,
+  buildFrameMembershipIndex,
   computeFrameMembership,
   applyFrameDelta,
   findFrameAtPoint,
@@ -152,6 +153,72 @@ describe('computeFrameMembership', () => {
 
     const membership = computeFrameMembership(objects);
     expect(membership.get('f1')).toEqual([]);
+  });
+});
+
+describe('buildFrameMembershipIndex', () => {
+  it('assigns each object to exactly one frame when frames overlap (smallest frame wins)', () => {
+    const objects = new Map<string, BoardObject>();
+    objects.set('big', makeObject({ id: 'big', type: 'frame', x: 0, y: 0, width: 500, height: 500 }));
+    objects.set('small', makeObject({ id: 'small', type: 'frame', x: 40, y: 40, width: 120, height: 120 }));
+    objects.set('obj-1', makeObject({ id: 'obj-1', type: 'sticky', x: 70, y: 70, width: 20, height: 20 }));
+
+    const index = buildFrameMembershipIndex(objects);
+    expect(index.frameToChildren.get('small')).toEqual(['obj-1']);
+    expect(index.frameToChildren.get('big')).toEqual([]);
+    expect(index.childToFrame.get('obj-1')).toBe('small');
+  });
+
+  it('keeps empty arrays for frames that currently have no children', () => {
+    const objects = new Map<string, BoardObject>();
+    objects.set('f1', makeObject({ id: 'f1', type: 'frame', x: 0, y: 0, width: 200, height: 120 }));
+    objects.set('f2', makeObject({ id: 'f2', type: 'frame', x: 400, y: 300, width: 200, height: 120 }));
+
+    const index = buildFrameMembershipIndex(objects);
+    expect(index.frameToChildren.get('f1')).toEqual([]);
+    expect(index.frameToChildren.get('f2')).toEqual([]);
+    expect(index.childToFrame.size).toBe(0);
+  });
+
+  it('excludes connectors and frames from child membership', () => {
+    const objects = new Map<string, BoardObject>();
+    objects.set('frame-1', makeObject({ id: 'frame-1', type: 'frame', x: 0, y: 0, width: 400, height: 300 }));
+    objects.set('frame-2', makeObject({ id: 'frame-2', type: 'frame', x: 20, y: 20, width: 100, height: 80 }));
+    objects.set('connector-1', makeObject({ id: 'connector-1', type: 'connector', x: 40, y: 40, width: 80, height: 0 }));
+    objects.set('sticky-1', makeObject({ id: 'sticky-1', type: 'sticky', x: 60, y: 60, width: 40, height: 30 }));
+
+    const index = buildFrameMembershipIndex(objects);
+    expect(index.childToFrame.has('connector-1')).toBe(false);
+    expect(index.childToFrame.has('frame-2')).toBe(false);
+    expect(index.childToFrame.get('sticky-1')).toBe('frame-2');
+  });
+
+  it('updates inclusion deterministically after frame resize recomputation', () => {
+    const objects = new Map<string, BoardObject>();
+    objects.set('frame-1', makeObject({ id: 'frame-1', type: 'frame', x: 0, y: 0, width: 100, height: 100 }));
+    objects.set('sticky-1', makeObject({ id: 'sticky-1', type: 'sticky', x: 140, y: 20, width: 40, height: 40 }));
+
+    const beforeResize = buildFrameMembershipIndex(objects);
+    expect(beforeResize.childToFrame.get('sticky-1')).toBeUndefined();
+
+    objects.set('frame-1', makeObject({ id: 'frame-1', type: 'frame', x: 0, y: 0, width: 220, height: 120 }));
+    const afterResize = buildFrameMembershipIndex(objects);
+    expect(afterResize.childToFrame.get('sticky-1')).toBe('frame-1');
+    expect(afterResize.frameToChildren.get('frame-1')).toEqual(['sticky-1']);
+  });
+
+  it('detaches children when frame is deleted and keeps child objects intact', () => {
+    const objects = new Map<string, BoardObject>();
+    objects.set('frame-1', makeObject({ id: 'frame-1', type: 'frame', x: 0, y: 0, width: 300, height: 200 }));
+    objects.set('sticky-1', makeObject({ id: 'sticky-1', type: 'sticky', x: 60, y: 60, width: 40, height: 30 }));
+
+    const beforeDelete = buildFrameMembershipIndex(objects);
+    expect(beforeDelete.childToFrame.get('sticky-1')).toBe('frame-1');
+
+    objects.delete('frame-1');
+    const afterDelete = buildFrameMembershipIndex(objects);
+    expect(afterDelete.childToFrame.get('sticky-1')).toBeUndefined();
+    expect(objects.has('sticky-1')).toBe(true);
   });
 });
 

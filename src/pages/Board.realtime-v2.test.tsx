@@ -113,4 +113,42 @@ describe('Board realtime v2 helpers', () => {
 
     expect(points).toEqual([300, 160, 500, 190]);
   });
+
+  it('accepts sequential in-drag updates when updatedAt increases each tick', () => {
+    const base = createDefaultObject('sticky', {
+      id: 'drag-1',
+      x: 100,
+      y: 100,
+      width: 120,
+      height: 80,
+      updatedAt: '2026-02-20T10:00:00.000Z',
+      createdBy: 'u1',
+      zIndex: 1,
+    }) as BoardObject;
+
+    const tick1 = {
+      ...base,
+      x: 110,
+      updatedAt: '2026-02-20T10:00:00.050Z',
+    };
+    const tick2 = {
+      ...tick1,
+      x: 124,
+      updatedAt: '2026-02-20T10:00:00.100Z',
+    };
+
+    const result1 = applyIncomingObjectUpsert({
+      existing: base,
+      incoming: tick1,
+      eventTs: Date.parse(tick1.updatedAt),
+    } satisfies ApplyIncomingObjectInput);
+    expect(result1.shouldApply).toBe(true);
+
+    const result2 = applyIncomingObjectUpsert({
+      existing: tick1,
+      incoming: tick2,
+      eventTs: Date.parse(tick2.updatedAt),
+    } satisfies ApplyIncomingObjectInput);
+    expect(result2.shouldApply).toBe(true);
+  });
 });
