@@ -559,6 +559,94 @@ describe('AI Generate API Endpoint', () => {
       });
     });
 
+    it('ignores non-function OpenAI tool calls and extracts array text content', async () => {
+      vi.resetModules();
+      process.env.ANTHROPIC_API_KEY = 'test-key';
+      process.env.OPENAI_API_KEY = 'test-openai-key';
+      process.env.AI_PROVIDER_MODE = 'openai';
+
+      mockOpenAIChatCreate.mockResolvedValueOnce({
+        choices: [
+          {
+            finish_reason: 'stop',
+            message: {
+              content: [{ type: 'output_text', text: 'Plan drafted successfully.' }],
+              tool_calls: [
+                {
+                  id: 'custom-1',
+                  type: 'custom',
+                  custom: { name: 'noop', input: '{}' },
+                },
+              ],
+            },
+          },
+        ],
+      });
+
+      const handler = (await import('../../api/ai/generate')).default;
+      const req = createMockReq();
+      const res = createMockRes();
+
+      await handler(req as never, res as never);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({
+        toolCalls: [],
+        message: 'Plan drafted successfully.',
+        stopReason: 'stop',
+        provider: 'openai',
+        model: 'gpt-4o-mini',
+      });
+    });
+
+    it('falls back to empty tool input when OpenAI function arguments are invalid JSON', async () => {
+      vi.resetModules();
+      process.env.ANTHROPIC_API_KEY = 'test-key';
+      process.env.OPENAI_API_KEY = 'test-openai-key';
+      process.env.AI_PROVIDER_MODE = 'openai';
+
+      mockOpenAIChatCreate.mockResolvedValueOnce({
+        choices: [
+          {
+            finish_reason: 'tool_calls',
+            message: {
+              content: null,
+              tool_calls: [
+                {
+                  type: 'function',
+                  function: {
+                    name: 'getBoardState',
+                    arguments: '{not valid json',
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      });
+
+      const handler = (await import('../../api/ai/generate')).default;
+      const req = createMockReq();
+      const res = createMockRes();
+
+      await handler(req as never, res as never);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({
+        toolCalls: [
+          {
+            id: 'openai-tool-1',
+            name: 'getBoardState',
+            input: {},
+          },
+        ],
+        message: null,
+        stopReason: 'tool_calls',
+        provider: 'openai',
+        model: 'gpt-4o-mini',
+      });
+    });
+
     it('uses OPENAI_MODEL_SIMPLE for non-complex prompts and OPENAI_MODEL_COMPLEX for complex prompts', async () => {
       vi.resetModules();
       process.env.ANTHROPIC_API_KEY = 'test-key';

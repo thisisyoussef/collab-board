@@ -325,7 +325,10 @@ function extractOpenAICost(entry: Record<string, unknown>): { amountUsd: number;
 
 function extractAnthropicCacheCreationInputTokens(cacheCreation: unknown): number {
   const cacheRecord = asRecord(cacheCreation);
-  return Object.values(cacheRecord).reduce((sum, value) => sum + numberFromUnknown(value), 0);
+  return Object.values(cacheRecord).reduce<number>(
+    (sum, value) => sum + numberFromUnknown(value),
+    0,
+  );
 }
 
 function extractAnthropicCost(entry: Record<string, unknown>): { amountUsd: number; currency: string | null } {

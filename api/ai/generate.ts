@@ -187,6 +187,9 @@ interface ToolValidationIssue {
   reason: string;
 }
 
+type OpenAIToolCall = OpenAI.Chat.Completions.ChatCompletionMessageToolCall;
+type OpenAIFunctionToolCall = Extract<OpenAIToolCall, { type: 'function' }>;
+
 const toolDefinitions: Anthropic.Tool[] = [
   {
     name: 'createStickyNote',
@@ -508,12 +511,17 @@ function parseToolArgumentsJson(raw: string | undefined): Record<string, unknown
   }
 }
 
+function isOpenAIFunctionToolCall(toolCall: OpenAIToolCall): toolCall is OpenAIFunctionToolCall {
+  return toolCall.type === 'function';
+}
+
 function extractOpenAIToolCalls(
   completion: OpenAI.Chat.Completions.ChatCompletion,
 ): OutgoingToolCall[] {
   const toolCalls = completion.choices?.[0]?.message?.tool_calls ?? [];
   return toolCalls
-    .filter((toolCall) => toolCall.type === 'function' && typeof toolCall.function.name === 'string')
+    .filter(isOpenAIFunctionToolCall)
+    .filter((toolCall) => typeof toolCall.function.name === 'string')
     .map((toolCall, index) => ({
       id: toolCall.id || `openai-tool-${index + 1}`,
       name: toolCall.function.name,
@@ -521,35 +529,43 @@ function extractOpenAIToolCalls(
     }));
 }
 
-function extractOpenAITextMessage(
-  completion: OpenAI.Chat.Completions.ChatCompletion,
-): string | null {
-  const content = completion.choices?.[0]?.message?.content;
+function extractTextFromOpenAIContent(content: unknown): string | null {
   if (typeof content === 'string') {
     const trimmed = content.trim();
     return trimmed.length > 0 ? trimmed : null;
   }
 
-  if (Array.isArray(content)) {
-    const joined = content
-      .map((part) => {
-        if (typeof part === 'string') {
-          return part;
-        }
-
-        if (part && typeof part === 'object' && 'text' in part && typeof part.text === 'string') {
-          return part.text;
-        }
-
-        return '';
-      })
-      .join('\n')
-      .trim();
-
-    return joined.length > 0 ? joined : null;
+  if (!Array.isArray(content)) {
+    return null;
   }
 
-  return null;
+  const joined = content
+    .map((part) => {
+      if (typeof part === 'string') {
+        return part;
+      }
+
+      if (
+        part &&
+        typeof part === 'object' &&
+        'text' in part &&
+        typeof (part as { text?: unknown }).text === 'string'
+      ) {
+        return (part as { text: string }).text;
+      }
+
+      return '';
+    })
+    .join('\n')
+    .trim();
+
+  return joined.length > 0 ? joined : null;
+}
+
+function extractOpenAITextMessage(
+  completion: OpenAI.Chat.Completions.ChatCompletion,
+): string | null {
+  return extractTextFromOpenAIContent(completion.choices?.[0]?.message?.content);
 }
 
 function extractOpenAIStopReason(
