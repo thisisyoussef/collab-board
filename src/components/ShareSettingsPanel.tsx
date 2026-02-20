@@ -85,7 +85,10 @@ export function ShareSettingsPanel({
         onClick={(event) => event.stopPropagation()}
       >
         <header className="share-panel-head">
-          <div>
+          <div className="share-panel-head-copy">
+            <p className="share-panel-kicker" data-testid="share-panel-kicker">
+              Access control
+            </p>
             <h3>Share board</h3>
             <p className="share-panel-muted">Manage visibility and collaborator roles.</p>
           </div>
@@ -100,7 +103,12 @@ export function ShareSettingsPanel({
             <button className="secondary-btn" type="button" onClick={onCopyLink}>
               {copyState === 'copied' ? 'Copied' : copyState === 'error' ? 'Copy failed' : 'Copy link'}
             </button>
-            <span className="share-panel-muted">Current role: {currentRole}</span>
+            <span className="share-current-role">
+              <span className="share-panel-muted">Current role</span>
+              <span className="share-current-role-badge" data-testid="share-current-role-badge">
+                {currentRole}
+              </span>
+            </span>
           </div>
         </section>
 

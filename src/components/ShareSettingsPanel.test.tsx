@@ -56,6 +56,15 @@ function renderPanel(overrides: RenderOverrides = {}) {
 }
 
 describe('ShareSettingsPanel', () => {
+  it('renders the branded header metadata and current role badge', () => {
+    renderPanel({
+      currentRole: 'editor',
+    });
+
+    expect(screen.getByTestId('share-panel-kicker')).toHaveTextContent('Access control');
+    expect(screen.getByTestId('share-current-role-badge')).toHaveTextContent('editor');
+  });
+
   it('requires explicit public role selection before saving when owner enables public link mode', () => {
     const handlers = renderPanel({
       visibility: 'public_link',
