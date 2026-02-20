@@ -1590,6 +1590,11 @@ export function Board() {
     }
 
     const orderedObjects = Array.from(objectsRef.current.values()).sort((a, b) => {
+      // Frames always render below non-frame objects (they are background containers)
+      const aIsFrame = a.type === 'frame' ? 0 : 1;
+      const bIsFrame = b.type === 'frame' ? 0 : 1;
+      if (aIsFrame !== bIsFrame) return aIsFrame - bIsFrame;
+
       if (a.zIndex === b.zIndex) {
         return a.id.localeCompare(b.id);
       }
