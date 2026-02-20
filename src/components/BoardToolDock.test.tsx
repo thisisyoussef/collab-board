@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { BoardToolDock } from './BoardToolDock';
 
@@ -7,10 +7,16 @@ describe('BoardToolDock', () => {
     render(<BoardToolDock activeTool="rect" canEditBoard onSelectTool={vi.fn()} />);
 
     expect(screen.getByRole('toolbar', { name: 'Board tools' })).toBeInTheDocument();
-    expect(screen.getByLabelText('Select tool')).toHaveTextContent('⌖');
-    expect(screen.getByLabelText('Sticky note tool')).toHaveTextContent('▣');
+    const selectButton = screen.getByLabelText('Select tool');
+    expect(within(selectButton).getByText('Sel')).toBeInTheDocument();
+    expect(within(selectButton).getByTestId('dock-icon-select')).toBeInTheDocument();
+
+    const stickyButton = screen.getByLabelText('Sticky note tool');
+    expect(within(stickyButton).getByText('Note')).toBeInTheDocument();
+    expect(within(stickyButton).getByTestId('dock-icon-sticky')).toBeInTheDocument();
+
     expect(screen.getByLabelText('Rectangle tool')).toHaveClass('active');
-    expect(screen.getByLabelText('Text tool')).toHaveTextContent('𝚃');
+    expect(within(screen.getByLabelText('Text tool')).getByText('Text')).toBeInTheDocument();
     expect(screen.getByLabelText('Connector tool')).toBeInTheDocument();
   });
 

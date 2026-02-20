@@ -970,20 +970,52 @@ button {
 }
 
 .dock-btn {
-  width: 38px;
-  height: 38px;
+  width: 56px;
+  height: 48px;
   border-radius: 10px;
   border: 1px solid var(--border);
   background: #fff;
   color: #374151;
   cursor: pointer;
-  font-size: 0.92rem;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.14rem;
+  padding: 0.24rem 0.2rem;
 }
 
 .dock-btn.active,
 .dock-btn:hover {
   background: rgba(245, 208, 142, 0.28);
   border-color: rgba(212, 149, 43, 0.45);
+}
+
+.dock-btn-icon {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dock-icon {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.dock-btn-label {
+  font-family: 'Outfit', 'Segoe UI', sans-serif;
+  font-size: 0.56rem;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
 }
 
 .dock-btn:disabled {

@@ -213,6 +213,27 @@ describe('board-object normalize/sanitize', () => {
     expect(connector.labelBackground).toBe(false);
   });
 
+  it('applies brand-aligned default colors across object types', () => {
+    const sticky = createDefaultObject('sticky', { id: 'sticky-brand' });
+    const rect = createDefaultObject('rect', { id: 'rect-brand' });
+    const circle = createDefaultObject('circle', { id: 'circle-brand' });
+    const line = createDefaultObject('line', { id: 'line-brand' });
+    const text = createDefaultObject('text', { id: 'text-brand' });
+    const frame = createDefaultObject('frame', { id: 'frame-brand' });
+    const connector = createDefaultObject('connector', { id: 'connector-brand' });
+
+    expect(sticky.color).toBe('#F5D08E');
+    expect(rect.color).toBe('#FAFAF8');
+    expect(rect.stroke).toBe('#2A4A7F');
+    expect(circle.color).toBe('#F2F0EB');
+    expect(circle.stroke).toBe('#2A4A7F');
+    expect(line.color).toBe('#2A4A7F');
+    expect(text.color).toBe('#1E1C19');
+    expect(frame.color).toBe('#F2F0EB');
+    expect(frame.stroke).toBe('#132D54');
+    expect(connector.color).toBe('#4A8FCC');
+  });
+
   it('resolves bent connector path around obstacles', () => {
     const points = resolveConnectorPoints({
       from: undefined,
