@@ -2461,6 +2461,16 @@ export function Board() {
       if (emitRealtime) {
         emitObjectUpdate(nextObject, persist);
       }
+
+      if (persist) {
+        logDetailedCanvasAction({
+          source: 'local',
+          action: 'update',
+          before: connector,
+          after: nextObject,
+          actorUserId: getActorUserId(),
+        });
+      }
     });
     objectsLayerRef.current?.batchDraw();
   }
