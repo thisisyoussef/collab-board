@@ -2435,8 +2435,10 @@ export function Board() {
 
     // Snapshot frame children for move-with-frame behavior
     const obj = objectsRef.current.get(objectId);
+    console.log('[FRAME-DRAG] handleObjectDragStart', objectId, 'type:', obj?.type);
     if (obj?.type === 'frame') {
       const childIds = getFrameChildren(obj, objectsRef.current);
+      console.log('[FRAME-DRAG] snapshotted children:', childIds, 'frame pos:', obj.x, obj.y);
       frameDragContextRef.current = {
         frameId: objectId,
         childIds,
@@ -2829,17 +2831,20 @@ export function Board() {
     });
     group.on('dragstart', () => {
       handleObjectDragStart(object.id);
+      console.log('[FRAME-DRAG] dragstart', object.id, 'ctx:', JSON.stringify(frameDragContextRef.current));
     });
     group.on('dragmove', () => {
       syncObjectFromNode(object.id, false, true, false);
 
       // Move frame children by the same delta
       const ctx = frameDragContextRef.current;
+      console.log('[FRAME-DRAG] dragmove', object.id, 'ctx:', ctx ? `frame=${ctx.frameId} children=${ctx.childIds.length}` : 'null');
       if (ctx && ctx.frameId === object.id && ctx.childIds.length > 0) {
         const frameObj = objectsRef.current.get(object.id);
         if (frameObj) {
           const dx = frameObj.x - ctx.lastX;
           const dy = frameObj.y - ctx.lastY;
+          console.log('[FRAME-DRAG] delta', dx, dy);
           ctx.lastX = frameObj.x;
           ctx.lastY = frameObj.y;
 
