@@ -542,7 +542,7 @@ export function Board() {
             if (!cancelled && memberSnapshot.exists()) {
               const roleValue = (memberSnapshot.data() as { role?: unknown }).role;
               const normalizedRole = normalizeBoardRole(roleValue);
-              explicitMemberRole = normalizedRole;
+              explicitMemberRole = normalizedRole === 'none' ? null : normalizedRole;
             }
           } catch {
             // Membership lookups are best-effort; access still resolves from board sharing.
