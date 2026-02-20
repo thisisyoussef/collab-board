@@ -1119,6 +1119,13 @@ export function Board() {
 
       const mod = event.metaKey || event.ctrlKey;
 
+      // Delete / Backspace → Remove selected objects
+      if (event.key === 'Delete' || event.key === 'Backspace') {
+        event.preventDefault();
+        removeObjects(selectedIds, true);
+        return;
+      }
+
       // Ctrl/Cmd + D → Duplicate
       if (mod && event.key === 'd') {
         event.preventDefault();

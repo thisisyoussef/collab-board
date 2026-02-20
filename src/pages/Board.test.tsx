@@ -212,6 +212,30 @@ describe('Board', () => {
     expect(screen.getByLabelText('Connector tool')).toBeInTheDocument();
   });
 
+  it('treats Backspace as a delete shortcut when not typing', async () => {
+    const addEventListenerSpy = vi.spyOn(window, 'addEventListener');
+    await renderBoardReady();
+
+    const keydownRegistration = addEventListenerSpy.mock.calls.find(([eventName]) => eventName === 'keydown');
+    expect(keydownRegistration).toBeDefined();
+    if (!keydownRegistration) {
+      throw new Error('Expected keydown listener registration');
+    }
+
+    const onKeyDown = keydownRegistration[1] as (event: KeyboardEvent) => void;
+    const preventDefault = vi.fn();
+
+    onKeyDown({
+      key: 'Backspace',
+      ctrlKey: false,
+      metaKey: false,
+      target: document.body,
+      preventDefault,
+    } as unknown as KeyboardEvent);
+
+    expect(preventDefault).toHaveBeenCalled();
+  });
+
   it('renders the right inspector panel', async () => {
     await renderBoardReady();
 
