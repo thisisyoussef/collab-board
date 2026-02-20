@@ -1,9 +1,14 @@
+// Dashboard page — the user's board management hub at /dashboard (auth required).
+// Shows two tabs: "My Boards" (owned) and "Shared with me" (via boardMembers/boardRecents).
+// Supports create, rename, delete operations via useBoards hook.
+// Board cards link to /board/:id for the canvas editor.
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useBoards } from '../hooks/useBoards';
 import { useSharedBoards } from '../hooks/useSharedBoards';
 import type { SharedBoardDashboardEntry } from '../types/sharing';
+import './Dashboard.css';
 
 type DashboardView = 'owned' | 'shared';
 
@@ -94,6 +99,11 @@ export function Dashboard() {
   const heading = activeView === 'owned' ? 'Boards' : 'Shared with me';
   const countLabel = activeView === 'owned' ? boardCountLabel(boards.length) : boardCountLabel(sharedCount);
   const visibleError = activeView === 'owned' ? error || actionError : sharedError;
+  const coverageLabel = activeView === 'owned' ? 'Active portfolio' : 'Shared coverage';
+  const coverageSummary =
+    activeView === 'owned'
+      ? `Tracking ${countLabel} in your direct workspace.`
+      : `Tracking ${countLabel} available through explicit access and recent links.`;
 
   const openBoard = (boardId: string) => {
     navigate(`/board/${boardId}`);
@@ -241,9 +251,10 @@ export function Dashboard() {
 
       <section className="dashboard-shell">
         <aside className="dashboard-sidebar">
-          <h2>Your Workspace</h2>
+          <p className="dashboard-sidebar-kicker">Workspace</p>
+          <h2>Workspace overview</h2>
           <p className="landing-muted">Create and manage all your boards.</p>
-          <div className="sidebar-list">
+          <div className="sidebar-list dashboard-sidebar-nav">
             <button
               className={`sidebar-item ${activeView === 'owned' ? 'active' : ''}`}
               onClick={() => setActiveView('owned')}
@@ -260,11 +271,22 @@ export function Dashboard() {
               Templates (soon)
             </button>
           </div>
+          <div className="dashboard-sidebar-metrics">
+            <article className="dashboard-metric-card">
+              <span className="dashboard-metric-label">Owned boards</span>
+              <strong>{boards.length}</strong>
+            </article>
+            <article className="dashboard-metric-card">
+              <span className="dashboard-metric-label">Shared boards</span>
+              <strong>{sharedCount}</strong>
+            </article>
+          </div>
         </aside>
 
         <section className="dashboard-main">
           <div className="dashboard-main-head">
-            <div>
+            <div className="dashboard-main-title">
+              <p className="dashboard-main-kicker">Board command center</p>
               <h1>{heading}</h1>
               <p className="landing-muted">{countLabel}</p>
             </div>
@@ -287,6 +309,18 @@ export function Dashboard() {
                 </button>
               </form>
             ) : null}
+          </div>
+          <div className="dashboard-context-cards">
+            <article className="dashboard-context-card">
+              <p className="dashboard-context-kicker">Focus</p>
+              <h2>{activeView === 'owned' ? 'Create and iterate quickly' : 'Review collaborator boards'}</h2>
+              <p>{activeView === 'owned' ? 'Capture ideas and move directly into execution.' : 'Open shared boards and track the latest updates.'}</p>
+            </article>
+            <article className="dashboard-context-card">
+              <p className="dashboard-context-kicker">Coverage</p>
+              <h2>{coverageLabel}</h2>
+              <p>{coverageSummary}</p>
+            </article>
           </div>
 
           {visibleError ? <p className="auth-error">{visibleError}</p> : null}

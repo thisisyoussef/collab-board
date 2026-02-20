@@ -100,6 +100,13 @@ describe('Dashboard', () => {
     expect(screen.getByText('T')).toBeInTheDocument(); // avatar initial
   });
 
+  it('renders the new dashboard layout scaffolding', () => {
+    renderDashboard();
+
+    expect(screen.getByText('Workspace overview')).toBeInTheDocument();
+    expect(screen.getByText('Board command center')).toBeInTheDocument();
+  });
+
   it('shows loading state while boards are loading', () => {
     renderDashboard({}, { loading: true });
 
