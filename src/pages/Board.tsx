@@ -1,3 +1,20 @@
+// Board.tsx — the main canvas page (~4000 lines). This is the heart of CollabBoard.
+//
+// Responsibilities:
+//   - Konva Stage setup (pan, zoom, infinite canvas)
+//   - Object CRUD (create, move, resize, delete via toolbar + canvas interactions)
+//   - Real-time sync (Socket.IO events for objects, cursors, presence)
+//   - Firestore persistence (debounced board saves every 300ms)
+//   - AI integration (AICommandCenter panel + AI executor)
+//   - Selection management (Transformer, rubber-band, multi-select)
+//   - Connector drawing (snap-to-anchor, routing, drag handles)
+//   - Undo/redo (via useBoardHistory hook)
+//   - Keyboard shortcuts (Delete, Ctrl+Z, Ctrl+C/V, etc.)
+//   - Access control (viewer vs editor vs owner permissions)
+//
+// Key pattern: Canvas objects are stored in a Map ref (objectsRef), NOT React state.
+// Only UI elements (toolbar, panels, presence) use React state. This prevents
+// re-renders when dragging/updating 500+ objects on the canvas.
 import { doc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore/lite';
 import Konva from 'konva';
 import { Fragment, useEffect, useRef, useState } from 'react';
@@ -76,7 +93,7 @@ import {
   serializeToClipboard,
   deserializeFromClipboard,
 } from '../lib/board-clipboard';
-import { loadViewportState, saveViewportState } from '../lib/viewport';
+import { flushScheduledViewportSave, loadViewportState, saveViewportState } from '../lib/viewport';
 import {
   buildRealtimeEventSignature,
   createRealtimeDedupeCache,
@@ -108,7 +125,6 @@ import {
   AI_APPLY_LATENCY_SAMPLE_WINDOW,
   BOARD_HISTORY_MAX_ENTRIES,
   BOARD_SAVE_DEBOUNCE_MS,
-  CIRCLE_CLICK_DEFAULT_SIZE,
   CONNECTOR_HANDLE_RADIUS,
   CONNECTOR_HANDLE_STROKE,
   CONNECTOR_HOVER_LOCK_DELAY_MS,
@@ -123,8 +139,6 @@ import {
   OBJECT_UPDATE_EMIT_THROTTLE_MS,
   REALTIME_DEDUPE_MAX_ENTRIES,
   REALTIME_DEDUPE_TTL_MS,
-  RECT_CLICK_DEFAULT_HEIGHT,
-  RECT_CLICK_DEFAULT_WIDTH,
   RECT_CLICK_DRAG_THRESHOLD,
   SHAPE_ANCHOR_MATCH_EPSILON,
   SHAPE_ANCHOR_RADIUS,
@@ -140,6 +154,7 @@ import {
   getStickyRenderText,
   intersects,
   isPlaceholderStickyText,
+  getClickShapeDefaultsForViewport,
 } from '../lib/board-canvas-utils';
 import {
   findConnectorAttachment,
@@ -405,6 +420,11 @@ export function Board() {
   })();
 
   useEffect(() => {
+    viewportSaveTimeoutRef.current = flushScheduledViewportSave({
+      timeoutId: viewportSaveTimeoutRef.current,
+      saveNow: saveViewportNow,
+      clearTimeoutFn: window.clearTimeout,
+    });
     boardIdRef.current = boardId;
     hasInitialBoardLoadRef.current = false;
     pendingRemoteObjectEventsRef.current = [];
@@ -419,10 +439,6 @@ export function Board() {
     if (shareFeedbackTimeoutRef.current) {
       window.clearTimeout(shareFeedbackTimeoutRef.current);
       shareFeedbackTimeoutRef.current = null;
-    }
-    if (viewportSaveTimeoutRef.current) {
-      window.clearTimeout(viewportSaveTimeoutRef.current);
-      viewportSaveTimeoutRef.current = null;
     }
     if (connectorHoverLockTimerRef.current) {
       window.clearTimeout(connectorHoverLockTimerRef.current);
@@ -450,10 +466,11 @@ export function Board() {
         window.clearTimeout(shareFeedbackTimeoutRef.current);
         shareFeedbackTimeoutRef.current = null;
       }
-      if (viewportSaveTimeoutRef.current) {
-        window.clearTimeout(viewportSaveTimeoutRef.current);
-        viewportSaveTimeoutRef.current = null;
-      }
+      viewportSaveTimeoutRef.current = flushScheduledViewportSave({
+        timeoutId: viewportSaveTimeoutRef.current,
+        saveNow: saveViewportNow,
+        clearTimeoutFn: window.clearTimeout,
+      });
       if (connectorHoverLockTimerRef.current) {
         window.clearTimeout(connectorHoverLockTimerRef.current);
         connectorHoverLockTimerRef.current = null;
@@ -693,12 +710,12 @@ export function Board() {
   }, [boardId, canReadBoard, isResolvingAccess]);
 
   useEffect(() => {
-    const measure = () => {
-      const container = canvasContainerRef.current;
-      if (!container) {
-        return;
-      }
+    const container = canvasContainerRef.current;
+    if (!container) {
+      return;
+    }
 
+    const measure = () => {
       const next = {
         width: Math.max(container.clientWidth, 320),
         height: Math.max(container.clientHeight, 220),
@@ -716,10 +733,7 @@ export function Board() {
       observer = new ResizeObserver(() => {
         measure();
       });
-
-      if (canvasContainerRef.current) {
-        observer.observe(canvasContainerRef.current);
-      }
+      observer.observe(container);
     }
 
     window.addEventListener('resize', measure);
@@ -728,7 +742,7 @@ export function Board() {
       observer?.disconnect();
       window.removeEventListener('resize', measure);
     };
-  }, []);
+  }, [isResolvingAccess, canReadBoard, boardMissing]);
 
   useEffect(() => {
     if (!boardId || viewportRestoredRef.current) {
@@ -3259,6 +3273,7 @@ export function Board() {
       startX: worldPosition.x,
       startY: worldPosition.y,
       type,
+      hasMoved: false,
       historyBefore,
     };
     setIsDrawingRect(true);
@@ -3275,6 +3290,14 @@ export function Board() {
     const node = stageRef.current?.findOne(`#${draft.id}`);
     if (!current || !node) {
       return;
+    }
+
+    if (!draft.hasMoved) {
+      const dragDistanceWorld = Math.hypot(worldPosition.x - draft.startX, worldPosition.y - draft.startY);
+      const dragDistancePx = dragDistanceWorld * Math.max(0.1, stageRef.current?.scaleX() || 1);
+      if (dragDistancePx >= RECT_CLICK_DRAG_THRESHOLD) {
+        rectDraftRef.current = { ...draft, hasMoved: true };
+      }
     }
 
     if (draft.type === 'line' && (node instanceof Konva.Line || node instanceof Konva.Arrow)) {
@@ -3343,17 +3366,24 @@ export function Board() {
       return;
     }
 
+    const stage = stageRef.current;
+    const clickDefaults = getClickShapeDefaultsForViewport({
+      viewportWidth: stage?.width() || canvasSize.width,
+      viewportHeight: stage?.height() || canvasSize.height,
+      scale: stage?.scaleX() || 1,
+    });
     const isClickCreate =
-      current.width < RECT_CLICK_DRAG_THRESHOLD && current.height < RECT_CLICK_DRAG_THRESHOLD;
+      !draft.hasMoved ||
+      (current.width < RECT_CLICK_DRAG_THRESHOLD && current.height < RECT_CLICK_DRAG_THRESHOLD);
     let width = current.width;
     let height = current.height;
     let points = current.points;
 
     if (draft.type === 'line' && (node instanceof Konva.Line || node instanceof Konva.Arrow)) {
       if (isClickCreate) {
-        points = [0, 0, LINE_CLICK_DEFAULT_WIDTH, 0];
+        points = [0, 0, clickDefaults.lineWidth, 0];
         node.points(points);
-        width = LINE_CLICK_DEFAULT_WIDTH;
+        width = clickDefaults.lineWidth;
         height = 1;
       } else {
         points = node.points();
@@ -3363,13 +3393,13 @@ export function Board() {
     } else if (node instanceof Konva.Rect) {
       width = isClickCreate
         ? draft.type === 'circle'
-          ? CIRCLE_CLICK_DEFAULT_SIZE
-          : RECT_CLICK_DEFAULT_WIDTH
+          ? clickDefaults.circleSize
+          : clickDefaults.rectWidth
         : Math.max(RECT_MIN_SIZE, current.width);
       height = isClickCreate
         ? draft.type === 'circle'
-          ? CIRCLE_CLICK_DEFAULT_SIZE
-          : RECT_CLICK_DEFAULT_HEIGHT
+          ? clickDefaults.circleSize
+          : clickDefaults.rectHeight
         : Math.max(RECT_MIN_SIZE, current.height);
       if (draft.type === 'circle') {
         const size = Math.max(width, height);

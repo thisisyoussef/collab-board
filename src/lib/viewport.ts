@@ -1,3 +1,8 @@
+// Per-user, per-board viewport persistence in localStorage.
+// When a user returns to a board, they see the same pan/zoom position they left.
+// Key format: "collab-board:viewport:{boardId}:{userId}" — see viewportStorageKey().
+// Consumed by Board.tsx on mount to restore the Konva stage position.
+
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 5;
 
@@ -5,6 +10,23 @@ export interface ViewportState {
   x: number;
   y: number;
   scale: number;
+}
+
+export function flushScheduledViewportSave({
+  timeoutId,
+  saveNow,
+  clearTimeoutFn,
+}: {
+  timeoutId: number | null;
+  saveNow: () => void;
+  clearTimeoutFn?: (id: number) => void;
+}): null {
+  if (timeoutId !== null) {
+    clearTimeoutFn?.(timeoutId);
+  }
+
+  saveNow();
+  return null;
 }
 
 export function viewportStorageKey({

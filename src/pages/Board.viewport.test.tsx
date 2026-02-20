@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import {
+  flushScheduledViewportSave,
   loadViewportState,
   saveViewportState,
   viewportStorageKey,
@@ -43,5 +44,35 @@ describe('Board viewport persistence', () => {
     expect(clampViewportScale(0.01)).toBe(0.1);
     expect(clampViewportScale(8)).toBe(5);
     expect(clampViewportScale(1.2)).toBe(1.2);
+  });
+
+  it('flushes debounced viewport saves by clearing timer and saving now', () => {
+    const clearTimeoutFn = vi.fn();
+    const saveNow = vi.fn();
+
+    const next = flushScheduledViewportSave({
+      timeoutId: 42,
+      clearTimeoutFn,
+      saveNow,
+    });
+
+    expect(clearTimeoutFn).toHaveBeenCalledWith(42);
+    expect(saveNow).toHaveBeenCalledTimes(1);
+    expect(next).toBeNull();
+  });
+
+  it('still saves now when no timer exists', () => {
+    const clearTimeoutFn = vi.fn();
+    const saveNow = vi.fn();
+
+    const next = flushScheduledViewportSave({
+      timeoutId: null,
+      clearTimeoutFn,
+      saveNow,
+    });
+
+    expect(clearTimeoutFn).not.toHaveBeenCalled();
+    expect(saveNow).toHaveBeenCalledTimes(1);
+    expect(next).toBeNull();
   });
 });
