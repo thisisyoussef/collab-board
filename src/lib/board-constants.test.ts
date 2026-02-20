@@ -6,6 +6,7 @@ import {
   CONNECTOR_ANCHOR_IDLE_STROKE,
   CONNECTOR_DEFAULT_STROKE,
   CONNECTOR_HANDLE_STROKE,
+  CONNECTOR_SELECTION_HIT_STROKE_WIDTH,
   CONNECTOR_LABEL_BACKGROUND_STROKE,
   CONNECTOR_LABEL_FONT_FAMILY,
   FRAME_HIGHLIGHT_STROKE,
@@ -35,5 +36,9 @@ describe('board constants brand defaults', () => {
   it('uses brand tokens for frame highlight and label font', () => {
     expect(FRAME_HIGHLIGHT_STROKE).toBe('#D4952B');
     expect(CONNECTOR_LABEL_FONT_FAMILY).toBe('Outfit, sans-serif');
+  });
+
+  it('uses an expanded connector hit target for easier reselection', () => {
+    expect(CONNECTOR_SELECTION_HIT_STROKE_WIDTH).toBe(30);
   });
 });
