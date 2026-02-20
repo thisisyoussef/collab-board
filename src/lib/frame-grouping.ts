@@ -1,0 +1,136 @@
+// Frame grouping — runtime containment detection for frame objects.
+// An object is "inside" a frame if its center point falls within the frame's bounds.
+// Containment is computed on-demand (no stored parentId), making state self-healing.
+// Connectors and other frames are excluded from containment.
+import type { BoardObject } from '../types/board';
+import { getObjectCenter } from './board-object';
+
+/**
+ * Returns true if the center of `child` falls within the axis-aligned
+ * bounding box of `frame` (inclusive on all edges).
+ */
+export function isContainedInFrame(child: BoardObject, frame: BoardObject): boolean {
+  const center = getObjectCenter(child);
+  return (
+    center.x >= frame.x &&
+    center.x <= frame.x + frame.width &&
+    center.y >= frame.y &&
+    center.y <= frame.y + frame.height
+  );
+}
+
+/**
+ * Returns the IDs of all non-frame, non-connector objects whose center is
+ * inside the given frame's bounds. Excludes the frame itself.
+ */
+export function getFrameChildren(
+  frame: BoardObject,
+  objectsMap: Map<string, BoardObject>,
+): string[] {
+  const children: string[] = [];
+  for (const [id, obj] of objectsMap) {
+    if (id === frame.id) continue;
+    if (obj.type === 'frame' || obj.type === 'connector') continue;
+    if (isContainedInFrame(obj, frame)) {
+      children.push(id);
+    }
+  }
+  return children;
+}
+
+/**
+ * Builds a Map<frameId, childIds[]> for every frame in the objects map.
+ * When an object falls inside two overlapping frames, it is assigned to the
+ * smaller frame (by area) — "smallest-frame-wins".
+ */
+export function computeFrameMembership(
+  objectsMap: Map<string, BoardObject>,
+): Map<string, string[]> {
+  // Collect all frames
+  const frames: BoardObject[] = [];
+  for (const obj of objectsMap.values()) {
+    if (obj.type === 'frame') frames.push(obj);
+  }
+
+  const membership = new Map<string, string[]>();
+  for (const frame of frames) {
+    membership.set(frame.id, []);
+  }
+
+  if (frames.length === 0) return membership;
+
+  // Sort frames by area ascending so we can assign to smallest first
+  const sortedFrames = [...frames].sort(
+    (a, b) => a.width * a.height - b.width * b.height,
+  );
+
+  // Track which objects have been assigned
+  const assigned = new Set<string>();
+
+  for (const frame of sortedFrames) {
+    for (const [id, obj] of objectsMap) {
+      if (assigned.has(id)) continue;
+      if (id === frame.id) continue;
+      if (obj.type === 'frame' || obj.type === 'connector') continue;
+      if (isContainedInFrame(obj, frame)) {
+        membership.get(frame.id)!.push(id);
+        assigned.add(id);
+      }
+    }
+  }
+
+  return membership;
+}
+
+/**
+ * Given a set of child IDs and a (dx, dy) delta, returns a new Map of
+ * updated BoardObject entries with shifted x,y. Does NOT mutate input.
+ */
+export function applyFrameDelta(
+  childIds: string[],
+  dx: number,
+  dy: number,
+  objectsMap: Map<string, BoardObject>,
+): Map<string, BoardObject> {
+  const result = new Map<string, BoardObject>();
+  for (const id of childIds) {
+    const obj = objectsMap.get(id);
+    if (!obj) continue;
+    result.set(id, {
+      ...obj,
+      x: obj.x + dx,
+      y: obj.y + dy,
+    });
+  }
+  return result;
+}
+
+/**
+ * Returns the frame ID (if any) that contains the given world-coordinate point.
+ * If multiple frames overlap at the point, returns the smallest (by area).
+ */
+export function findFrameAtPoint(
+  point: { x: number; y: number },
+  objectsMap: Map<string, BoardObject>,
+): string | null {
+  let bestId: string | null = null;
+  let bestArea = Infinity;
+
+  for (const [id, obj] of objectsMap) {
+    if (obj.type !== 'frame') continue;
+    if (
+      point.x >= obj.x &&
+      point.x <= obj.x + obj.width &&
+      point.y >= obj.y &&
+      point.y <= obj.y + obj.height
+    ) {
+      const area = obj.width * obj.height;
+      if (area < bestArea) {
+        bestArea = area;
+        bestId = id;
+      }
+    }
+  }
+
+  return bestId;
+}

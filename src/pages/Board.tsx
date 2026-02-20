@@ -81,6 +81,10 @@ import {
   TEXT_MIN_WIDTH,
 } from '../lib/board-object';
 import {
+  getFrameChildren,
+  findFrameAtPoint,
+} from '../lib/frame-grouping';
+import {
   getConnectorEndpoints,
   getPointAlongConnectorPath,
 } from '../lib/connector-routing';
@@ -133,6 +137,7 @@ import {
   CONNECTOR_LABEL_FONT_FAMILY,
   CONNECTOR_LABEL_FONT_SIZE,
   CONNECTOR_PATH_HANDLE_RADIUS,
+  FRAME_HIGHLIGHT_STROKE,
   LINE_CLICK_DEFAULT_WIDTH,
   OBJECT_LATENCY_SAMPLE_WINDOW,
   OBJECT_LATENCY_UI_UPDATE_MS,
@@ -224,6 +229,13 @@ export function Board() {
   const hasInitialBoardLoadRef = useRef(false);
   const pendingRemoteObjectEventsRef = useRef<PendingRemoteObjectEvent[]>([]);
   const objectLatencySamplesRef = useRef<number[]>([]);
+  const frameDragContextRef = useRef<{
+    frameId: string;
+    childIds: string[];
+    lastX: number;
+    lastY: number;
+  } | null>(null);
+  const highlightedFrameIdRef = useRef<string | null>(null);
   const lastObjectLatencyUiUpdateAtRef = useRef(0);
   const aiApplyLatencySamplesRef = useRef<number[]>([]);
   const realtimeDedupeRef = useRef(
@@ -2415,6 +2427,75 @@ export function Board() {
     setSelectedIds((previous) =>
       previous.length === 1 && previous[0] === objectId ? previous : [objectId],
     );
+
+    // Snapshot frame children for move-with-frame behavior
+    const obj = objectsRef.current.get(objectId);
+    if (obj?.type === 'frame') {
+      const childIds = getFrameChildren(obj, objectsRef.current);
+      frameDragContextRef.current = {
+        frameId: objectId,
+        childIds,
+        lastX: obj.x,
+        lastY: obj.y,
+      };
+    } else {
+      frameDragContextRef.current = null;
+    }
+  }
+
+  /** Highlight the frame under a dragged non-frame object (or clear if none). */
+  function updateFrameHighlight(objectId: string) {
+    const obj = objectsRef.current.get(objectId);
+    if (!obj || obj.type === 'frame' || obj.type === 'connector') return;
+
+    const center = { x: obj.x + obj.width / 2, y: obj.y + obj.height / 2 };
+    const frameId = findFrameAtPoint(center, objectsRef.current);
+
+    const prevId = highlightedFrameIdRef.current;
+    if (frameId === prevId) return; // no change
+
+    // Restore previous frame's stroke
+    if (prevId) {
+      const prevFrame = objectsRef.current.get(prevId);
+      const prevNode = stageRef.current?.findOne(`#${prevId}`);
+      if (prevNode && prevFrame) {
+        const body = (prevNode as Konva.Group).findOne('.frame-body');
+        if (body) {
+          (body as Konva.Rect).stroke(prevFrame.stroke || FRAME_DEFAULT_STROKE);
+        }
+      }
+    }
+
+    // Apply highlight to new frame
+    if (frameId) {
+      const frameNode = stageRef.current?.findOne(`#${frameId}`);
+      if (frameNode) {
+        const body = (frameNode as Konva.Group).findOne('.frame-body');
+        if (body) {
+          (body as Konva.Rect).stroke(FRAME_HIGHLIGHT_STROKE);
+        }
+      }
+    }
+
+    highlightedFrameIdRef.current = frameId;
+    objectsLayerRef.current?.batchDraw();
+  }
+
+  /** Clear any active frame highlight. */
+  function clearFrameHighlight() {
+    const prevId = highlightedFrameIdRef.current;
+    if (!prevId) return;
+
+    const prevFrame = objectsRef.current.get(prevId);
+    const prevNode = stageRef.current?.findOne(`#${prevId}`);
+    if (prevNode && prevFrame) {
+      const body = (prevNode as Konva.Group).findOne('.frame-body');
+      if (body) {
+        (body as Konva.Rect).stroke(prevFrame.stroke || FRAME_DEFAULT_STROKE);
+      }
+    }
+    highlightedFrameIdRef.current = null;
+    objectsLayerRef.current?.batchDraw();
   }
 
   function createStickyNode(object: BoardObject): Konva.Group {
@@ -2464,6 +2545,7 @@ export function Board() {
     });
     group.on('dragmove', () => {
       syncObjectFromNode(object.id, false, true, false);
+      updateFrameHighlight(object.id);
       const worldPosition = getWorldPointerPosition();
       if (worldPosition) {
         publishCursor(worldPosition);
@@ -2471,6 +2553,7 @@ export function Board() {
     });
     group.on('dragend', () => {
       syncObjectFromNode(object.id, true);
+      clearFrameHighlight();
     });
     group.on('transformstart', () => {
       captureManualHistoryBaseline(true);
@@ -2515,6 +2598,7 @@ export function Board() {
     });
     rect.on('dragmove', () => {
       syncObjectFromNode(object.id, false, true, false);
+      updateFrameHighlight(object.id);
       const worldPosition = getWorldPointerPosition();
       if (worldPosition) {
         publishCursor(worldPosition);
@@ -2522,6 +2606,7 @@ export function Board() {
     });
     rect.on('dragend', () => {
       syncObjectFromNode(object.id, true);
+      clearFrameHighlight();
     });
     rect.on('transformstart', () => {
       captureManualHistoryBaseline(true);
@@ -2564,6 +2649,7 @@ export function Board() {
     });
     circle.on('dragmove', () => {
       syncObjectFromNode(object.id, false, true, false);
+      updateFrameHighlight(object.id);
       const worldPosition = getWorldPointerPosition();
       if (worldPosition) {
         publishCursor(worldPosition);
@@ -2571,6 +2657,7 @@ export function Board() {
     });
     circle.on('dragend', () => {
       syncObjectFromNode(object.id, true);
+      clearFrameHighlight();
     });
     circle.on('transformstart', () => {
       captureManualHistoryBaseline(true);
@@ -2612,6 +2699,7 @@ export function Board() {
     });
     line.on('dragmove', () => {
       syncObjectFromNode(object.id, false, true, false);
+      updateFrameHighlight(object.id);
       const worldPosition = getWorldPointerPosition();
       if (worldPosition) {
         publishCursor(worldPosition);
@@ -2619,6 +2707,7 @@ export function Board() {
     });
     line.on('dragend', () => {
       syncObjectFromNode(object.id, true);
+      clearFrameHighlight();
     });
     line.on('transformstart', () => {
       captureManualHistoryBaseline(true);
@@ -2659,6 +2748,7 @@ export function Board() {
     });
     textNode.on('dragmove', () => {
       syncObjectFromNode(object.id, false, true, false);
+      updateFrameHighlight(object.id);
       const worldPosition = getWorldPointerPosition();
       if (worldPosition) {
         publishCursor(worldPosition);
@@ -2666,6 +2756,7 @@ export function Board() {
     });
     textNode.on('dragend', () => {
       syncObjectFromNode(object.id, true);
+      clearFrameHighlight();
     });
     textNode.on('transformstart', () => {
       captureManualHistoryBaseline(true);
@@ -2729,6 +2820,46 @@ export function Board() {
     });
     group.on('dragmove', () => {
       syncObjectFromNode(object.id, false, true, false);
+
+      // Move frame children by the same delta
+      const ctx = frameDragContextRef.current;
+      if (ctx && ctx.frameId === object.id && ctx.childIds.length > 0) {
+        const frameObj = objectsRef.current.get(object.id);
+        if (frameObj) {
+          const dx = frameObj.x - ctx.lastX;
+          const dy = frameObj.y - ctx.lastY;
+          ctx.lastX = frameObj.x;
+          ctx.lastY = frameObj.y;
+
+          if (dx !== 0 || dy !== 0) {
+            for (const childId of ctx.childIds) {
+              const childObj = objectsRef.current.get(childId);
+              if (!childObj) continue;
+              const childNode = stageRef.current?.findOne(`#${childId}`);
+              if (!childNode) continue;
+
+              const newX = childObj.x + dx;
+              const newY = childObj.y + dy;
+
+              // Update Konva node position directly
+              childNode.x(newX);
+              childNode.y(newY);
+
+              // Update objectsRef
+              objectsRef.current.set(childId, { ...childObj, x: newX, y: newY });
+
+              // Emit live update (throttled per object ID)
+              emitObjectUpdate(objectsRef.current.get(childId)!, false);
+
+              // Sync any connectors attached to this child
+              syncConnectedConnectors(childId, false, true);
+            }
+          }
+        }
+      }
+
+      objectsLayerRef.current?.batchDraw();
+
       const worldPosition = getWorldPointerPosition();
       if (worldPosition) {
         publishCursor(worldPosition);
@@ -2736,6 +2867,15 @@ export function Board() {
     });
     group.on('dragend', () => {
       syncObjectFromNode(object.id, true);
+
+      // Persist all frame children positions
+      const ctx = frameDragContextRef.current;
+      if (ctx && ctx.frameId === object.id) {
+        for (const childId of ctx.childIds) {
+          syncObjectFromNode(childId, true, true, false);
+        }
+        frameDragContextRef.current = null;
+      }
     });
     group.on('transformstart', () => {
       captureManualHistoryBaseline(true);
