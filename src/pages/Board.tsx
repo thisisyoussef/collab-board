@@ -99,7 +99,10 @@ import {
 } from '../lib/board-clipboard';
 import {
   buildActionLogEntry,
+  buildBoardPositionsSnapshotLogEntry,
   type BoardLogSource,
+  type BoardActionKind,
+  type BoardSnapshotActionDetail,
   type BuildActionLogEntryInput,
 } from '../lib/board-action-log';
 import { flushScheduledViewportSave, loadViewportState, saveViewportState } from '../lib/viewport';
@@ -408,6 +411,57 @@ export function Board() {
       objectIds,
       ...extraContext,
     });
+  }
+
+  function logBoardPositionsAfterAction({
+    source,
+    action,
+    objectIds,
+    reason,
+    actorUserId,
+    eventActions,
+  }: {
+    source: BoardLogSource;
+    action: BoardActionKind;
+    objectIds?: string[];
+    reason?: string;
+    actorUserId?: string;
+    eventActions?: BoardSnapshotActionDetail[];
+  }) {
+    const resolvedEventActions =
+      eventActions && eventActions.length > 0
+        ? eventActions
+        : (objectIds || []).map((objectId) => {
+            const object = objectsRef.current.get(objectId);
+            return {
+              objectId,
+              objectType: object?.type,
+              action,
+            } satisfies BoardSnapshotActionDetail;
+          });
+
+    const entry = buildBoardPositionsSnapshotLogEntry({
+      source,
+      action,
+      actorUserId,
+      objectIds,
+      reason,
+      eventActions: resolvedEventActions,
+      objects: objectsRef.current.values(),
+      resolveFrameIdForObject: (object) => {
+        if (object.type === 'frame' || object.type === 'connector') {
+          return null;
+        }
+        const center = {
+          x: object.x + object.width / 2,
+          y: object.y + object.height / 2,
+        };
+        return findFrameAtPoint(center, objectsRef.current);
+      },
+      resolveFrameChildIds: (frame) =>
+        frame.type === 'frame' ? getFrameChildren(frame, objectsRef.current) : [],
+    });
+    logger.info('CANVAS', entry.message, entry.context);
   }
 
   const handleApplyAIPlan = async (actions: AIActionPreview[] = aiCommandCenter.actions) => {
@@ -1491,6 +1545,34 @@ export function Board() {
       diff.updatedIds.length > 0 ||
       diff.deletedIds.length > 0
     ) {
+      logBoardPositionsAfterAction({
+        source: transition.entry.source === 'ai' ? 'ai' : 'local',
+        action: 'update',
+        objectIds: [
+          ...diff.createdIds,
+          ...diff.updatedIds,
+          ...diff.deletedIds,
+        ],
+        reason: `history-${transition.direction}`,
+        actorUserId: getActorUserId(),
+        eventActions: [
+          ...diff.createdIds.map((objectId) => ({
+            objectId,
+            objectType: transition.to[objectId]?.type,
+            action: 'create' as const,
+          })),
+          ...diff.updatedIds.map((objectId) => ({
+            objectId,
+            objectType: transition.to[objectId]?.type || transition.from[objectId]?.type,
+            action: 'update' as const,
+          })),
+          ...diff.deletedIds.map((objectId) => ({
+            objectId,
+            objectType: transition.from[objectId]?.type,
+            action: 'delete' as const,
+          })),
+        ],
+      });
       scheduleBoardSave();
       flushBoardSave();
       setCanvasNotice(notice);
@@ -1571,6 +1653,34 @@ export function Board() {
 
     hydrateBoardObjects(nextBoardState, user?.uid || 'guest');
     setSelectedIds([]);
+    logBoardPositionsAfterAction({
+      source: detailSource,
+      action: 'update',
+      objectIds: [
+        ...meta.diff.createdIds,
+        ...meta.diff.updatedIds,
+        ...meta.diff.deletedIds,
+      ],
+      reason: `ai-commit:${meta.txId}`,
+      actorUserId,
+      eventActions: [
+        ...meta.diff.createdIds.map((objectId) => ({
+          objectId,
+          objectType: nextBoardState[objectId]?.type,
+          action: 'create' as const,
+        })),
+        ...meta.diff.updatedIds.map((objectId) => ({
+          objectId,
+          objectType: nextBoardState[objectId]?.type || beforeState[objectId]?.type,
+          action: 'update' as const,
+        })),
+        ...meta.diff.deletedIds.map((objectId) => ({
+          objectId,
+          objectType: beforeState[objectId]?.type,
+          action: 'delete' as const,
+        })),
+      ],
+    });
     const realtimeMeta: RealtimeObjectEventMeta = {
       txId: meta.txId,
       source: 'ai',
@@ -1971,6 +2081,14 @@ export function Board() {
       });
     }
 
+    logBoardPositionsAfterAction({
+      source,
+      action: existing ? 'update' : 'create',
+      objectIds: [normalized.id],
+      reason: existing ? 'remote-upsert' : 'remote-create',
+      actorUserId: meta?.actorUserId,
+    });
+
     setBoardRevision((value) => value + 1);
     return true;
   }
@@ -2005,6 +2123,20 @@ export function Board() {
     setObjectCount(objectsRef.current.size);
     setSelectedIds((previous) => previous.filter((entry) => entry !== objectId));
     setEditingText((previous) => (previous?.id === objectId ? null : previous));
+    logBoardPositionsAfterAction({
+      source: meta?.source || 'remote',
+      action: 'delete',
+      objectIds: [objectId],
+      reason: 'remote-delete',
+      actorUserId: meta?.actorUserId,
+      eventActions: [
+        {
+          objectId,
+          objectType: object.type,
+          action: 'delete',
+        },
+      ],
+    });
     setBoardRevision((value) => value + 1);
     return true;
   }
@@ -2353,6 +2485,13 @@ export function Board() {
         after: nextObject,
         actorUserId: getActorUserId(),
       });
+      logBoardPositionsAfterAction({
+        source: 'local',
+        action: 'update',
+        objectIds: [connectorId],
+        reason: `connector-endpoint-${endpoint}`,
+        actorUserId: getActorUserId(),
+      });
       aiExecutor.invalidateUndo();
       scheduleBoardSave();
       commitBoardHistory('manual', beforeState || undefined);
@@ -2414,6 +2553,13 @@ export function Board() {
         action: 'update',
         before: current,
         after: nextObject,
+        actorUserId: getActorUserId(),
+      });
+      logBoardPositionsAfterAction({
+        source: 'local',
+        action: 'update',
+        objectIds: [connectorId],
+        reason: 'connector-path-control',
         actorUserId: getActorUserId(),
       });
       aiExecutor.invalidateUndo();
@@ -2480,6 +2626,7 @@ export function Board() {
     persist: boolean,
     emitRealtime = persist,
     bumpRevision = true,
+    logBoardSnapshot = true,
   ) {
     const current = objectsRef.current.get(objectId);
     const node = stageRef.current?.findOne(`#${objectId}`);
@@ -2580,6 +2727,15 @@ export function Board() {
         after: nextObject,
         actorUserId: getActorUserId(),
       });
+      if (logBoardSnapshot) {
+        logBoardPositionsAfterAction({
+          source: 'local',
+          action: 'update',
+          objectIds: [objectId],
+          reason: 'sync-object-from-node',
+          actorUserId: getActorUserId(),
+        });
+      }
       aiExecutor.invalidateUndo();
       scheduleBoardSave();
       commitBoardHistory('manual', beforeState || undefined);
@@ -3108,14 +3264,21 @@ export function Board() {
     });
     group.on('dragend', () => {
       activeInteractionRef.current = null;
-      syncObjectFromNode(object.id, true);
+      syncObjectFromNode(object.id, true, true, true, false);
 
       // Persist all frame children positions
       const ctx = frameDragContextRef.current;
       if (ctx && ctx.frameId === object.id) {
         for (const childId of ctx.childIds) {
-          syncObjectFromNode(childId, true, true, false);
+          syncObjectFromNode(childId, true, true, false, false);
         }
+        logBoardPositionsAfterAction({
+          source: 'local',
+          action: 'update',
+          objectIds: [ctx.frameId, ...ctx.childIds],
+          reason: 'frame-drag-end',
+          actorUserId: getActorUserId(),
+        });
         frameDragContextRef.current = null;
       }
       syncObjectsLayerZOrder();
@@ -3207,6 +3370,13 @@ export function Board() {
         object,
         actorUserId: getActorUserId(),
       });
+      logBoardPositionsAfterAction({
+        source: 'local',
+        action: 'create',
+        objectIds: [object.id],
+        reason: 'insert-object',
+        actorUserId: getActorUserId(),
+      });
       aiExecutor.invalidateUndo();
       emitObjectCreate(object);
       scheduleBoardSave();
@@ -3256,6 +3426,18 @@ export function Board() {
         removedObjects.map((entry) => entry.id),
         { actorUserId: getActorUserId() },
       );
+      logBoardPositionsAfterAction({
+        source: 'local',
+        action: 'delete',
+        objectIds: removedObjects.map((entry) => entry.id),
+        reason: 'remove-objects',
+        actorUserId: getActorUserId(),
+        eventActions: removedObjects.map((entry) => ({
+          objectId: entry.id,
+          objectType: entry.type,
+          action: 'delete',
+        })),
+      });
       aiExecutor.invalidateUndo();
       objectIds.forEach((objectId) => {
         emitObjectDelete(objectId);
@@ -3318,6 +3500,13 @@ export function Board() {
         actorUserId: getActorUserId(),
       },
     );
+    logBoardPositionsAfterAction({
+      source: 'local',
+      action: 'duplicate',
+      objectIds: clones.map((entry) => entry.id),
+      reason: 'duplicate',
+      actorUserId: getActorUserId(),
+    });
   }
 
   function handleCopy() {
@@ -3345,6 +3534,13 @@ export function Board() {
       originals.map((entry) => entry.id),
       { actorUserId: getActorUserId() },
     );
+    logBoardPositionsAfterAction({
+      source: 'local',
+      action: 'copy',
+      objectIds: originals.map((entry) => entry.id),
+      reason: 'copy',
+      actorUserId: getActorUserId(),
+    });
   }
 
   function handlePaste() {
@@ -3421,6 +3617,13 @@ export function Board() {
         actorUserId: getActorUserId(),
       },
     );
+    logBoardPositionsAfterAction({
+      source: 'local',
+      action: 'paste',
+      objectIds: clones.map((entry) => entry.id),
+      reason: 'paste',
+      actorUserId: getActorUserId(),
+    });
   }
 
   function commitTextEdit(saveChanges: boolean) {
@@ -3472,6 +3675,13 @@ export function Board() {
         action: 'update',
         before: current,
         after: nextObject,
+        actorUserId: getActorUserId(),
+      });
+      logBoardPositionsAfterAction({
+        source: 'local',
+        action: 'update',
+        objectIds: [nextObject.id],
+        reason: 'text-edit',
         actorUserId: getActorUserId(),
       });
       aiExecutor.invalidateUndo();
@@ -3694,6 +3904,13 @@ export function Board() {
       object: nextObject,
       actorUserId: getActorUserId(),
     });
+    logBoardPositionsAfterAction({
+      source: 'local',
+      action: 'create',
+      objectIds: [nextObject.id],
+      reason: 'connector-draft-finalize',
+      actorUserId: getActorUserId(),
+    });
     aiExecutor.invalidateUndo();
     emitObjectCreate(nextObject);
     scheduleBoardSave();
@@ -3891,6 +4108,13 @@ export function Board() {
       source: 'local',
       action: 'create',
       object: finalizedObject,
+      actorUserId: getActorUserId(),
+    });
+    logBoardPositionsAfterAction({
+      source: 'local',
+      action: 'create',
+      objectIds: [finalizedObject.id],
+      reason: 'shape-draft-finalize',
       actorUserId: getActorUserId(),
     });
     aiExecutor.invalidateUndo();
@@ -4554,6 +4778,13 @@ export function Board() {
       after: nextObject,
       actorUserId: getActorUserId(),
     });
+    logBoardPositionsAfterAction({
+      source: 'local',
+      action: 'update',
+      objectIds: [objectId],
+      reason: 'update-object-properties',
+      actorUserId: getActorUserId(),
+    });
     aiExecutor.invalidateUndo();
     emitObjectUpdate(nextObject, true);
     scheduleBoardSave();
@@ -4615,6 +4846,13 @@ export function Board() {
       action: 'update',
       before: current,
       after: nextObject,
+      actorUserId: getActorUserId(),
+    });
+    logBoardPositionsAfterAction({
+      source: 'local',
+      action: 'update',
+      objectIds: [connectorId],
+      reason: 'update-connector-properties',
       actorUserId: getActorUserId(),
     });
     aiExecutor.invalidateUndo();

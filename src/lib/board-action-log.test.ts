@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { BoardObject } from '../types/board';
 import {
   buildActionLogEntry,
+  buildBoardPositionsSnapshot,
+  buildBoardPositionsSnapshotLogEntry,
   describeBoardObjectDelta,
   formatObjectLabel,
 } from './board-action-log';
@@ -270,5 +272,253 @@ describe('buildActionLogEntry', () => {
     });
 
     expect(entry).toBeNull();
+  });
+});
+
+describe('buildBoardPositionsSnapshot', () => {
+  it('returns rounded, z-sorted positions for all objects', () => {
+    const objects: BoardObject[] = [
+      makeObject({
+        id: 'b',
+        type: 'rect',
+        x: 99.6,
+        y: 201.2,
+        width: 180.3,
+        height: 120.8,
+        rotation: 12.6,
+        zIndex: 2,
+      }),
+      makeObject({
+        id: 'a',
+        type: 'sticky',
+        x: 10.2,
+        y: 20.7,
+        width: 150.4,
+        height: 99.6,
+        rotation: 0.4,
+        zIndex: 1,
+      }),
+    ];
+
+    const snapshot = buildBoardPositionsSnapshot({ objects });
+
+    expect(snapshot.objectCount).toBe(2);
+    expect(snapshot.objects).toEqual([
+      {
+        id: 'a',
+        type: 'sticky',
+        x: 10,
+        y: 21,
+        width: 150,
+        height: 100,
+        rotation: 0,
+        zIndex: 1,
+        frameId: null,
+        centerX: 85,
+        centerY: 71,
+        right: 160,
+        bottom: 121,
+        relativeToFrame: null,
+        points: null,
+        endpointStart: null,
+        endpointEnd: null,
+        connector: null,
+      },
+      {
+        id: 'b',
+        type: 'rect',
+        x: 100,
+        y: 201,
+        width: 180,
+        height: 121,
+        rotation: 13,
+        zIndex: 2,
+        frameId: null,
+        centerX: 190,
+        centerY: 262,
+        right: 280,
+        bottom: 322,
+        relativeToFrame: null,
+        points: null,
+        endpointStart: null,
+        endpointEnd: null,
+        connector: null,
+      },
+    ]);
+  });
+
+  it('includes frame memberships and frame child lists via resolvers', () => {
+    const frame = makeObject({
+      id: 'frame-1',
+      type: 'frame',
+      x: 0,
+      y: 0,
+      width: 400,
+      height: 300,
+      zIndex: 1,
+    });
+    const sticky = makeObject({
+      id: 'sticky-1',
+      type: 'sticky',
+      x: 50,
+      y: 60,
+      zIndex: 2,
+    });
+    const text = makeObject({
+      id: 'text-1',
+      type: 'text',
+      x: 500,
+      y: 100,
+      zIndex: 3,
+    });
+
+    const snapshot = buildBoardPositionsSnapshot({
+      objects: [frame, sticky, text],
+      resolveFrameIdForObject: (object) =>
+        object.id === 'sticky-1' ? 'frame-1' : null,
+      resolveFrameChildIds: (candidateFrame) =>
+        candidateFrame.id === 'frame-1' ? ['sticky-1'] : [],
+    });
+
+    expect(snapshot.objects).toEqual([
+      expect.objectContaining({ id: 'frame-1', frameId: null, relativeToFrame: null }),
+      expect.objectContaining({
+        id: 'sticky-1',
+        frameId: 'frame-1',
+        relativeToFrame: {
+          x: 50,
+          y: 60,
+          right: 200,
+          bottom: 160,
+        },
+      }),
+      expect.objectContaining({ id: 'text-1', frameId: null }),
+    ]);
+    expect(snapshot.frames).toEqual([
+      {
+        frameId: 'frame-1',
+        x: 0,
+        y: 0,
+        width: 400,
+        height: 300,
+        rotation: 0,
+        childIds: ['sticky-1'],
+      },
+    ]);
+  });
+
+  it('includes line/connector point coordinates and connector metadata', () => {
+    const connector = makeObject({
+      id: 'connector-1',
+      type: 'connector',
+      x: 0,
+      y: 0,
+      width: 291,
+      height: 380,
+      points: [10.2, 20.7, 300.4, 400.8],
+      fromId: 'sticky-1',
+      toId: 'frame-1',
+      fromAnchorX: 0.5,
+      fromAnchorY: 1,
+      toAnchorX: 0,
+      toAnchorY: 0.5,
+      pathControlX: 151.9,
+      pathControlY: 208.2,
+      zIndex: 10,
+    });
+
+    const snapshot = buildBoardPositionsSnapshot({ objects: [connector] });
+    expect(snapshot.objects).toEqual([
+      {
+        id: 'connector-1',
+        type: 'connector',
+        x: 0,
+        y: 0,
+        width: 291,
+        height: 380,
+        rotation: 0,
+        zIndex: 10,
+        frameId: null,
+        centerX: 146,
+        centerY: 190,
+        right: 291,
+        bottom: 380,
+        relativeToFrame: null,
+        points: [10, 21, 300, 401],
+        endpointStart: { x: 10, y: 21 },
+        endpointEnd: { x: 300, y: 401 },
+        connector: {
+          fromId: 'sticky-1',
+          toId: 'frame-1',
+          fromAnchorX: 0.5,
+          fromAnchorY: 1,
+          toAnchorX: 0,
+          toAnchorY: 0.5,
+          pathControlX: 152,
+          pathControlY: 208,
+        },
+      },
+    ]);
+  });
+});
+
+describe('buildBoardPositionsSnapshotLogEntry', () => {
+  it('creates board snapshot log entry with source/action metadata', () => {
+    const objects: BoardObject[] = [
+      makeObject({ id: 'shape-1', type: 'rect', x: 100, y: 200, zIndex: 1 }),
+      makeObject({ id: 'shape-2', type: 'circle', x: 300, y: 400, zIndex: 2 }),
+    ];
+
+    const entry = buildBoardPositionsSnapshotLogEntry({
+      source: 'local',
+      action: 'update',
+      actorUserId: 'user-1',
+      objectIds: ['shape-1'],
+      reason: 'frame-drag-end',
+      eventActions: [
+        {
+          objectId: 'shape-1',
+          objectType: 'rect',
+          action: 'update',
+          changes: ['move', 'resize'],
+        },
+      ],
+      objects,
+    });
+
+    expect(entry.message).toBe('Board positions after local update.');
+    expect(entry.context).toMatchObject({
+      source: 'local',
+      action: 'update',
+      actorUserId: 'user-1',
+      objectIds: ['shape-1'],
+      reason: 'frame-drag-end',
+      eventActions: [
+        {
+          objectId: 'shape-1',
+          objectType: 'rect',
+          action: 'update',
+          changes: ['move', 'resize'],
+        },
+      ],
+      boardSnapshot: {
+        objectCount: 2,
+      },
+    });
+    expect(entry.context).toMatchObject({
+      eventActions: [
+        {
+          objectId: 'shape-1',
+          objectType: 'rect',
+          action: 'update',
+          changes: ['move', 'resize'],
+        },
+      ],
+    });
+    expect(
+      ((entry.context.boardSnapshot as { objects: Array<{ id: string }> }).objects || []).map(
+        (obj) => obj.id,
+      ),
+    ).toEqual(['shape-1', 'shape-2']);
   });
 });

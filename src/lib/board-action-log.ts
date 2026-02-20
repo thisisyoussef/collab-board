@@ -45,6 +45,87 @@ export interface BuildActionLogEntryInput {
   actorUserId?: string;
 }
 
+export interface BoardPositionSnapshotObject {
+  id: string;
+  type: BoardObjectType;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  centerX: number;
+  centerY: number;
+  right: number;
+  bottom: number;
+  zIndex: number;
+  frameId: string | null;
+  relativeToFrame: {
+    x: number;
+    y: number;
+    right: number;
+    bottom: number;
+  } | null;
+  points: number[] | null;
+  endpointStart: { x: number; y: number } | null;
+  endpointEnd: { x: number; y: number } | null;
+  connector: {
+    fromId: string | null;
+    toId: string | null;
+    fromAnchorX: number | null;
+    fromAnchorY: number | null;
+    toAnchorX: number | null;
+    toAnchorY: number | null;
+    pathControlX: number | null;
+    pathControlY: number | null;
+  } | null;
+}
+
+export interface BoardFrameSnapshot {
+  frameId: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  childIds: string[];
+}
+
+export interface BoardPositionsSnapshot {
+  objectCount: number;
+  objects: BoardPositionSnapshotObject[];
+  frames: BoardFrameSnapshot[];
+}
+
+export interface BuildBoardPositionsSnapshotInput {
+  objects: Iterable<BoardObject>;
+  resolveFrameIdForObject?: (
+    object: BoardObject,
+    allObjects: ReadonlyMap<string, BoardObject>,
+  ) => string | null;
+  resolveFrameChildIds?: (
+    frame: BoardObject,
+    allObjects: ReadonlyMap<string, BoardObject>,
+  ) => string[];
+}
+
+export interface BuildBoardPositionsSnapshotLogEntryInput
+  extends BuildBoardPositionsSnapshotInput {
+  source: BoardLogSource;
+  action: BoardActionKind;
+  actorUserId?: string;
+  objectIds?: string[];
+  reason?: string;
+  eventActions?: BoardSnapshotActionDetail[];
+}
+
+export interface BoardSnapshotActionDetail {
+  objectId: string;
+  objectType?: BoardObjectType;
+  action: BoardActionKind;
+  changes?: string[];
+  sourceObjectId?: string;
+}
+
 const NON_GEOMETRY_IGNORED_FIELDS = new Set([
   'id',
   'type',
@@ -60,6 +141,27 @@ const NON_GEOMETRY_IGNORED_FIELDS = new Set([
 
 function round(value: number): number {
   return Math.round(Number(value) || 0);
+}
+
+function roundMaybe(value: unknown): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? round(parsed) : null;
+}
+
+function numberMaybe(value: unknown): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function roundPoints(points: unknown): number[] | null {
+  if (!Array.isArray(points)) {
+    return null;
+  }
+
+  const rounded = points
+    .map((value) => roundMaybe(value))
+    .filter((value): value is number => value !== null);
+  return rounded.length >= 2 ? rounded : null;
 }
 
 function valueChanged(beforeValue: unknown, afterValue: unknown): boolean {
@@ -337,4 +439,120 @@ export function buildActionLogEntry(input: BuildActionLogEntryInput): BoardActio
   }
 
   return null;
+}
+
+export function buildBoardPositionsSnapshot({
+  objects,
+  resolveFrameIdForObject,
+  resolveFrameChildIds,
+}: BuildBoardPositionsSnapshotInput): BoardPositionsSnapshot {
+  const allObjects = new Map<string, BoardObject>();
+  for (const object of objects) {
+    allObjects.set(object.id, object);
+  }
+
+  const ordered = Array.from(allObjects.values()).sort((a, b) => {
+    if (a.zIndex !== b.zIndex) {
+      return a.zIndex - b.zIndex;
+    }
+    return a.id.localeCompare(b.id);
+  });
+
+  const objectSnapshots: BoardPositionSnapshotObject[] = ordered.map((object) => {
+    const x = round(object.x);
+    const y = round(object.y);
+    const width = round(object.width);
+    const height = round(object.height);
+    const frameId = resolveFrameIdForObject ? resolveFrameIdForObject(object, allObjects) : null;
+    const parentFrame = frameId ? allObjects.get(frameId) : undefined;
+    const points = roundPoints(object.points);
+    const endpointStart =
+      points && points.length >= 2
+        ? { x: points[0], y: points[1] }
+        : null;
+    const endpointEnd =
+      points && points.length >= 4
+        ? { x: points[2], y: points[3] }
+        : null;
+
+    return {
+      id: object.id,
+      type: object.type,
+      x,
+      y,
+      width,
+      height,
+      rotation: round(object.rotation),
+      centerX: round(x + width / 2),
+      centerY: round(y + height / 2),
+      right: round(x + width),
+      bottom: round(y + height),
+      zIndex: object.zIndex,
+      frameId,
+      relativeToFrame:
+        parentFrame && parentFrame.type === 'frame'
+          ? {
+              x: round(object.x - parentFrame.x),
+              y: round(object.y - parentFrame.y),
+              right: round(object.x + object.width - parentFrame.x),
+              bottom: round(object.y + object.height - parentFrame.y),
+            }
+          : null,
+      points,
+      endpointStart,
+      endpointEnd,
+      connector:
+        object.type === 'connector'
+          ? {
+              fromId: object.fromId || null,
+              toId: object.toId || null,
+              fromAnchorX: numberMaybe(object.fromAnchorX),
+              fromAnchorY: numberMaybe(object.fromAnchorY),
+              toAnchorX: numberMaybe(object.toAnchorX),
+              toAnchorY: numberMaybe(object.toAnchorY),
+              pathControlX: roundMaybe(object.pathControlX),
+              pathControlY: roundMaybe(object.pathControlY),
+            }
+          : null,
+    };
+  });
+
+  const frameSnapshots: BoardFrameSnapshot[] = ordered
+    .filter((object) => object.type === 'frame')
+    .map((frame) => ({
+      frameId: frame.id,
+      x: round(frame.x),
+      y: round(frame.y),
+      width: round(frame.width),
+      height: round(frame.height),
+      rotation: round(frame.rotation),
+      childIds: (resolveFrameChildIds ? resolveFrameChildIds(frame, allObjects) : []).slice().sort(),
+    }));
+
+  return {
+    objectCount: objectSnapshots.length,
+    objects: objectSnapshots,
+    frames: frameSnapshots,
+  };
+}
+
+export function buildBoardPositionsSnapshotLogEntry(
+  input: BuildBoardPositionsSnapshotLogEntryInput,
+): BoardActionLogEntry {
+  const boardSnapshot = buildBoardPositionsSnapshot(input);
+
+  return {
+    message: `Board positions after ${input.source} ${input.action}.`,
+    context: {
+      source: input.source,
+      action: input.action,
+      ...(input.actorUserId ? { actorUserId: input.actorUserId } : {}),
+      ...(input.objectIds && input.objectIds.length > 0 ? { objectIds: input.objectIds } : {}),
+      ...(input.reason ? { reason: input.reason } : {}),
+      ...(input.eventActions && input.eventActions.length > 0
+        ? { eventActions: input.eventActions }
+        : {}),
+      boardSnapshot,
+    },
+  };
 }
