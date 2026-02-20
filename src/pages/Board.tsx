@@ -237,6 +237,7 @@ export function Board() {
     lastY: number;
   } | null>(null);
   const highlightedFrameIdRef = useRef<string | null>(null);
+  const activeInteractionRef = useRef<'drag' | 'transform' | null>(null);
   const lastObjectLatencyUiUpdateAtRef = useRef(0);
   const aiApplyLatencySamplesRef = useRef<number[]>([]);
   const realtimeDedupeRef = useRef(
@@ -785,6 +786,8 @@ export function Board() {
   }, [boardId, canvasSize.height, canvasSize.width, user?.uid]);
 
   useEffect(() => {
+    if (activeInteractionRef.current === 'transform') return;
+
     const transformer = transformerRef.current;
     const stage = stageRef.current;
     if (!transformer || !stage) {
@@ -842,6 +845,9 @@ export function Board() {
   }, [canEditBoard]);
 
   useEffect(() => {
+    // Skip draggable recalculation while user is actively dragging
+    if (activeInteractionRef.current === 'drag') return;
+
     objectsRef.current.forEach((_, id) => {
       const node = stageRef.current?.findOne(`#${id}`);
       if (!node) {
@@ -1584,6 +1590,9 @@ export function Board() {
   }
 
   function syncObjectsLayerZOrder() {
+    // Skip z-order sync while user is actively interacting (drag/transform)
+    if (activeInteractionRef.current) return;
+
     const layer = objectsLayerRef.current;
     const stage = stageRef.current;
     if (!layer || !stage) {
@@ -1675,6 +1684,21 @@ export function Board() {
     });
     if (!applyDecision.shouldApply) {
       return false;
+    }
+
+    const isActivelyInteracted = (() => {
+      if (!activeInteractionRef.current) return false;
+      const nodeCheck = stageRef.current?.findOne(`#${normalized.id}`);
+      if (nodeCheck?.isDragging()) return true;
+      const ctx = frameDragContextRef.current;
+      if (ctx && (ctx.frameId === normalized.id || ctx.childIds.includes(normalized.id))) return true;
+      return false;
+    })();
+
+    if (isActivelyInteracted) {
+      objectsRef.current.set(normalized.id, normalized);
+      setBoardRevision((value) => value + 1);
+      return true;
     }
 
     if (normalized.type === 'connector') {
@@ -2428,6 +2452,7 @@ export function Board() {
     if (activeTool !== 'select') {
       return;
     }
+    activeInteractionRef.current = 'drag';
     captureManualHistoryBaseline(true);
 
     setSelectedIds((previous) =>
@@ -2565,13 +2590,17 @@ export function Board() {
       }
     });
     group.on('dragend', () => {
+      activeInteractionRef.current = null;
       syncObjectFromNode(object.id, true);
       clearFrameHighlight();
+      syncObjectsLayerZOrder();
     });
     group.on('transformstart', () => {
+      activeInteractionRef.current = 'transform';
       captureManualHistoryBaseline(true);
     });
     group.on('transformend', () => {
+      activeInteractionRef.current = null;
       const existing = objectsRef.current.get(object.id);
       if (!existing) {
         return;
@@ -2580,6 +2609,7 @@ export function Board() {
       applyStickyTransform(group, existing);
       syncObjectFromNode(object.id, true);
       objectsLayerRef.current?.batchDraw();
+      syncObjectsLayerZOrder();
     });
     group.on('dblclick dbltap', () => {
       openTextEditor(object.id);
@@ -2618,13 +2648,17 @@ export function Board() {
       }
     });
     rect.on('dragend', () => {
+      activeInteractionRef.current = null;
       syncObjectFromNode(object.id, true);
       clearFrameHighlight();
+      syncObjectsLayerZOrder();
     });
     rect.on('transformstart', () => {
+      activeInteractionRef.current = 'transform';
       captureManualHistoryBaseline(true);
     });
     rect.on('transformend', () => {
+      activeInteractionRef.current = null;
       const existing = objectsRef.current.get(object.id);
       if (!existing) {
         return;
@@ -2633,6 +2667,7 @@ export function Board() {
       applyRectTransform(rect, existing);
       syncObjectFromNode(object.id, true);
       objectsLayerRef.current?.batchDraw();
+      syncObjectsLayerZOrder();
     });
 
     return rect;
@@ -2669,13 +2704,17 @@ export function Board() {
       }
     });
     circle.on('dragend', () => {
+      activeInteractionRef.current = null;
       syncObjectFromNode(object.id, true);
       clearFrameHighlight();
+      syncObjectsLayerZOrder();
     });
     circle.on('transformstart', () => {
+      activeInteractionRef.current = 'transform';
       captureManualHistoryBaseline(true);
     });
     circle.on('transformend', () => {
+      activeInteractionRef.current = null;
       const existing = objectsRef.current.get(object.id);
       if (!existing) {
         return;
@@ -2684,6 +2723,7 @@ export function Board() {
       applyCircleTransform(circle, existing);
       syncObjectFromNode(object.id, true);
       objectsLayerRef.current?.batchDraw();
+      syncObjectsLayerZOrder();
     });
 
     return circle;
@@ -2719,16 +2759,22 @@ export function Board() {
       }
     });
     line.on('dragend', () => {
+      activeInteractionRef.current = null;
       syncObjectFromNode(object.id, true);
       clearFrameHighlight();
+      syncObjectsLayerZOrder();
     });
     line.on('transformstart', () => {
+      activeInteractionRef.current = 'transform';
       captureManualHistoryBaseline(true);
     });
     line.on('transformend', () => {
+      activeInteractionRef.current = null;
+      if (!objectsRef.current.get(object.id)) return;
       applyLineTransform(line);
       syncObjectFromNode(object.id, true);
       objectsLayerRef.current?.batchDraw();
+      syncObjectsLayerZOrder();
     });
 
     return line;
@@ -2768,13 +2814,17 @@ export function Board() {
       }
     });
     textNode.on('dragend', () => {
+      activeInteractionRef.current = null;
       syncObjectFromNode(object.id, true);
       clearFrameHighlight();
+      syncObjectsLayerZOrder();
     });
     textNode.on('transformstart', () => {
+      activeInteractionRef.current = 'transform';
       captureManualHistoryBaseline(true);
     });
     textNode.on('transformend', () => {
+      activeInteractionRef.current = null;
       const existing = objectsRef.current.get(object.id);
       if (!existing) {
         return;
@@ -2782,6 +2832,7 @@ export function Board() {
       applyTextTransform(textNode, existing);
       syncObjectFromNode(object.id, true);
       objectsLayerRef.current?.batchDraw();
+      syncObjectsLayerZOrder();
     });
     textNode.on('dblclick dbltap', () => {
       openTextEditor(object.id);
@@ -2879,6 +2930,7 @@ export function Board() {
       }
     });
     group.on('dragend', () => {
+      activeInteractionRef.current = null;
       syncObjectFromNode(object.id, true);
 
       // Persist all frame children positions
@@ -2889,11 +2941,14 @@ export function Board() {
         }
         frameDragContextRef.current = null;
       }
+      syncObjectsLayerZOrder();
     });
     group.on('transformstart', () => {
+      activeInteractionRef.current = 'transform';
       captureManualHistoryBaseline(true);
     });
     group.on('transformend', () => {
+      activeInteractionRef.current = null;
       const existing = objectsRef.current.get(object.id);
       if (!existing) {
         return;
@@ -2901,6 +2956,7 @@ export function Board() {
       applyFrameTransform(group, existing);
       syncObjectFromNode(object.id, true);
       objectsLayerRef.current?.batchDraw();
+      syncObjectsLayerZOrder();
     });
 
     return group;
