@@ -82,7 +82,7 @@ import {
   TEXT_MIN_WIDTH,
 } from '../lib/board-object';
 import {
-  getFrameChildren,
+  buildFrameMembershipIndex,
   findFrameAtPoint,
 } from '../lib/frame-grouping';
 import {
@@ -236,6 +236,8 @@ export function Board() {
   const transformerRef = useRef<Konva.Transformer | null>(null);
   const selectionRectRef = useRef<Konva.Rect | null>(null);
   const objectsRef = useRef<Map<string, BoardObject>>(new Map());
+  const frameMembershipRef = useRef<Map<string, string[]>>(new Map());
+  const childFrameRef = useRef<Map<string, string>>(new Map());
   const saveTimeoutRef = useRef<number | null>(null);
   const saveInFlightRef = useRef(false);
   const saveQueuedRef = useRef(false);
@@ -387,6 +389,12 @@ export function Board() {
 
   const getActorUserId = () => user?.uid || 'guest';
 
+  function refreshFrameMembership() {
+    const membership = buildFrameMembershipIndex(objectsRef.current);
+    frameMembershipRef.current = membership.frameToChildren;
+    childFrameRef.current = membership.childToFrame;
+  }
+
   function logDetailedCanvasAction(input: BuildActionLogEntryInput) {
     const entry = buildActionLogEntry(input);
     if (!entry) {
@@ -439,6 +447,7 @@ export function Board() {
     actorUserId?: string;
     eventActions?: BoardSnapshotActionDetail[];
   }) {
+    refreshFrameMembership();
     const resolvedEventActions =
       eventActions && eventActions.length > 0
         ? eventActions
@@ -463,14 +472,10 @@ export function Board() {
         if (object.type === 'frame' || object.type === 'connector') {
           return null;
         }
-        const center = {
-          x: object.x + object.width / 2,
-          y: object.y + object.height / 2,
-        };
-        return findFrameAtPoint(center, objectsRef.current);
+        return childFrameRef.current.get(object.id) || null;
       },
       resolveFrameChildIds: (frame) =>
-        frame.type === 'frame' ? getFrameChildren(frame, objectsRef.current) : [],
+        frame.type === 'frame' ? frameMembershipRef.current.get(frame.id) || [] : [],
     });
     logger.info('CANVAS', entry.message, entry.context);
   }
@@ -1415,7 +1420,17 @@ export function Board() {
       return;
     }
 
-    const payloadObject = sanitizeBoardObjectForFirestore(object);
+    const objectForEmit = force
+      ? object
+      : {
+          ...object,
+          updatedAt: new Date().toISOString(),
+        };
+    if (!force) {
+      objectsRef.current.set(objectForEmit.id, objectForEmit);
+    }
+
+    const payloadObject = sanitizeBoardObjectForFirestore(objectForEmit);
     realtimeObjectEmitAtRef.current[payloadObject.id] = now;
 
     const payload = {
@@ -1805,6 +1820,7 @@ export function Board() {
     objectsLayerRef.current?.destroyChildren();
     objectsLayerRef.current?.batchDraw();
     objectsRef.current.clear();
+    refreshFrameMembership();
     connectorDraftRef.current = null;
     clearManualHistoryBaseline();
     hasUnsavedChangesRef.current = false;
@@ -1858,6 +1874,7 @@ export function Board() {
       const node = createNodeForObject(entry);
       objectsLayerRef.current?.add(node);
     });
+    refreshFrameMembership();
     syncObjectsLayerZOrder();
 
     normalizedObjects.forEach((entry) => {
@@ -2065,6 +2082,9 @@ export function Board() {
     }
 
     objectsRef.current.set(normalized.id, normalized);
+    if (normalized.type !== 'connector') {
+      refreshFrameMembership();
+    }
     syncObjectsLayerZOrder();
     objectsLayerRef.current?.batchDraw();
     if (!existing) {
@@ -2129,6 +2149,7 @@ export function Board() {
     const node = stageRef.current?.findOne(`#${objectId}`);
     node?.destroy();
     objectsRef.current.delete(objectId);
+    refreshFrameMembership();
     syncObjectsLayerZOrder();
     objectsLayerRef.current?.batchDraw();
     setObjectCount(objectsRef.current.size);
@@ -2638,6 +2659,7 @@ export function Board() {
     emitRealtime = persist,
     bumpRevision = true,
     logBoardSnapshot = true,
+    refreshMembership = persist,
   ) {
     const current = objectsRef.current.get(objectId);
     const node = stageRef.current?.findOne(`#${objectId}`);
@@ -2705,6 +2727,8 @@ export function Board() {
       }
     }
 
+    const nextUpdatedAt =
+      persist || emitRealtime ? new Date().toISOString() : current.updatedAt;
     const nextObject: BoardObject = {
       ...current,
       x: node.x(),
@@ -2716,10 +2740,13 @@ export function Board() {
       fontSize,
       text,
       title,
-      updatedAt: persist ? new Date().toISOString() : current.updatedAt,
+      updatedAt: nextUpdatedAt,
     };
 
     objectsRef.current.set(objectId, nextObject);
+    if (refreshMembership && current.type !== 'connector') {
+      refreshFrameMembership();
+    }
     if (current.type !== 'connector') {
       syncConnectedConnectors(objectId, persist, emitRealtime);
     }
@@ -2806,7 +2833,8 @@ export function Board() {
     // Snapshot frame children for move-with-frame behavior
     const obj = objectsRef.current.get(objectId);
     if (obj?.type === 'frame') {
-      const childIds = getFrameChildren(obj, objectsRef.current);
+      refreshFrameMembership();
+      const childIds = frameMembershipRef.current.get(objectId) || [];
       frameDragContextRef.current = {
         frameId: objectId,
         childIds,
@@ -3254,10 +3282,16 @@ export function Board() {
               childNode.y(newY);
 
               // Update objectsRef
-              objectsRef.current.set(childId, { ...childObj, x: newX, y: newY });
+              const nextChildObject: BoardObject = {
+                ...childObj,
+                x: newX,
+                y: newY,
+                updatedAt: new Date().toISOString(),
+              };
+              objectsRef.current.set(childId, nextChildObject);
 
               // Emit live update (throttled per object ID)
-              emitObjectUpdate(objectsRef.current.get(childId)!, false);
+              emitObjectUpdate(nextChildObject, false);
 
               // Sync any connectors attached to this child
               syncConnectedConnectors(childId, false, true);
@@ -3275,13 +3309,13 @@ export function Board() {
     });
     group.on('dragend', () => {
       activeInteractionRef.current = null;
-      syncObjectFromNode(object.id, true, true, true, false);
+      syncObjectFromNode(object.id, true, true, true, false, false);
 
       // Persist all frame children positions
       const ctx = frameDragContextRef.current;
       if (ctx && ctx.frameId === object.id) {
         for (const childId of ctx.childIds) {
-          syncObjectFromNode(childId, true, true, false, false);
+          syncObjectFromNode(childId, true, true, false, false, false);
         }
         logBoardPositionsAfterAction({
           source: 'local',
@@ -3292,6 +3326,7 @@ export function Board() {
         });
         frameDragContextRef.current = null;
       }
+      refreshFrameMembership();
       syncObjectsLayerZOrder();
     });
     group.on('transformstart', () => {
@@ -3367,6 +3402,9 @@ export function Board() {
     const beforeState = persist ? captureManualHistoryBaseline() : null;
 
     objectsRef.current.set(object.id, object);
+    if (object.type !== 'connector') {
+      refreshFrameMembership();
+    }
     const node = createNodeForObject(object);
     objectsLayerRef.current?.add(node);
     syncObjectsLayerZOrder();
@@ -3414,6 +3452,7 @@ export function Board() {
       node?.destroy();
       objectsRef.current.delete(objectId);
     });
+    refreshFrameMembership();
 
     syncObjectsLayerZOrder();
     objectsLayerRef.current?.batchDraw();

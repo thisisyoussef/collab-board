@@ -5,6 +5,11 @@
 import type { BoardObject } from '../types/board';
 import { getObjectCenter } from './board-object';
 
+export interface FrameMembershipIndex {
+  frameToChildren: Map<string, string[]>;
+  childToFrame: Map<string, string>;
+}
+
 /**
  * Returns true if the center of `child` falls within the axis-aligned
  * bounding box of `frame` (inclusive on all edges).
@@ -46,40 +51,77 @@ export function getFrameChildren(
 export function computeFrameMembership(
   objectsMap: Map<string, BoardObject>,
 ): Map<string, string[]> {
+  return buildFrameMembershipIndex(objectsMap).frameToChildren;
+}
+
+/**
+ * Builds deterministic frame membership indexes for runtime use:
+ * - frameToChildren: Map<frameId, childIds[]>
+ * - childToFrame: Map<childId, frameId>
+ *
+ * Assignment rule:
+ * - only non-frame and non-connector objects are assignable
+ * - containment is center-point in bounds
+ * - overlapping frames use smallest-frame-wins
+ */
+export function buildFrameMembershipIndex(
+  objectsMap: Map<string, BoardObject>,
+): FrameMembershipIndex {
   // Collect all frames
   const frames: BoardObject[] = [];
   for (const obj of objectsMap.values()) {
     if (obj.type === 'frame') frames.push(obj);
   }
 
-  const membership = new Map<string, string[]>();
+  const frameToChildren = new Map<string, string[]>();
   for (const frame of frames) {
-    membership.set(frame.id, []);
+    frameToChildren.set(frame.id, []);
   }
 
-  if (frames.length === 0) return membership;
+  if (frames.length === 0) {
+    return {
+      frameToChildren,
+      childToFrame: new Map<string, string>(),
+    };
+  }
 
-  // Sort frames by area ascending so we can assign to smallest first
+  // Sort frames by area ascending so we can assign to smallest first.
+  // Tie-break by ID to keep deterministic assignment across clients.
   const sortedFrames = [...frames].sort(
-    (a, b) => a.width * a.height - b.width * b.height,
+    (a, b) => {
+      const areaDelta = a.width * a.height - b.width * b.height;
+      if (areaDelta !== 0) {
+        return areaDelta;
+      }
+      return a.id.localeCompare(b.id);
+    },
   );
+
+  // Iterate objects in deterministic order so child list ordering is stable.
+  const sortedObjects = Array.from(objectsMap.entries())
+    .sort(([idA], [idB]) => idA.localeCompare(idB));
 
   // Track which objects have been assigned
   const assigned = new Set<string>();
+  const childToFrame = new Map<string, string>();
 
   for (const frame of sortedFrames) {
-    for (const [id, obj] of objectsMap) {
+    for (const [id, obj] of sortedObjects) {
       if (assigned.has(id)) continue;
       if (id === frame.id) continue;
       if (obj.type === 'frame' || obj.type === 'connector') continue;
       if (isContainedInFrame(obj, frame)) {
-        membership.get(frame.id)!.push(id);
+        frameToChildren.get(frame.id)!.push(id);
+        childToFrame.set(id, frame.id);
         assigned.add(id);
       }
     }
   }
 
-  return membership;
+  return {
+    frameToChildren,
+    childToFrame,
+  };
 }
 
 /**
