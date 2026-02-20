@@ -6,7 +6,7 @@ const { AICommandCenter } = await import('./AICommandCenter');
 
 const baseState: AIPanelState = {
   prompt: '',
-  mode: 'preview',
+  mode: 'auto',
   loading: false,
   error: null,
   message: null,
@@ -28,14 +28,15 @@ describe('AICommandCenter', () => {
     vi.clearAllMocks();
   });
 
-  it('renders prompt input, submit button, and mode toggle', () => {
+  it('renders prompt input, submit button, and auto mode status', () => {
     render(<AICommandCenter state={baseState} {...handlers} />);
 
     expect(screen.getByText('AI Command Center')).toBeInTheDocument();
     expect(screen.getByLabelText('AI prompt')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Generate Plan' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Preview mode' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Auto mode' })).toBeInTheDocument();
+    expect(screen.getByText('Auto apply')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Preview mode' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Auto mode' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Apply changes' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Undo last change' })).toBeInTheDocument();
   });

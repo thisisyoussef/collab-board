@@ -88,6 +88,8 @@ describe('useAICommandCenter', () => {
   it('persists selected mode in localStorage', async () => {
     const firstRender = renderHook(() => useAICommandCenter({ boardId: 'board-1' }));
 
+    expect(firstRender.result.current.mode).toBe('auto');
+
     await act(async () => {
       firstRender.result.current.setMode('auto');
     });
@@ -97,6 +99,23 @@ describe('useAICommandCenter', () => {
 
     const secondRender = renderHook(() => useAICommandCenter({ boardId: 'board-1' }));
     expect(secondRender.result.current.mode).toBe('auto');
+  });
+
+  it('normalizes stored preview mode back to auto', () => {
+    window.localStorage.setItem('collab-board-ai-apply-mode', 'preview');
+
+    const { result } = renderHook(() => useAICommandCenter({ boardId: 'board-1' }));
+    expect(result.current.mode).toBe('auto');
+  });
+
+  it('coerces preview mode selection back to auto', async () => {
+    const { result } = renderHook(() => useAICommandCenter({ boardId: 'board-1' }));
+
+    await act(async () => {
+      result.current.setMode('preview');
+    });
+
+    expect(result.current.mode).toBe('auto');
   });
 
   it('blocks duplicate submissions while loading', async () => {

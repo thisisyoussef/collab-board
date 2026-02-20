@@ -22,14 +22,14 @@ interface ToolConfig {
 }
 
 const TOOLS: ToolConfig[] = [
-  { tool: 'select', label: 'Select tool', icon: '↖' },
-  { tool: 'sticky', label: 'Sticky note tool', icon: '□', editRequired: true },
+  { tool: 'select', label: 'Select tool', icon: '⌖' },
+  { tool: 'sticky', label: 'Sticky note tool', icon: '▣', editRequired: true },
   { tool: 'rect', label: 'Rectangle tool', icon: '▭', editRequired: true },
-  { tool: 'circle', label: 'Circle tool', icon: '◯', editRequired: true },
-  { tool: 'line', label: 'Line tool', icon: '／', editRequired: true },
-  { tool: 'text', label: 'Text tool', icon: 'T', editRequired: true },
-  { tool: 'frame', label: 'Frame tool', icon: '⌗', editRequired: true },
-  { tool: 'connector', label: 'Connector tool', icon: '↔', editRequired: true },
+  { tool: 'circle', label: 'Circle tool', icon: '◌', editRequired: true },
+  { tool: 'line', label: 'Line tool', icon: '╱', editRequired: true },
+  { tool: 'text', label: 'Text tool', icon: '𝚃', editRequired: true },
+  { tool: 'frame', label: 'Frame tool', icon: '⬚', editRequired: true },
+  { tool: 'connector', label: 'Connector tool', icon: '⇄', editRequired: true },
 ];
 
 export function BoardToolDock({ activeTool, canEditBoard, onSelectTool }: BoardToolDockProps) {
@@ -49,4 +49,3 @@ export function BoardToolDock({ activeTool, canEditBoard, onSelectTool }: BoardT
     </section>
   );
 }
-

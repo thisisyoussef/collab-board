@@ -7,9 +7,10 @@ describe('BoardToolDock', () => {
     render(<BoardToolDock activeTool="rect" canEditBoard onSelectTool={vi.fn()} />);
 
     expect(screen.getByRole('toolbar', { name: 'Board tools' })).toBeInTheDocument();
-    expect(screen.getByLabelText('Select tool')).toBeInTheDocument();
-    expect(screen.getByLabelText('Sticky note tool')).toBeInTheDocument();
+    expect(screen.getByLabelText('Select tool')).toHaveTextContent('⌖');
+    expect(screen.getByLabelText('Sticky note tool')).toHaveTextContent('▣');
     expect(screen.getByLabelText('Rectangle tool')).toHaveClass('active');
+    expect(screen.getByLabelText('Text tool')).toHaveTextContent('𝚃');
     expect(screen.getByLabelText('Connector tool')).toBeInTheDocument();
   });
 
@@ -29,4 +30,3 @@ describe('BoardToolDock', () => {
     expect(screen.getByLabelText('Connector tool')).toBeDisabled();
   });
 });
-

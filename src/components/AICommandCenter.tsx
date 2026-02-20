@@ -7,7 +7,7 @@ interface AICommandCenterProps {
   disabledReason?: string;
   onPromptChange: (nextValue: string) => void;
   onSubmit: () => void;
-  onModeChange: (nextMode: AIApplyMode) => void;
+  onModeChange?: (nextMode: AIApplyMode) => void;
   onApply: () => void;
   onUndo: () => void;
   onRetry: () => void;
@@ -20,7 +20,6 @@ export function AICommandCenter({
   disabledReason,
   onPromptChange,
   onSubmit,
-  onModeChange,
   onApply,
   onUndo,
   onRetry,
@@ -29,9 +28,7 @@ export function AICommandCenter({
   const applyHint =
     state.actions.length === 0
       ? 'No executable actions in this plan yet.'
-      : state.mode === 'auto'
-        ? 'Auto mode applies generated actions immediately.'
-        : 'Preview mode requires manual Apply.';
+      : 'Auto mode applies generated actions immediately.';
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -52,27 +49,11 @@ export function AICommandCenter({
         <span className="ai-kbd-hint">Ctrl/Cmd + Enter</span>
       </div>
 
-      <div className="ai-mode-toggle" role="group" aria-label="AI apply mode">
-        <button
-          type="button"
-          className={`ai-mode-btn ${state.mode === 'preview' ? 'active' : ''}`}
-          aria-label="Preview mode"
-          aria-pressed={state.mode === 'preview'}
-          disabled={disabled}
-          onClick={() => onModeChange('preview')}
-        >
-          Preview
-        </button>
-        <button
-          type="button"
-          className={`ai-mode-btn ${state.mode === 'auto' ? 'active' : ''}`}
-          aria-label="Auto mode"
-          aria-pressed={state.mode === 'auto'}
-          disabled={disabled}
-          onClick={() => onModeChange('auto')}
-        >
-          Auto
-        </button>
+      <div className="ai-mode-fixed" aria-label="AI apply mode">
+        <span className="ai-mode-chip">Auto apply</span>
+        <p className="ai-mode-caption">
+          Generated actions run immediately after plan creation.
+        </p>
       </div>
 
       <form className="ai-form" onSubmit={handleSubmit}>

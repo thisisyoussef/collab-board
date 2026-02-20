@@ -368,7 +368,8 @@ describe('Board', () => {
 
     await screen.findByText('Created a starting idea.');
     expect(screen.getByText('createStickyNote')).toBeInTheDocument();
-    expect(screen.getByText(/Preview mode requires manual Apply./i)).toBeInTheDocument();
+    expect(screen.getByText(/Auto mode applies generated actions immediately./i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Preview mode' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Apply changes' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Undo last change' })).toBeDisabled();
   });

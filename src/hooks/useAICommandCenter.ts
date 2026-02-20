@@ -39,11 +39,11 @@ export interface AICommandRunResult {
 
 function readStoredMode(): AIApplyMode {
   if (typeof window === 'undefined') {
-    return 'preview';
+    return 'auto';
   }
 
   const value = window.localStorage.getItem(AI_MODE_STORAGE_KEY);
-  return value === 'auto' ? 'auto' : 'preview';
+  return value === 'auto' ? 'auto' : 'auto';
 }
 
 function persistMode(mode: AIApplyMode) {
@@ -51,7 +51,8 @@ function persistMode(mode: AIApplyMode) {
     return;
   }
 
-  window.localStorage.setItem(AI_MODE_STORAGE_KEY, mode);
+  const normalizedMode = mode === 'auto' ? 'auto' : 'auto';
+  window.localStorage.setItem(AI_MODE_STORAGE_KEY, normalizedMode);
 }
 
 function parseApiError(status: number, payloadError: string | undefined): string {
@@ -148,8 +149,9 @@ export function useAICommandCenter({
   const lastPromptRef = useRef('');
 
   const setMode = useCallback((nextMode: AIApplyMode) => {
-    setModeState(nextMode);
-    persistMode(nextMode);
+    const normalizedMode = nextMode === 'auto' ? 'auto' : 'auto';
+    setModeState(normalizedMode);
+    persistMode(normalizedMode);
   }, []);
 
   const runPrompt = useCallback(
@@ -191,7 +193,7 @@ export function useAICommandCenter({
             }
           } catch {
             logger.warn('AI', 'Could not retrieve auth token for AI request, continuing without auth');
-            // Token retrieval failures should not block preview-only UX.
+            // Token retrieval failures should not block AI planning UX.
           }
         }
 
