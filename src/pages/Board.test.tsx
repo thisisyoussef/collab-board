@@ -175,6 +175,14 @@ describe('Board', () => {
     expect(screen.getByTestId('konva-stage')).toBeInTheDocument();
   });
 
+  it('renders the new board command shell scaffolding', async () => {
+    await renderBoardReady();
+
+    expect(screen.getByText('Canvas workspace')).toBeInTheDocument();
+    expect(screen.getByText('Workspace intelligence')).toBeInTheDocument();
+    expect(screen.getByText('Session note')).toBeInTheDocument();
+  });
+
   it('renders the socket status indicator', async () => {
     await renderBoardReady();
 

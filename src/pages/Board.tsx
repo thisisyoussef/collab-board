@@ -171,6 +171,7 @@ import {
   isConnectorDashed,
   resolveConnectorRenderPoints,
 } from '../lib/board-connector-helpers';
+import './Board.css';
 
 type ActiveTool = BoardTool;
 
@@ -4468,9 +4469,12 @@ export function Board() {
           <button className="icon-chip" aria-label="Menu">
             ≡
           </button>
-          <div className="file-pill">
-            <span className="logo-dot small" />
-            <span>CollabBoard</span>
+          <div className="board-brand-meta">
+            <div className="file-pill">
+              <span className="logo-dot small" />
+              <span>CollabBoard</span>
+            </div>
+            <span className="board-brand-kicker">Canvas workspace</span>
           </div>
           {editingTitle ? (
             <form
@@ -4572,8 +4576,14 @@ export function Board() {
       <section className="figma-board-workspace">
         <section className="figma-canvas-shell">
           <div className="canvas-top-info">
-            <span>User: {displayName}</span>
-            <span>{detailsMessage}</span>
+            <div className="canvas-top-block">
+              <span className="canvas-top-kicker">Operator</span>
+              <span className="canvas-top-value">{displayName}</span>
+            </div>
+            <div className="canvas-top-block canvas-top-block-wide">
+              <span className="canvas-top-kicker">Session note</span>
+              <span className="canvas-top-value">{detailsMessage}</span>
+            </div>
           </div>
           <div
             className="canvas-grid cursor-canvas-grid"
@@ -4825,6 +4835,10 @@ export function Board() {
         </section>
 
         <aside className="figma-right-panel">
+          <header className="figma-right-panel-head">
+            <p className="figma-right-panel-kicker">Workspace intelligence</p>
+            <h2>Review and refine</h2>
+          </header>
           <AICommandCenter
             state={{
               prompt: aiCommandCenter.prompt,
