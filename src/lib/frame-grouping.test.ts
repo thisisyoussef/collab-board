@@ -6,6 +6,7 @@ import {
   buildFrameMembershipIndex,
   computeFrameMembership,
   applyFrameDelta,
+  applyFrameResizeToChildren,
   findFrameAtPoint,
 } from './frame-grouping';
 
@@ -258,6 +259,125 @@ describe('applyFrameDelta', () => {
     applyFrameDelta(['c1'], 10, 10, objects);
     expect(objects.get('c1')!.x).toBe(100);
     expect(objects.get('c1')!.y).toBe(100);
+  });
+});
+
+describe('applyFrameResizeToChildren', () => {
+  it('scales child position/size relative to frame origin', () => {
+    const objects = new Map<string, BoardObject>();
+    objects.set(
+      'sticky-1',
+      makeObject({
+        id: 'sticky-1',
+        type: 'sticky',
+        x: 150,
+        y: 120,
+        width: 80,
+        height: 40,
+        fontSize: 14,
+      }),
+    );
+
+    const result = applyFrameResizeToChildren(
+      ['sticky-1'],
+      { x: 100, y: 100, width: 200, height: 100 },
+      { x: 120, y: 110, width: 400, height: 200 },
+      objects,
+    );
+
+    const next = result.get('sticky-1');
+    expect(next).toBeDefined();
+    expect(next!.x).toBe(220);
+    expect(next!.y).toBe(150);
+    expect(next!.width).toBe(160);
+    expect(next!.height).toBe(80);
+    expect(next!.fontSize).toBe(28);
+  });
+
+  it('scales line geometry including points', () => {
+    const objects = new Map<string, BoardObject>();
+    objects.set(
+      'line-1',
+      makeObject({
+        id: 'line-1',
+        type: 'line',
+        x: 10,
+        y: 20,
+        width: 40,
+        height: 20,
+        points: [0, 0, 40, 20],
+      }),
+    );
+
+    const result = applyFrameResizeToChildren(
+      ['line-1'],
+      { x: 0, y: 0, width: 100, height: 100 },
+      { x: 0, y: 0, width: 200, height: 50 },
+      objects,
+    );
+
+    const next = result.get('line-1');
+    expect(next).toBeDefined();
+    expect(next!.x).toBe(20);
+    expect(next!.y).toBe(10);
+    expect(next!.width).toBe(80);
+    expect(next!.height).toBe(10);
+    expect(next!.points).toEqual([0, 0, 80, 10]);
+  });
+
+  it('ignores missing IDs, frames, and connectors', () => {
+    const objects = new Map<string, BoardObject>();
+    objects.set('frame-1', makeObject({ id: 'frame-1', type: 'frame', x: 10, y: 10, width: 100, height: 100 }));
+    objects.set('conn-1', makeObject({ id: 'conn-1', type: 'connector', x: 20, y: 20, width: 80, height: 0 }));
+    objects.set('rect-1', makeObject({ id: 'rect-1', type: 'rect', x: 40, y: 50, width: 60, height: 40 }));
+
+    const result = applyFrameResizeToChildren(
+      ['missing', 'frame-1', 'conn-1', 'rect-1'],
+      { x: 0, y: 0, width: 100, height: 100 },
+      { x: 0, y: 0, width: 200, height: 200 },
+      objects,
+    );
+
+    expect(result.size).toBe(1);
+    expect(result.has('rect-1')).toBe(true);
+  });
+
+  it('applies minimum size clamps during shrink', () => {
+    const objects = new Map<string, BoardObject>();
+    objects.set('sticky-1', makeObject({ id: 'sticky-1', type: 'sticky', x: 10, y: 10, width: 50, height: 40 }));
+    objects.set('text-1', makeObject({ id: 'text-1', type: 'text', x: 20, y: 20, width: 80, height: 40, fontSize: 16 }));
+
+    const result = applyFrameResizeToChildren(
+      ['sticky-1', 'text-1'],
+      { x: 0, y: 0, width: 200, height: 200 },
+      { x: 0, y: 0, width: 10, height: 10 },
+      objects,
+    );
+
+    const sticky = result.get('sticky-1');
+    const text = result.get('text-1');
+    expect(sticky).toBeDefined();
+    expect(text).toBeDefined();
+    expect(sticky!.width).toBeGreaterThanOrEqual(48);
+    expect(sticky!.height).toBeGreaterThanOrEqual(36);
+    expect(text!.width).toBeGreaterThanOrEqual(72);
+    expect(text!.height).toBeGreaterThanOrEqual(28);
+    expect(text!.fontSize).toBeGreaterThanOrEqual(10);
+  });
+
+  it('does not mutate source objects map', () => {
+    const objects = new Map<string, BoardObject>();
+    const original = makeObject({ id: 'rect-1', type: 'rect', x: 10, y: 10, width: 60, height: 40 });
+    objects.set('rect-1', original);
+
+    applyFrameResizeToChildren(
+      ['rect-1'],
+      { x: 0, y: 0, width: 100, height: 100 },
+      { x: 0, y: 0, width: 200, height: 200 },
+      objects,
+    );
+
+    expect(objects.get('rect-1')).toEqual(original);
   });
 });
 

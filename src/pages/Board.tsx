@@ -82,6 +82,7 @@ import {
   TEXT_MIN_WIDTH,
 } from '../lib/board-object';
 import {
+  applyFrameResizeToChildren,
   buildFrameMembershipIndex,
   findFrameAtPoint,
 } from '../lib/frame-grouping';
@@ -174,6 +175,7 @@ import {
   buildBoardReturnToPath,
   estimateConnectorLabelBounds,
   fallbackCopyToClipboard,
+  filterOccludedConnectorAnchors,
   getStickyRenderColor,
   getStickyRenderText,
   intersects,
@@ -256,6 +258,16 @@ export function Board() {
     childIds: string[];
     lastX: number;
     lastY: number;
+  } | null>(null);
+  const frameTransformContextRef = useRef<{
+    frameId: string;
+    childIds: string[];
+    beforeFrame: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    };
   } | null>(null);
   const highlightedFrameIdRef = useRef<string | null>(null);
   const activeInteractionRef = useRef<'drag' | 'transform' | null>(null);
@@ -348,7 +360,7 @@ export function Board() {
       });
     });
 
-    return markers;
+    return filterOccludedConnectorAnchors(markers, objectsRef.current);
   })();
   const aiCommandCenter = useAICommandCenter({
     boardId,
@@ -573,6 +585,9 @@ export function Board() {
       connectorHoverLockTimerRef.current = null;
     }
     connectorHoverLockRef.current = null;
+    frameDragContextRef.current = null;
+    frameTransformContextRef.current = null;
+    highlightedFrameIdRef.current = null;
     viewportRestoredRef.current = false;
     setBoardTitle('Untitled board');
     setTitleDraft('Untitled board');
@@ -2660,6 +2675,7 @@ export function Board() {
     bumpRevision = true,
     logBoardSnapshot = true,
     refreshMembership = persist,
+    commitHistory = persist,
   ) {
     const current = objectsRef.current.get(objectId);
     const node = stageRef.current?.findOne(`#${objectId}`);
@@ -2776,7 +2792,9 @@ export function Board() {
       }
       aiExecutor.invalidateUndo();
       scheduleBoardSave();
-      commitBoardHistory('manual', beforeState || undefined);
+      if (commitHistory) {
+        commitBoardHistory('manual', beforeState || undefined);
+      }
     }
   }
 
@@ -2906,6 +2924,101 @@ export function Board() {
     }
     highlightedFrameIdRef.current = null;
     objectsLayerRef.current?.batchDraw();
+  }
+
+  function applyObjectGeometryToExistingNode(entry: BoardObject): boolean {
+    const node = stageRef.current?.findOne(`#${entry.id}`);
+    if (!node) {
+      return false;
+    }
+
+    if (entry.type === 'sticky' && node instanceof Konva.Group) {
+      node.setAttrs({
+        x: entry.x,
+        y: entry.y,
+        rotation: entry.rotation,
+      });
+      const body = node.findOne('.sticky-body') as Konva.Rect | null;
+      const label = node.findOne('.sticky-label') as Konva.Text | null;
+      body?.setAttrs({
+        width: entry.width,
+        height: entry.height,
+        fill: entry.color,
+      });
+      label?.setAttrs({
+        width: entry.width,
+        height: entry.height,
+        text: getStickyRenderText(entry.text),
+        fill: getStickyRenderColor(entry.text),
+        fontSize: entry.fontSize || 14,
+      });
+      return true;
+    }
+
+    if ((entry.type === 'rect' || entry.type === 'circle') && node instanceof Konva.Rect) {
+      node.setAttrs({
+        x: entry.x,
+        y: entry.y,
+        width: entry.width,
+        height: entry.height,
+        rotation: entry.rotation,
+        fill: entry.color,
+        stroke: entry.stroke || RECT_DEFAULT_STROKE,
+        strokeWidth: entry.strokeWidth || RECT_DEFAULT_STROKE_WIDTH,
+        cornerRadius: entry.type === 'circle' ? Math.min(entry.width, entry.height) / 2 : 0,
+      });
+      return true;
+    }
+
+    if (entry.type === 'line' && node instanceof Konva.Line && !(node instanceof Konva.Arrow)) {
+      node.setAttrs({
+        x: entry.x,
+        y: entry.y,
+        points: entry.points || [0, 0, entry.width, entry.height],
+        rotation: entry.rotation,
+        stroke: entry.color,
+        strokeWidth: entry.strokeWidth || 2,
+      });
+      return true;
+    }
+
+    if (entry.type === 'text' && node instanceof Konva.Text) {
+      node.setAttrs({
+        x: entry.x,
+        y: entry.y,
+        width: entry.width,
+        height: entry.height,
+        rotation: entry.rotation,
+        text: entry.text || 'Text',
+        fill: entry.color || TEXT_DEFAULT_COLOR,
+        fontSize: entry.fontSize || TEXT_DEFAULT_FONT_SIZE,
+      });
+      return true;
+    }
+
+    if (entry.type === 'frame' && node instanceof Konva.Group) {
+      node.setAttrs({
+        x: entry.x,
+        y: entry.y,
+        rotation: entry.rotation,
+      });
+      const body = node.findOne('.frame-body') as Konva.Rect | null;
+      const title = node.findOne('.frame-title') as Konva.Text | null;
+      body?.setAttrs({
+        width: entry.width,
+        height: entry.height,
+        fill: entry.color || '#fff',
+        stroke: entry.stroke || FRAME_DEFAULT_STROKE,
+        strokeWidth: entry.strokeWidth || 2,
+      });
+      title?.setAttrs({
+        width: Math.max(60, entry.width - 20),
+        text: entry.title || 'Frame',
+      });
+      return true;
+    }
+
+    return false;
   }
 
   function createStickyNode(object: BoardObject): Konva.Group {
@@ -3332,17 +3445,82 @@ export function Board() {
     group.on('transformstart', () => {
       activeInteractionRef.current = 'transform';
       captureManualHistoryBaseline(true);
+      refreshFrameMembership();
+      const currentFrame = objectsRef.current.get(object.id);
+      if (currentFrame?.type !== 'frame') {
+        frameTransformContextRef.current = null;
+        return;
+      }
+      frameTransformContextRef.current = {
+        frameId: object.id,
+        childIds: [...(frameMembershipRef.current.get(object.id) || [])],
+        beforeFrame: {
+          x: currentFrame.x,
+          y: currentFrame.y,
+          width: currentFrame.width,
+          height: currentFrame.height,
+        },
+      };
     });
     group.on('transformend', () => {
       activeInteractionRef.current = null;
       const existing = objectsRef.current.get(object.id);
       if (!existing) {
+        frameTransformContextRef.current = null;
         return;
       }
       applyFrameTransform(group, existing);
-      syncObjectFromNode(object.id, true);
+      syncObjectFromNode(object.id, true, true, true, false, false, false);
+
+      const nextFrame = objectsRef.current.get(object.id);
+      const transformContext = frameTransformContextRef.current;
+      const resizedChildIds: string[] = [];
+      if (
+        transformContext &&
+        transformContext.frameId === object.id &&
+        nextFrame?.type === 'frame'
+      ) {
+        const resizedChildren = applyFrameResizeToChildren(
+          transformContext.childIds,
+          transformContext.beforeFrame,
+          {
+            x: nextFrame.x,
+            y: nextFrame.y,
+            width: nextFrame.width,
+            height: nextFrame.height,
+          },
+          objectsRef.current,
+        );
+
+        resizedChildren.forEach((entry, childId) => {
+          const stamped: BoardObject = {
+            ...entry,
+            updatedAt: new Date().toISOString(),
+          };
+          if (!applyObjectGeometryToExistingNode(stamped)) {
+            return;
+          }
+          objectsRef.current.set(childId, stamped);
+          syncObjectFromNode(childId, true, true, false, false, false, false);
+          resizedChildIds.push(childId);
+        });
+      }
+
+      refreshFrameMembership();
+      logBoardPositionsAfterAction({
+        source: 'local',
+        action: 'update',
+        objectIds:
+          resizedChildIds.length > 0
+            ? [object.id, ...resizedChildIds]
+            : [object.id],
+        reason: 'frame-transform-end',
+        actorUserId: getActorUserId(),
+      });
+      commitBoardHistory('manual');
       objectsLayerRef.current?.batchDraw();
       syncObjectsLayerZOrder();
+      frameTransformContextRef.current = null;
     });
 
     return group;

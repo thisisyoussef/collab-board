@@ -3,11 +3,26 @@
 // Containment is computed on-demand (no stored parentId), making state self-healing.
 // Connectors and other frames are excluded from containment.
 import type { BoardObject } from '../types/board';
-import { getObjectCenter } from './board-object';
+import {
+  getObjectCenter,
+  RECT_MIN_SIZE,
+  STICKY_MIN_HEIGHT,
+  STICKY_MIN_WIDTH,
+  TEXT_DEFAULT_FONT_SIZE,
+  TEXT_MIN_HEIGHT,
+  TEXT_MIN_WIDTH,
+} from './board-object';
 
 export interface FrameMembershipIndex {
   frameToChildren: Map<string, string[]>;
   childToFrame: Map<string, string>;
+}
+
+export interface FrameBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 /**
@@ -144,6 +159,70 @@ export function applyFrameDelta(
       y: obj.y + dy,
     });
   }
+  return result;
+}
+
+/**
+ * Returns resized child objects after a frame resize operation.
+ * Children are scaled/translated relative to the frame's top-left origin.
+ * Does NOT mutate input.
+ */
+export function applyFrameResizeToChildren(
+  childIds: string[],
+  fromFrame: FrameBounds,
+  toFrame: FrameBounds,
+  objectsMap: Map<string, BoardObject>,
+): Map<string, BoardObject> {
+  const result = new Map<string, BoardObject>();
+  const fromWidth = Math.max(1, fromFrame.width);
+  const fromHeight = Math.max(1, fromFrame.height);
+  const scaleX = Math.max(0.01, toFrame.width / fromWidth);
+  const scaleY = Math.max(0.01, toFrame.height / fromHeight);
+  const fontScale = Math.min(scaleX, scaleY);
+
+  for (const id of childIds) {
+    const obj = objectsMap.get(id);
+    if (!obj) continue;
+    if (obj.type === 'frame' || obj.type === 'connector') continue;
+
+    const nextX = toFrame.x + (obj.x - fromFrame.x) * scaleX;
+    const nextY = toFrame.y + (obj.y - fromFrame.y) * scaleY;
+    const nextWidth = obj.width * scaleX;
+    const nextHeight = obj.height * scaleY;
+
+    const next: BoardObject = {
+      ...obj,
+      x: nextX,
+      y: nextY,
+      width:
+        obj.type === 'sticky'
+          ? Math.max(STICKY_MIN_WIDTH, nextWidth)
+          : obj.type === 'text'
+            ? Math.max(TEXT_MIN_WIDTH, nextWidth)
+            : obj.type === 'rect' || obj.type === 'circle'
+              ? Math.max(RECT_MIN_SIZE, nextWidth)
+              : Math.max(1, nextWidth),
+      height:
+        obj.type === 'sticky'
+          ? Math.max(STICKY_MIN_HEIGHT, nextHeight)
+          : obj.type === 'text'
+            ? Math.max(TEXT_MIN_HEIGHT, nextHeight)
+            : obj.type === 'rect' || obj.type === 'circle'
+              ? Math.max(RECT_MIN_SIZE, nextHeight)
+              : Math.max(1, nextHeight),
+      fontSize:
+        obj.type === 'sticky' || obj.type === 'text'
+          ? Math.max(10, (obj.fontSize || TEXT_DEFAULT_FONT_SIZE) * fontScale)
+          : obj.fontSize,
+      points:
+        obj.type === 'line' && Array.isArray(obj.points)
+          ? obj.points.map((value, index) => (index % 2 === 0 ? value * scaleX : value * scaleY))
+          : obj.points,
+    };
+
+    result.set(id, next);
+  }
+
   return result;
 }
 
