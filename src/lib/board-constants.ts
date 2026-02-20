@@ -47,3 +47,11 @@ export const SELECTION_RECT_FILL = 'rgba(212, 149, 43, 0.12)';
 export const SELECTION_RECT_STROKE = '#D4952B';
 export const BOARD_HISTORY_MAX_ENTRIES = 100;
 export const FRAME_HIGHLIGHT_STROKE = '#D4952B';
+
+// PRD performance targets (hard gates — see docs/prd.md)
+export const MAX_OBJECT_CAPACITY = 500;
+export const CAPACITY_WARNING_THRESHOLD = 450;
+export const FPS_TARGET = 60;
+export const CURSOR_LATENCY_TARGET_MS = 50;
+export const OBJECT_LATENCY_TARGET_MS = 100;
+export const CONCURRENT_USER_TARGET = 5;

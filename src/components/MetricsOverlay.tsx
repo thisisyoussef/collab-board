@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { SocketStatus } from '../hooks/useSocket';
+import { CAPACITY_WARNING_THRESHOLD, MAX_OBJECT_CAPACITY } from '../lib/board-constants';
 
 interface MetricsOverlayProps {
   averageCursorLatencyMs: number;
@@ -91,6 +92,15 @@ export function MetricsOverlay({
     () => (averageAIRequestLatencyMs === 0 ? '—' : averageAIRequestLatencyMs < 2000 ? '✅' : '⚠️'),
     [averageAIRequestLatencyMs],
   );
+  const capacityStatus = useMemo(
+    () =>
+      objectCount >= MAX_OBJECT_CAPACITY
+        ? '🔴'
+        : objectCount >= CAPACITY_WARNING_THRESHOLD
+          ? '⚠️'
+          : '✅',
+    [objectCount],
+  );
 
   const statusLabel = useMemo(() => {
     if (connectionStatus !== 'connected') {
@@ -133,7 +143,7 @@ export function MetricsOverlay({
       </p>
       <p>Reconnects: {reconnectCount}</p>
       <p>
-        Users: {userCount} | Objects: {objectCount}
+        Users: {userCount} | Objects: {objectCount}/{MAX_OBJECT_CAPACITY} {capacityStatus}
       </p>
       <p>{statusLabel}</p>
     </aside>
