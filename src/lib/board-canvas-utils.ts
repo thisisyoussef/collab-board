@@ -2,6 +2,7 @@
 // Used by Board.tsx for viewport culling (intersects), sticky note placeholder logic,
 // connector label sizing, and fallback clipboard copy for older browsers.
 import type { Bounds } from '../types/board-canvas';
+import type { BoardObject } from '../types/board';
 import {
   CONNECTOR_LABEL_CHAR_WIDTH_FACTOR,
   CONNECTOR_LABEL_FONT_SIZE,
@@ -11,7 +12,7 @@ import {
   RECT_CLICK_DEFAULT_WIDTH,
   STICKY_PLACEHOLDER_TEXT,
 } from './board-constants';
-import { RECT_MIN_SIZE } from './board-object';
+import { getObjectBounds, RECT_MIN_SIZE } from './board-object';
 
 const BASELINE_VIEWPORT_WIDTH = 960;
 const BASELINE_VIEWPORT_HEIGHT = 560;
@@ -76,6 +77,70 @@ export function intersects(a: Bounds, b: Bounds): boolean {
     a.y + a.height < b.y ||
     b.y + b.height < a.y
   );
+}
+
+function compareBoardObjectRenderOrder(a: BoardObject, b: BoardObject): number {
+  const aIsFrame = a.type === 'frame' ? 0 : 1;
+  const bIsFrame = b.type === 'frame' ? 0 : 1;
+  if (aIsFrame !== bIsFrame) {
+    return aIsFrame - bIsFrame;
+  }
+  if (a.zIndex === b.zIndex) {
+    return a.id.localeCompare(b.id);
+  }
+  return a.zIndex - b.zIndex;
+}
+
+function objectCoversPoint(entry: BoardObject, point: { x: number; y: number }): boolean {
+  if (entry.type === 'connector') {
+    return false;
+  }
+
+  const bounds = getObjectBounds(entry);
+  return (
+    point.x >= bounds.x &&
+    point.x <= bounds.x + bounds.width &&
+    point.y >= bounds.y &&
+    point.y <= bounds.y + bounds.height
+  );
+}
+
+export function filterOccludedConnectorAnchors<T extends { objectId: string; x: number; y: number }>(
+  anchors: T[],
+  objects: Map<string, BoardObject>,
+): T[] {
+  if (anchors.length === 0 || objects.size === 0) {
+    return anchors;
+  }
+
+  const ordered = Array.from(objects.values())
+    .filter((entry) => entry.type !== 'connector')
+    .sort(compareBoardObjectRenderOrder);
+  const indexById = new Map(ordered.map((entry, index) => [entry.id, index]));
+
+  return anchors.filter((anchor) => {
+    const owner = objects.get(anchor.objectId);
+    if (!owner || owner.type === 'connector') {
+      return false;
+    }
+
+    const ownerIndex = indexById.get(owner.id);
+    if (!Number.isInteger(ownerIndex)) {
+      return false;
+    }
+
+    for (let index = Number(ownerIndex) + 1; index < ordered.length; index += 1) {
+      const maybeOccluder = ordered[index];
+      if (maybeOccluder.id === owner.id) {
+        continue;
+      }
+      if (objectCoversPoint(maybeOccluder, { x: anchor.x, y: anchor.y })) {
+        return false;
+      }
+    }
+
+    return true;
+  });
 }
 
 export function isPlaceholderStickyText(value: string | undefined): boolean {

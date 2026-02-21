@@ -4,7 +4,7 @@ Real-time collaborative whiteboard with AI-powered board manipulation. Built for
 
 ## Live Demo
 
-> **Deployed URL:** _Coming soon_
+> **Deployed URL:** [https://collab-board-iota.vercel.app](https://collab-board-iota.vercel.app)
 
 ## Tech Stack
 
@@ -38,7 +38,7 @@ Real-time collaborative whiteboard with AI-powered board manipulation. Built for
 
 ```bash
 # Clone and install
-git clone <repo-url>
+git clone https://github.com/thisisyoussef/collab-board.git
 cd collab-board
 npm install
 
@@ -150,6 +150,17 @@ Serverless: Vercel /api/ai/generate (Claude API, protects API key)
 ```
 
 **Key design decision:** Canvas state managed via Konva refs (not React state) for 60 FPS performance with 500+ objects.
+
+## Conflict Resolution
+
+CollabBoard uses a **last-write-wins** strategy for concurrent edits. Every board object carries an `updatedAt` ISO timestamp that is set on each mutation. When two users modify the same object simultaneously:
+
+1. Both local changes apply optimistically (instant feedback).
+2. Socket.IO broadcasts each update to the room.
+3. On receipt, the client compares timestamps — the newer `updatedAt` wins; the older update is discarded.
+4. Firestore persistence uses the same rule during debounced writes.
+
+This approach trades theoretical conflict accuracy for simplicity and latency — appropriate for a whiteboard where objects are spatially distributed and true conflicts are rare. If a user's edit is overwritten, they can simply redo it.
 
 ## Project Structure
 

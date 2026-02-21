@@ -2,12 +2,31 @@ import { describe, expect, it } from 'vitest';
 import {
   buildBoardReturnToPath,
   estimateConnectorLabelBounds,
+  filterOccludedConnectorAnchors,
   getClickShapeDefaultsForViewport,
   getStickyRenderColor,
   getStickyRenderText,
   intersects,
   isPlaceholderStickyText,
 } from './board-canvas-utils';
+import type { BoardObject } from '../types/board';
+
+function makeObject(overrides: Partial<BoardObject> = {}): BoardObject {
+  return {
+    id: 'obj',
+    type: 'rect',
+    x: 0,
+    y: 0,
+    width: 100,
+    height: 100,
+    rotation: 0,
+    color: '#111827',
+    zIndex: 0,
+    createdBy: 'user-1',
+    updatedAt: '2026-02-20T00:00:00.000Z',
+    ...overrides,
+  };
+}
 
 describe('intersects', () => {
   it('returns true for overlapping rectangles', () => {
@@ -164,5 +183,64 @@ describe('getClickShapeDefaultsForViewport', () => {
 describe('buildBoardReturnToPath', () => {
   it('returns /board/:id as fallback', () => {
     expect(buildBoardReturnToPath('abc-123')).toBe('/board/abc-123');
+  });
+});
+
+describe('filterOccludedConnectorAnchors', () => {
+  it('keeps anchors visible when no higher object covers the point', () => {
+    const target = makeObject({ id: 'target', x: 20, y: 20, width: 80, height: 60, zIndex: 1 });
+    const unrelatedTop = makeObject({ id: 'top', x: 220, y: 220, width: 60, height: 60, zIndex: 2 });
+    const objects = new Map<string, BoardObject>([
+      [target.id, target],
+      [unrelatedTop.id, unrelatedTop],
+    ]);
+
+    const anchors = [{ key: 'target-right', objectId: target.id, x: 100, y: 50, anchorX: 1, anchorY: 0.5 }];
+    expect(filterOccludedConnectorAnchors(anchors, objects)).toEqual(anchors);
+  });
+
+  it('hides anchors when a higher z-order object covers the anchor point', () => {
+    const target = makeObject({ id: 'target', x: 20, y: 20, width: 80, height: 60, zIndex: 1 });
+    const occluder = makeObject({ id: 'occluder', x: 90, y: 20, width: 80, height: 80, zIndex: 2 });
+    const objects = new Map<string, BoardObject>([
+      [target.id, target],
+      [occluder.id, occluder],
+    ]);
+
+    const anchors = [{ key: 'target-right', objectId: target.id, x: 100, y: 50, anchorX: 1, anchorY: 0.5 }];
+    expect(filterOccludedConnectorAnchors(anchors, objects)).toEqual([]);
+  });
+
+  it('does not let frames occlude non-frame anchors even with larger z-index', () => {
+    const target = makeObject({ id: 'target', x: 20, y: 20, width: 80, height: 60, zIndex: 1 });
+    const frame = makeObject({
+      id: 'frame-top-z',
+      type: 'frame',
+      x: 0,
+      y: 0,
+      width: 300,
+      height: 300,
+      zIndex: 99,
+      stroke: '#cbd5e1',
+    });
+    const objects = new Map<string, BoardObject>([
+      [target.id, target],
+      [frame.id, frame],
+    ]);
+
+    const anchors = [{ key: 'target-right', objectId: target.id, x: 100, y: 50, anchorX: 1, anchorY: 0.5 }];
+    expect(filterOccludedConnectorAnchors(anchors, objects)).toEqual(anchors);
+  });
+
+  it('uses deterministic id ordering when z-index matches', () => {
+    const lowerId = makeObject({ id: 'shape-a', x: 20, y: 20, width: 80, height: 60, zIndex: 1 });
+    const higherId = makeObject({ id: 'shape-b', x: 90, y: 10, width: 80, height: 80, zIndex: 1 });
+    const objects = new Map<string, BoardObject>([
+      [lowerId.id, lowerId],
+      [higherId.id, higherId],
+    ]);
+
+    const anchors = [{ key: 'shape-a-right', objectId: lowerId.id, x: 100, y: 50, anchorX: 1, anchorY: 0.5 }];
+    expect(filterOccludedConnectorAnchors(anchors, objects)).toEqual([]);
   });
 });
