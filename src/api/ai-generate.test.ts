@@ -94,6 +94,8 @@ describe('AI Generate API Endpoint', () => {
     delete process.env.OPENAI_MODEL;
     delete process.env.OPENAI_MODEL_SIMPLE;
     delete process.env.OPENAI_MODEL_COMPLEX;
+    delete process.env.AI_MAX_TOKENS_SIMPLE;
+    delete process.env.AI_MAX_TOKENS_COMPLEX;
     delete process.env.AI_ALLOW_EXPERIMENT_OVERRIDES;
     mockGetApps.mockReturnValue([{}]);
     mockVerifyIdToken.mockResolvedValue({ uid: 'user-123' });
@@ -706,6 +708,163 @@ describe('AI Generate API Endpoint', () => {
       expect(complexRes.status).toHaveBeenCalledWith(200);
       const complexPayload = mockOpenAIChatCreate.mock.calls[1][0] as { model: string };
       expect(complexPayload.model).toBe('gpt-4.1');
+    });
+
+    it('uses a lightweight token budget and prompt profile for simple OpenAI prompts', async () => {
+      vi.resetModules();
+      process.env.ANTHROPIC_API_KEY = 'test-key';
+      process.env.OPENAI_API_KEY = 'test-openai-key';
+      process.env.AI_PROVIDER_MODE = 'openai';
+
+      mockOpenAIChatCreate.mockResolvedValueOnce({
+        choices: [
+          {
+            finish_reason: 'tool_calls',
+            message: {
+              content: null,
+              tool_calls: [
+                {
+                  id: 'openai-simple-1',
+                  type: 'function',
+                  function: {
+                    name: 'createStickyNote',
+                    arguments: JSON.stringify({ text: 'Fast', x: 20, y: 30 }),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      });
+
+      const handler = (await import('../../api/ai/generate')).default;
+      const req = createMockReq({
+        body: {
+          prompt: 'Add one sticky note',
+          boardId: 'board-1',
+          boardState: {},
+        },
+      });
+      const res = createMockRes();
+
+      await handler(req as never, res as never);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      const payload = mockOpenAIChatCreate.mock.calls[0][0] as {
+        max_tokens: number;
+        messages: Array<{ role: string; content: string }>;
+      };
+      expect(payload.max_tokens).toBe(1000);
+      expect(payload.messages[0].content).not.toContain('Template Instructions');
+    });
+
+    it('uses the complex token budget and template prompt profile for complex OpenAI prompts', async () => {
+      vi.resetModules();
+      process.env.ANTHROPIC_API_KEY = 'test-key';
+      process.env.OPENAI_API_KEY = 'test-openai-key';
+      process.env.AI_PROVIDER_MODE = 'openai';
+
+      mockOpenAIChatCreate.mockResolvedValueOnce({
+        choices: [
+          {
+            finish_reason: 'tool_calls',
+            message: {
+              content: null,
+              tool_calls: [
+                {
+                  id: 'openai-complex-1',
+                  type: 'function',
+                  function: {
+                    name: 'createFrame',
+                    arguments: JSON.stringify({
+                      title: 'Strengths',
+                      x: 100,
+                      y: 100,
+                      width: 400,
+                      height: 300,
+                    }),
+                  },
+                },
+                {
+                  id: 'openai-complex-2',
+                  type: 'function',
+                  function: {
+                    name: 'createFrame',
+                    arguments: JSON.stringify({
+                      title: 'Weaknesses',
+                      x: 550,
+                      y: 100,
+                      width: 400,
+                      height: 300,
+                    }),
+                  },
+                },
+                {
+                  id: 'openai-complex-3',
+                  type: 'function',
+                  function: {
+                    name: 'createFrame',
+                    arguments: JSON.stringify({
+                      title: 'Opportunities',
+                      x: 100,
+                      y: 450,
+                      width: 400,
+                      height: 300,
+                    }),
+                  },
+                },
+                {
+                  id: 'openai-complex-4',
+                  type: 'function',
+                  function: {
+                    name: 'createFrame',
+                    arguments: JSON.stringify({
+                      title: 'Threats',
+                      x: 550,
+                      y: 450,
+                      width: 400,
+                      height: 300,
+                    }),
+                  },
+                },
+                {
+                  id: 'openai-complex-5',
+                  type: 'function',
+                  function: {
+                    name: 'createStickyNote',
+                    arguments: JSON.stringify({
+                      objectId: 'note-1',
+                      text: 'Sample',
+                      x: 150,
+                      y: 150,
+                    }),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      });
+
+      const handler = (await import('../../api/ai/generate')).default;
+      const req = createMockReq({
+        body: {
+          prompt: 'Create a SWOT analysis template with 4 quadrants',
+          boardId: 'board-1',
+          boardState: {},
+        },
+      });
+      const res = createMockRes();
+
+      await handler(req as never, res as never);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      const payload = mockOpenAIChatCreate.mock.calls[0][0] as {
+        max_tokens: number;
+        messages: Array<{ role: string; content: string }>;
+      };
+      expect(payload.max_tokens).toBe(4096);
+      expect(payload.messages[0].content).toContain('Template Instructions');
     });
 
     it('allows provider and model overrides when experiments are enabled', async () => {

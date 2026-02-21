@@ -87,8 +87,10 @@ You can run the AI endpoint with Anthropic only, OpenAI only, or deterministic A
 2. If using OpenAI or A/B, set `OPENAI_API_KEY`.
 3. Optional OpenAI model routing:
 `OPENAI_MODEL_SIMPLE` for single-step prompts, `OPENAI_MODEL_COMPLEX` for complex/template prompts, or `OPENAI_MODEL` as a shared fallback.
-4. If using A/B, set `AI_OPENAI_PERCENT` (0-100) to control OpenAI traffic split.
-5. For scripted benchmark runs that force provider/model per request, set `AI_ALLOW_EXPERIMENT_OVERRIDES=true`.
+4. Optional token budgets:
+`AI_MAX_TOKENS_SIMPLE` (default `1000`) and `AI_MAX_TOKENS_COMPLEX` (default `4096`).
+5. If using A/B, set `AI_OPENAI_PERCENT` (0-100) to control OpenAI traffic split.
+6. For scripted benchmark runs that force provider/model per request, set `AI_ALLOW_EXPERIMENT_OVERRIDES=true`.
 
 Recommended for observability:
 - Keep LangSmith tracing enabled.

@@ -390,7 +390,23 @@ const openAIToolDefinitions: OpenAI.Chat.Completions.ChatCompletionTool[] = tool
   }),
 );
 
-const SYSTEM_PROMPT = `You are an AI whiteboard assistant for a collaborative whiteboard app. You help users create and manipulate objects on an infinite canvas.
+const SIMPLE_SYSTEM_PROMPT = `You are an AI whiteboard assistant for a collaborative whiteboard app. You help users create and manipulate objects on an infinite canvas.
+
+You have access to tools to create sticky notes, shapes, frames, connectors, and to move, resize, recolor, and update text on existing objects.
+
+Guidelines:
+- Return the smallest valid set of tool calls needed to fulfill the request.
+- For simple single-step commands, prefer one tool call when possible.
+- Place objects at reasonable positions (avoid overlapping). Space items ~200px apart.
+- Use pleasant colors. Default sticky note color: #FFEB3B (yellow). Other good colors: #81C784 (green), #64B5F6 (blue), #E57373 (red), #FFB74D (orange), #BA68C8 (purple).
+- Standard sticky note size: 150x100. Standard shape size: 120x80.
+- For line shapes, provide width + height or line endpoints (x2, y2).
+- Use the getBoardState tool first only when you need to reference or modify existing objects.
+- updateText is only valid for sticky/text objects and frame titles, not rect/circle/line/connector.
+- Include stable objectId values for created objects when possible.
+- Output tool calls only unless you cannot perform the request.`;
+
+const COMPLEX_SYSTEM_PROMPT = `You are an AI whiteboard assistant for a collaborative whiteboard app. You help users create and manipulate objects on an infinite canvas.
 
 You have access to tools to create sticky notes, shapes, frames, connectors, and to move, resize, recolor, and update text on existing objects.
 
@@ -437,6 +453,8 @@ User Journey Map — create N horizontal frames (250x400 each, 30px gap):
 const MAX_PROMPT_LENGTH = 500;
 const MAX_BOARD_STATE_OBJECTS = 100;
 const MAX_PLANNING_ATTEMPTS = 2;
+const SIMPLE_MAX_TOKENS_FALLBACK = 1000;
+const COMPLEX_MAX_TOKENS_FALLBACK = 4096;
 const TOOL_BY_NAME = new Map(toolDefinitions.map((tool) => [tool.name, tool] as const));
 
 interface BoardDocData {
@@ -701,6 +719,35 @@ export function getMinimumToolCallsForPrompt(prompt: string): number {
   return 2;
 }
 
+function parsePositiveInteger(value: string | undefined): number | null {
+  if (typeof value !== 'string' || !value.trim()) {
+    return null;
+  }
+
+  const parsed = Number.parseInt(value.trim(), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+
+  return parsed;
+}
+
+function getSimpleMaxTokens(): number {
+  return parsePositiveInteger(process.env.AI_MAX_TOKENS_SIMPLE) ?? SIMPLE_MAX_TOKENS_FALLBACK;
+}
+
+function getComplexMaxTokens(): number {
+  return parsePositiveInteger(process.env.AI_MAX_TOKENS_COMPLEX) ?? COMPLEX_MAX_TOKENS_FALLBACK;
+}
+
+function getMaxTokensForPrompt(prompt: string): number {
+  return isLikelyComplexPlanPrompt(prompt) ? getComplexMaxTokens() : getSimpleMaxTokens();
+}
+
+function getSystemPromptForPrompt(prompt: string): string {
+  return isLikelyComplexPlanPrompt(prompt) ? COMPLEX_SYSTEM_PROMPT : SIMPLE_SYSTEM_PROMPT;
+}
+
 function shouldRequestPlanExpansion(
   prompt: string,
   toolCalls: OutgoingToolCall[],
@@ -808,6 +855,9 @@ async function generatePlanCore({
   provider,
   modelOverride,
 }: PlanGenerationInput): Promise<PlanGenerationResult> {
+  const isComplexPrompt = isLikelyComplexPlanPrompt(prompt);
+  const systemPrompt = getSystemPromptForPrompt(prompt);
+  const maxTokens = getMaxTokensForPrompt(prompt);
   const resolvedModel =
     modelOverride ||
     (provider === 'openai' ? getOpenAIModelNameForPrompt(prompt) : getAnthropicModelNameForPrompt(prompt));
@@ -816,6 +866,8 @@ async function generatePlanCore({
     actorUserId,
     promptLength: prompt.length,
     boardObjectCount: getBoardObjectCount(truncatedBoardState),
+    isComplexPrompt,
+    maxTokens,
     provider,
     model: resolvedModel,
     providerMode: getProviderMode(),
@@ -825,13 +877,13 @@ async function generatePlanCore({
     const initialCompletion = await createOpenAIPlanningMessage(
       {
         model: resolvedModel,
-        max_tokens: 4096,
+        max_tokens: maxTokens,
         tools: openAIToolDefinitions,
         tool_choice: 'auto',
         messages: [
           {
             role: 'system',
-            content: SYSTEM_PROMPT,
+            content: systemPrompt,
           },
           {
             role: 'user',
@@ -864,13 +916,13 @@ async function generatePlanCore({
       const expandedCompletion = await createOpenAIPlanningMessage(
         {
           model: resolvedModel,
-          max_tokens: 4096,
+          max_tokens: maxTokens,
           tools: openAIToolDefinitions,
           tool_choice: 'auto',
           messages: [
             {
               role: 'system',
-              content: SYSTEM_PROMPT,
+              content: systemPrompt,
             },
             {
               role: 'user',
@@ -915,9 +967,9 @@ async function generatePlanCore({
   const initialMessage = await createAnthropicPlanningMessage(
     {
       model: resolvedModel,
-      max_tokens: 4096,
+      max_tokens: maxTokens,
       tools: toolDefinitions,
-      system: SYSTEM_PROMPT,
+      system: systemPrompt,
       messages: [
         {
           role: 'user',
@@ -950,9 +1002,9 @@ async function generatePlanCore({
     const expandedMessage = await createAnthropicPlanningMessage(
       {
         model: resolvedModel,
-        max_tokens: 4096,
+        max_tokens: maxTokens,
         tools: toolDefinitions,
-        system: SYSTEM_PROMPT,
+        system: systemPrompt,
         messages: [
           {
             role: 'user',
