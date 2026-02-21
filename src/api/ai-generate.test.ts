@@ -86,9 +86,11 @@ describe('AI Generate API Endpoint', () => {
     delete process.env.LANGCHAIN_TRACING_V2;
     delete process.env.LANGCHAIN_API_KEY;
     delete process.env.LANGCHAIN_PROJECT;
-    delete process.env.AI_PROVIDER_MODE;
+    process.env.AI_PROVIDER_MODE = 'anthropic';
     delete process.env.AI_OPENAI_PERCENT;
     delete process.env.ANTHROPIC_MODEL;
+    delete process.env.ANTHROPIC_MODEL_SIMPLE;
+    delete process.env.ANTHROPIC_MODEL_COMPLEX;
     delete process.env.OPENAI_MODEL;
     delete process.env.OPENAI_MODEL_SIMPLE;
     delete process.env.OPENAI_MODEL_COMPLEX;
@@ -244,8 +246,9 @@ describe('AI Generate API Endpoint', () => {
       });
     });
 
-    it('returns 500 when ANTHROPIC_API_KEY is not configured', async () => {
+    it('returns 500 when no AI provider keys are configured', async () => {
       delete process.env.ANTHROPIC_API_KEY;
+      delete process.env.OPENAI_API_KEY;
       // Need fresh import to pick up env change
       vi.resetModules();
       vi.mock('@anthropic-ai/sdk', () => ({
@@ -296,7 +299,7 @@ describe('AI Generate API Endpoint', () => {
         message: null,
         stopReason: 'tool_use',
         provider: 'anthropic',
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-3-5-haiku-latest',
       });
     });
 
@@ -473,7 +476,7 @@ describe('AI Generate API Endpoint', () => {
         message: null,
         stopReason: 'tool_use',
         provider: 'anthropic',
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-3-5-haiku-latest',
       });
     });
   });
@@ -776,11 +779,23 @@ describe('AI Generate API Endpoint', () => {
       });
     });
 
-    it('returns 500 when openai mode is enabled but OPENAI_API_KEY is missing', async () => {
+    it('falls back to anthropic when openai mode is enabled but OPENAI_API_KEY is missing', async () => {
       vi.resetModules();
       process.env.ANTHROPIC_API_KEY = 'test-key';
       delete process.env.OPENAI_API_KEY;
       process.env.AI_PROVIDER_MODE = 'openai';
+
+      mockCreate.mockResolvedValueOnce({
+        content: [
+          {
+            type: 'tool_use',
+            id: 'fallback-1',
+            name: 'createStickyNote',
+            input: { text: 'Fallback', x: 10, y: 20 },
+          },
+        ],
+        stop_reason: 'tool_use',
+      });
 
       const handler = (await import('../../api/ai/generate')).default;
       const req = createMockReq();
@@ -788,10 +803,10 @@ describe('AI Generate API Endpoint', () => {
 
       await handler(req as never, res as never);
 
-      expect(res.status).toHaveBeenCalledWith(500);
-      expect(res.json).toHaveBeenCalledWith({
-        error: 'AI service not configured for OpenAI provider',
-      });
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(mockCreate).toHaveBeenCalledTimes(1);
+      expect(mockOpenAIChatCreate).not.toHaveBeenCalled();
+      expect(res.setHeader).toHaveBeenCalledWith('X-AI-Provider', 'anthropic');
     });
   });
 
@@ -813,8 +828,9 @@ describe('AI Generate API Endpoint', () => {
       });
     });
 
-    it('returns 500 for unexpected errors', async () => {
-      mockCreate.mockRejectedValue(new Error('Internal failure'));
+    it('returns 500 for unexpected errors when both providers fail', async () => {
+      mockCreate.mockRejectedValue(new Error('Anthropic failure'));
+      mockOpenAIChatCreate.mockRejectedValue(new Error('OpenAI failure'));
 
       const handler = (await import('../../api/ai/generate')).default;
       const req = createMockReq();

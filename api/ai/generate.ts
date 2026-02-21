@@ -33,10 +33,11 @@ const apiLogger = {
 const LANGSMITH_PROJECT_FALLBACK = 'collab-board-dev';
 const LANGSMITH_TAGS = ['collab-board', 'api', 'ai-generate'];
 const AI_PROVIDER_MODE_FALLBACK = 'anthropic';
-const AI_OPENAI_PERCENT_FALLBACK = 50;
-const ANTHROPIC_MODEL_FALLBACK = 'claude-sonnet-4-20250514';
+
+const ANTHROPIC_SIMPLE_MODEL_FALLBACK = 'claude-3-5-haiku-latest';
+const ANTHROPIC_COMPLEX_MODEL_FALLBACK = 'claude-sonnet-4-20250514';
 const OPENAI_SIMPLE_MODEL_FALLBACK = 'gpt-4o-mini';
-const OPENAI_COMPLEX_MODEL_FALLBACK = 'gpt-4.1-mini';
+const OPENAI_COMPLEX_MODEL_FALLBACK = 'gpt-4.1';
 const MODEL_NAME_PATTERN = /^[a-zA-Z0-9._:-]{1,128}$/;
 const LANGSMITH_TRACING_ENABLED =
   process.env.LANGCHAIN_TRACING_V2 === 'true' &&
@@ -67,32 +68,26 @@ function getProviderMode(): AIProviderMode {
   return AI_PROVIDER_MODE_FALLBACK;
 }
 
-function getOpenAIPercent(): number {
-  const value = Number.parseInt(process.env.AI_OPENAI_PERCENT ?? '', 10);
-  if (Number.isNaN(value)) {
-    return AI_OPENAI_PERCENT_FALLBACK;
-  }
-  return Math.max(0, Math.min(100, value));
-}
 
-function deterministicPercentBucket(seed: string): number {
-  let hash = 0;
-  for (let i = 0; i < seed.length; i += 1) {
-    hash = (hash << 5) - hash + seed.charCodeAt(i);
-    hash |= 0;
-  }
-  return Math.abs(hash) % 100;
-}
-
-function chooseProviderForRequest(boardId: string, actorUserId: string): AIProvider {
+function chooseProviderForRequest(boardId: string, actorUserId: string, prompt: string): AIProvider {
   const mode = getProviderMode();
+  // If explicitly locked to one provider, respect that
   if (mode === 'anthropic' || mode === 'openai') {
     return mode;
   }
 
-  const openAIPercent = getOpenAIPercent();
-  const bucket = deterministicPercentBucket(`${boardId}:${actorUserId}`);
-  return bucket < openAIPercent ? 'openai' : 'anthropic';
+  // Complexity-based routing: simple → OpenAI (cheap/fast), complex → Anthropic (capable)
+  return isLikelyComplexPlanPrompt(prompt) ? 'anthropic' : 'openai';
+}
+
+function getFallbackProvider(primary: AIProvider): AIProvider {
+  return primary === 'openai' ? 'anthropic' : 'openai';
+}
+
+function isProviderAvailable(provider: AIProvider): boolean {
+  if (provider === 'anthropic') return !!process.env.ANTHROPIC_API_KEY;
+  if (provider === 'openai') return !!process.env.OPENAI_API_KEY;
+  return false;
 }
 
 function isAIProvider(value: unknown): value is AIProvider {
@@ -112,12 +107,26 @@ function sanitizeModelName(value: unknown): string | null {
   return trimmed;
 }
 
-function getAnthropicModelName(): string {
-  const value = process.env.ANTHROPIC_MODEL;
+function getAnthropicSimpleModelName(): string {
+  const value = process.env.ANTHROPIC_MODEL_SIMPLE ?? process.env.ANTHROPIC_MODEL;
   if (typeof value === 'string' && value.trim().length > 0) {
     return value.trim();
   }
-  return ANTHROPIC_MODEL_FALLBACK;
+  return ANTHROPIC_SIMPLE_MODEL_FALLBACK;
+}
+
+function getAnthropicComplexModelName(): string {
+  const value = process.env.ANTHROPIC_MODEL_COMPLEX ?? process.env.ANTHROPIC_MODEL;
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return value.trim();
+  }
+  return ANTHROPIC_COMPLEX_MODEL_FALLBACK;
+}
+
+function getAnthropicModelNameForPrompt(prompt: string): string {
+  return isLikelyComplexPlanPrompt(prompt)
+    ? getAnthropicComplexModelName()
+    : getAnthropicSimpleModelName();
 }
 
 function getOpenAISimpleModelName(): string {
@@ -801,7 +810,7 @@ async function generatePlanCore({
 }: PlanGenerationInput): Promise<PlanGenerationResult> {
   const resolvedModel =
     modelOverride ||
-    (provider === 'openai' ? getOpenAIModelNameForPrompt(prompt) : getAnthropicModelName());
+    (provider === 'openai' ? getOpenAIModelNameForPrompt(prompt) : getAnthropicModelNameForPrompt(prompt));
   const commonMetadata = {
     boardId,
     actorUserId,
@@ -1154,28 +1163,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  const provider = isAIProvider(requestedProvider)
+  // Complexity-based routing: simple → OpenAI gpt-4o-mini, complex → Anthropic Sonnet
+  const primaryProvider = isAIProvider(requestedProvider)
     ? requestedProvider
-    : chooseProviderForRequest(trimmedBoardId, actorUserId);
-  res.setHeader('X-AI-Provider', provider);
-  if (provider === 'anthropic' && !process.env.ANTHROPIC_API_KEY) {
+    : chooseProviderForRequest(trimmedBoardId, actorUserId, prompt);
+  const fallbackProvider = getFallbackProvider(primaryProvider);
+
+  if (!isProviderAvailable(primaryProvider) && !isProviderAvailable(fallbackProvider)) {
     return res.status(500).json({ error: 'AI service not configured' });
   }
-  if (provider === 'openai' && !process.env.OPENAI_API_KEY) {
-    return res.status(500).json({ error: 'AI service not configured for OpenAI provider' });
-  }
 
-  try {
-    apiLogger.info('AI', `Generating AI plan via ${provider} (model: ${sanitizedModelOverride || 'default'})`, {
+  // If primary isn't available, swap to fallback immediately
+  const effectiveProvider = isProviderAvailable(primaryProvider) ? primaryProvider : fallbackProvider;
+  const hasFallback = effectiveProvider !== fallbackProvider && isProviderAvailable(fallbackProvider);
+
+  res.setHeader('X-AI-Provider', effectiveProvider);
+
+  const attemptGeneration = async (provider: AIProvider, isFallback: boolean): Promise<PlanGenerationResult> => {
+    const label = isFallback ? 'fallback' : 'primary';
+    apiLogger.info('AI', `Generating AI plan via ${provider} (${label}, model: ${sanitizedModelOverride || 'default'})`, {
       boardId: trimmedBoardId,
       provider,
+      isFallback,
       modelOverride: sanitizedModelOverride,
       promptLength: prompt.length,
       boardObjectCount: getBoardObjectCount(truncatedBoardState),
     });
 
-    const planStartMs = Date.now();
-    const result = await generatePlan({
+    return generatePlan({
       prompt,
       truncatedBoardState,
       boardId: trimmedBoardId,
@@ -1183,9 +1198,41 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       provider,
       modelOverride: sanitizedModelOverride,
     });
+  };
+
+  try {
+    const planStartMs = Date.now();
+    let result: PlanGenerationResult;
+    let usedFallback = false;
+
+    try {
+      result = await attemptGeneration(effectiveProvider, false);
+    } catch (primaryErr) {
+      // Rate limit errors are never retried via fallback
+      const isRateLimit =
+        primaryErr instanceof Error && 'status' in primaryErr && (primaryErr as { status: number }).status === 429;
+      if (isRateLimit) {
+        throw primaryErr;
+      }
+
+      if (!hasFallback) {
+        throw primaryErr;
+      }
+
+      apiLogger.warn('AI', `Primary provider ${effectiveProvider} failed, falling back to ${fallbackProvider}: ${primaryErr instanceof Error ? primaryErr.message : 'Unknown error'}`, {
+        boardId: trimmedBoardId,
+        primaryProvider: effectiveProvider,
+        fallbackProvider,
+      });
+
+      result = await attemptGeneration(fallbackProvider, true);
+      usedFallback = true;
+      res.setHeader('X-AI-Provider', fallbackProvider);
+    }
+
     const planDurationMs = Date.now() - planStartMs;
 
-    apiLogger.info('AI', `AI plan generated: ${result.toolCalls.length} tool call(s) via ${result.provider}/${result.model} in ${planDurationMs}ms`, {
+    apiLogger.info('AI', `AI plan generated: ${result.toolCalls.length} tool call(s) via ${result.provider}/${result.model} in ${planDurationMs}ms${usedFallback ? ' (fallback)' : ''}`, {
       boardId: trimmedBoardId,
       toolCallCount: result.toolCalls.length,
       toolNames: result.toolCalls.slice(0, 10).map((tc) => tc.name),
@@ -1193,6 +1240,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       model: result.model,
       stopReason: result.stopReason,
       durationMs: planDurationMs,
+      usedFallback,
     });
 
     res.setHeader('X-AI-Model', result.model);
@@ -1210,13 +1258,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       err instanceof Error && 'status' in err && (err as { status: number }).status === 429;
 
     if (isRateLimit) {
-      apiLogger.warn('AI', `Rate limit hit for AI request`, { boardId: trimmedBoardId, provider, userId: actorUserId });
+      apiLogger.warn('AI', `Rate limit hit for AI request`, { boardId: trimmedBoardId, provider: effectiveProvider, userId: actorUserId });
       return res.status(429).json({ error: 'AI rate limit reached. Please try again shortly.' });
     }
 
     apiLogger.error('AI', `AI plan generation failed: ${err instanceof Error ? err.message : 'Unknown error'}`, {
       boardId: trimmedBoardId,
-      provider,
+      provider: effectiveProvider,
       userId: actorUserId,
       error: err instanceof Error ? err.message : String(err),
     });
