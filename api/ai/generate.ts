@@ -453,7 +453,7 @@ User Journey Map — create N horizontal frames (250x400 each, 30px gap):
 const MAX_PROMPT_LENGTH = 500;
 const MAX_BOARD_STATE_OBJECTS = 100;
 const MAX_PLANNING_ATTEMPTS = 2;
-const SIMPLE_MAX_TOKENS_FALLBACK = 1000;
+const SIMPLE_MAX_TOKENS_FALLBACK = 700;
 const COMPLEX_MAX_TOKENS_FALLBACK = 4096;
 const TOOL_BY_NAME = new Map(toolDefinitions.map((tool) => [tool.name, tool] as const));
 
@@ -748,6 +748,64 @@ function getSystemPromptForPrompt(prompt: string): string {
   return isLikelyComplexPlanPrompt(prompt) ? COMPLEX_SYSTEM_PROMPT : SIMPLE_SYSTEM_PROMPT;
 }
 
+function shouldIncludeBoardStateInPrompt(prompt: string): boolean {
+  if (isLikelyComplexPlanPrompt(prompt)) {
+    return true;
+  }
+
+  const lower = prompt.toLowerCase();
+  const referencesExistingObjects =
+    /\b(move|resize|change|update|delete|remove|recolor|color|edit|rename|connect|link|arrange|align|distribute|group|ungroup|duplicate|copy|paste|selected|existing|current|this|that|these|those|all|them)\b/.test(
+      lower,
+    );
+  if (referencesExistingObjects) {
+    return true;
+  }
+
+  const createOnlyCommand = /\b(add|create|make|draw|insert)\b/.test(lower);
+  const createTarget =
+    /\b(sticky\s+note|rectangle|rect|circle|line|shape|frame|connector)\b/.test(lower);
+  if (createOnlyCommand && createTarget) {
+    return false;
+  }
+
+  return true;
+}
+
+function getPreferredOpenAIToolChoiceForPrompt(
+  prompt: string,
+): OpenAI.Chat.Completions.ChatCompletionToolChoiceOption {
+  if (isLikelyComplexPlanPrompt(prompt)) {
+    return 'auto';
+  }
+
+  const lower = prompt.toLowerCase();
+  const createIntent = /\b(add|create|make|draw|insert)\b/.test(lower);
+  const referencesExistingObjects =
+    /\b(move|resize|change|update|delete|remove|recolor|color|edit|rename|connect|link|arrange|align|distribute|selected|existing|current|this|that|these|those|all|them)\b/.test(
+      lower,
+    );
+  if (!createIntent || referencesExistingObjects) {
+    return 'auto';
+  }
+
+  if (/\bsticky\b/.test(lower) && /\bnote\b/.test(lower)) {
+    return {
+      type: 'function',
+      function: { name: 'createStickyNote' },
+    };
+  }
+
+  if (/\b(rectangle|rect|circle|line|shape)\b/.test(lower)) {
+    return {
+      type: 'function',
+      function: { name: 'createShape' },
+    };
+  }
+
+  return 'auto';
+}
+
 function shouldRequestPlanExpansion(
   prompt: string,
   toolCalls: OutgoingToolCall[],
@@ -760,8 +818,12 @@ function shouldRequestPlanExpansion(
   return toolCalls.length < minimumRequired;
 }
 
-function buildInitialUserContent(prompt: string, truncatedBoardState: unknown): string {
-  return truncatedBoardState
+function buildInitialUserContent(
+  prompt: string,
+  truncatedBoardState: unknown,
+  includeBoardState: boolean,
+): string {
+  return includeBoardState && truncatedBoardState
     ? `Current board objects: ${JSON.stringify(truncatedBoardState)}\n\nUser request: ${prompt}`
     : prompt;
 }
@@ -858,6 +920,8 @@ async function generatePlanCore({
   const isComplexPrompt = isLikelyComplexPlanPrompt(prompt);
   const systemPrompt = getSystemPromptForPrompt(prompt);
   const maxTokens = getMaxTokensForPrompt(prompt);
+  const includeBoardState = shouldIncludeBoardStateInPrompt(prompt);
+  const openAIToolChoice = getPreferredOpenAIToolChoiceForPrompt(prompt);
   const resolvedModel =
     modelOverride ||
     (provider === 'openai' ? getOpenAIModelNameForPrompt(prompt) : getAnthropicModelNameForPrompt(prompt));
@@ -868,6 +932,7 @@ async function generatePlanCore({
     boardObjectCount: getBoardObjectCount(truncatedBoardState),
     isComplexPrompt,
     maxTokens,
+    includeBoardState,
     provider,
     model: resolvedModel,
     providerMode: getProviderMode(),
@@ -879,7 +944,7 @@ async function generatePlanCore({
         model: resolvedModel,
         max_tokens: maxTokens,
         tools: openAIToolDefinitions,
-        tool_choice: 'auto',
+        tool_choice: openAIToolChoice,
         messages: [
           {
             role: 'system',
@@ -887,7 +952,7 @@ async function generatePlanCore({
           },
           {
             role: 'user',
-            content: buildInitialUserContent(prompt, truncatedBoardState),
+            content: buildInitialUserContent(prompt, truncatedBoardState, includeBoardState),
           },
         ],
       },
@@ -918,7 +983,7 @@ async function generatePlanCore({
           model: resolvedModel,
           max_tokens: maxTokens,
           tools: openAIToolDefinitions,
-          tool_choice: 'auto',
+          tool_choice: openAIToolChoice,
           messages: [
             {
               role: 'system',
@@ -973,7 +1038,7 @@ async function generatePlanCore({
       messages: [
         {
           role: 'user',
-          content: buildInitialUserContent(prompt, truncatedBoardState),
+          content: buildInitialUserContent(prompt, truncatedBoardState, includeBoardState),
         },
       ],
     },

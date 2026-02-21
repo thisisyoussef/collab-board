@@ -727,6 +727,61 @@ describe('AI Generate API Endpoint', () => {
                   id: 'openai-simple-1',
                   type: 'function',
                   function: {
+                    name: 'createShape',
+                    arguments: JSON.stringify({ type: 'rect', x: 20, y: 30, width: 120, height: 80 }),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      });
+
+      const handler = (await import('../../api/ai/generate')).default;
+      const req = createMockReq({
+        body: {
+          prompt: 'Create one rectangle',
+          boardId: 'board-1',
+          boardState: {},
+        },
+      });
+      const res = createMockRes();
+
+      await handler(req as never, res as never);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      const payload = mockOpenAIChatCreate.mock.calls[0][0] as {
+        max_tokens: number;
+        messages: Array<{ role: string; content: string }>;
+        tool_choice: unknown;
+      };
+      expect(payload.max_tokens).toBe(700);
+      expect(payload.messages[0].content).not.toContain('Template Instructions');
+      expect(payload.tool_choice).toEqual({
+        type: 'function',
+        function: {
+          name: 'createShape',
+        },
+      });
+    });
+
+    it('omits board-state context for create-only simple prompts to reduce token usage', async () => {
+      vi.resetModules();
+      process.env.ANTHROPIC_API_KEY = 'test-key';
+      process.env.OPENAI_API_KEY = 'test-openai-key';
+      process.env.AI_PROVIDER_MODE = 'openai';
+
+      mockOpenAIChatCreate.mockResolvedValueOnce({
+        choices: [
+          {
+            finish_reason: 'tool_calls',
+            message: {
+              content: null,
+              tool_calls: [
+                {
+                  id: 'openai-simple-2',
+                  type: 'function',
+                  function: {
                     name: 'createStickyNote',
                     arguments: JSON.stringify({ text: 'Fast', x: 20, y: 30 }),
                   },
@@ -740,9 +795,11 @@ describe('AI Generate API Endpoint', () => {
       const handler = (await import('../../api/ai/generate')).default;
       const req = createMockReq({
         body: {
-          prompt: 'Add one sticky note',
+          prompt: 'Add one sticky note saying hello',
           boardId: 'board-1',
-          boardState: {},
+          boardState: {
+            'obj-1': { id: 'obj-1', type: 'sticky', text: 'Existing', x: 10, y: 10 },
+          },
         },
       });
       const res = createMockRes();
@@ -751,11 +808,68 @@ describe('AI Generate API Endpoint', () => {
 
       expect(res.status).toHaveBeenCalledWith(200);
       const payload = mockOpenAIChatCreate.mock.calls[0][0] as {
-        max_tokens: number;
         messages: Array<{ role: string; content: string }>;
+        tool_choice: unknown;
       };
-      expect(payload.max_tokens).toBe(1000);
-      expect(payload.messages[0].content).not.toContain('Template Instructions');
+      expect(payload.messages[1].content).toBe('Add one sticky note saying hello');
+      expect(payload.messages[1].content).not.toContain('Current board objects:');
+      expect(payload.tool_choice).toEqual({
+        type: 'function',
+        function: {
+          name: 'createStickyNote',
+        },
+      });
+    });
+
+    it('keeps board-state context for simple prompts that target existing objects', async () => {
+      vi.resetModules();
+      process.env.ANTHROPIC_API_KEY = 'test-key';
+      process.env.OPENAI_API_KEY = 'test-openai-key';
+      process.env.AI_PROVIDER_MODE = 'openai';
+
+      mockOpenAIChatCreate.mockResolvedValueOnce({
+        choices: [
+          {
+            finish_reason: 'tool_calls',
+            message: {
+              content: null,
+              tool_calls: [
+                {
+                  id: 'openai-simple-3',
+                  type: 'function',
+                  function: {
+                    name: 'moveObject',
+                    arguments: JSON.stringify({ objectId: 'obj-1', x: 200, y: 220 }),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      });
+
+      const handler = (await import('../../api/ai/generate')).default;
+      const req = createMockReq({
+        body: {
+          prompt: 'Move the sticky note to x 200 y 220',
+          boardId: 'board-1',
+          boardState: {
+            'obj-1': { id: 'obj-1', type: 'sticky', text: 'Existing', x: 10, y: 10 },
+          },
+        },
+      });
+      const res = createMockRes();
+
+      await handler(req as never, res as never);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      const payload = mockOpenAIChatCreate.mock.calls[0][0] as {
+        messages: Array<{ role: string; content: string }>;
+        tool_choice: unknown;
+      };
+      expect(payload.messages[1].content).toContain('Current board objects:');
+      expect(payload.messages[1].content).toContain('Move the sticky note to x 200 y 220');
+      expect(payload.tool_choice).toBe('auto');
     });
 
     it('uses the complex token budget and template prompt profile for complex OpenAI prompts', async () => {
