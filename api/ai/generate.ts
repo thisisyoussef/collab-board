@@ -69,7 +69,7 @@ function getProviderMode(): AIProviderMode {
 }
 
 
-function chooseProviderForRequest(boardId: string, actorUserId: string, prompt: string): AIProvider {
+function chooseProviderForRequest(_boardId: string, _actorUserId: string, prompt: string): AIProvider {
   const mode = getProviderMode();
   // If explicitly locked to one provider, respect that
   if (mode === 'anthropic' || mode === 'openai') {
