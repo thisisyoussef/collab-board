@@ -192,6 +192,14 @@ Red -> Green -> Refactor:
 3. `npm run test` -> pass (22 files, 152 tests)
 4. `npm run build` -> pass (Node `18.20.4` warning from Vite recommending `20.19+` or `22.12+`)
 
+## Deployment Handoff (Mandatory)
+
+1. Commit implementation and docs on the working branch.
+2. Push the branch to `origin`.
+3. Deploy the latest branch state to Vercel.
+4. Record deployed URLs and commit SHA in `Checkpoint Result`.
+5. If deployment is blocked, document blocker and owner in `Checkpoint Result`.
+
 ## User Checkpoint Test
 
 1. Open board and verify AI panel placement.

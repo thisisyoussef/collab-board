@@ -347,6 +347,14 @@ The existing `presence-pill` in `Board.tsx` currently shows static "Live" text. 
 4. Click "Dashboard" to navigate back. Verify no errors; Render logs show "Disconnected".
 5. Open the Render health endpoint in browser (`https://your-server.onrender.com/health`). Verify it returns "ok".
 
+## Deployment Handoff (Mandatory)
+
+1. Commit implementation and docs on the working branch.
+2. Push the branch to `origin`.
+3. Deploy the latest branch state to Vercel.
+4. Record deployed URLs and commit SHA in `Checkpoint Result`.
+5. If deployment is blocked, document blocker and owner in `Checkpoint Result`.
+
 ## Checkpoint Result
 
 - Production Frontend URL: https://collab-board-iota.vercel.app

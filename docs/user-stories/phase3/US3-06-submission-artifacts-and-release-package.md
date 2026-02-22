@@ -123,6 +123,14 @@ Red -> Green -> Refactor:
 2. Link/path verification pass.
 3. Optional markdown lint pass.
 
+## Deployment Handoff (Mandatory)
+
+1. Commit implementation and docs on the working branch.
+2. Push the branch to `origin`.
+3. Deploy the latest branch state to Vercel.
+4. Record deployed URLs and commit SHA in `Checkpoint Result`.
+5. If deployment is blocked, document blocker and owner in `Checkpoint Result`.
+
 ## User Checkpoint Test
 
 1. Open artifact index and verify every required deliverable.

@@ -18,6 +18,11 @@ dist-ssr
 .env.production.local
 .env.vercel*
 
+# Playwright
+.playwright-cli/
+test-results/
+playwright-report/
+
 # Claude Code
 .claude/
 

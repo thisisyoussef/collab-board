@@ -7,10 +7,12 @@ This folder tracks Phase II delivery with strict story gates, test-driven develo
 1. Read the story's Pre-Implementation Audit and complete Preparation Phase before coding.
 2. Implement one story only.
 3. Run local validation (`npm run lint`, `npm run test`, `npm run build`) plus story-specific checks.
-4. Deploy frontend and socket backend to production.
-5. If schema/rules changed, deploy Firestore rules/indexes and verify.
-6. Update `phase2-checkpoint-log.md` with links, commit, TDD evidence, and results.
-7. Stop for manual approval before starting the next story.
+4. Commit implementation and docs, then push branch to `origin`.
+5. Deploy frontend and socket backend to production.
+6. Record deployed URLs and commit SHA in story `Checkpoint Result` and in checkpoint log.
+7. If schema/rules changed, deploy Firestore rules/indexes and verify.
+8. Update `phase2-checkpoint-log.md` with links, commit, TDD evidence, and results.
+9. Stop for manual approval before starting the next story.
 
 ## Preparation Phase (Mandatory)
 
@@ -94,8 +96,9 @@ Every story must include:
 10. TDD Plan
 11. Acceptance Criteria
 12. Local Validation
-13. User Checkpoint Test
-14. Checkpoint Result
+13. Deployment Handoff (Mandatory)
+14. User Checkpoint Test
+15. Checkpoint Result
 
 Reusable references:
 

@@ -51,6 +51,14 @@ Before writing any code, review and cross-reference these project docs:
 2. Open `.env.example` and confirm Socket.IO variables are present.
 3. Confirm app still loads (`npm run dev`).
 
+## Deployment Handoff (Mandatory)
+
+1. Commit implementation and docs on the working branch.
+2. Push the branch to `origin`.
+3. Deploy the latest branch state to Vercel.
+4. Record deployed URLs and commit SHA in `Checkpoint Result`.
+5. If deployment is blocked, document blocker and owner in `Checkpoint Result`.
+
 ## Checkpoint Result
 
 - Production Frontend URL: https://collab-board-h4cqo9jgj-thisisyoussefs-projects.vercel.app

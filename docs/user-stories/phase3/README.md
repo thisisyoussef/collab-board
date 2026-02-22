@@ -7,9 +7,10 @@ This folder tracks Phase III execution to close all remaining PRD requirements a
 1. Read the story's Pre-Implementation Audit and complete Preparation Phase before coding.
 2. Implement one story only.
 3. Run local validation (`npm run lint`, `npm run test`, `npm run build`) plus story-specific checks.
-4. Deploy frontend and socket backend to production for stories that change runtime behavior.
-5. Record checkpoint evidence in `phase3-checkpoint-log.md`.
-6. Stop for manual approval before starting the next story.
+4. Commit implementation and docs, then push branch to `origin`.
+5. Deploy frontend and socket backend to production for stories that change runtime behavior.
+6. Record deployed URLs and commit SHA in story `Checkpoint Result` and in `phase3-checkpoint-log.md`.
+7. Stop for manual approval before starting the next story.
 
 ## Preparation Phase (Mandatory)
 

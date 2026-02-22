@@ -165,6 +165,14 @@ This is a docs/contracts story; TDD implementation starts in US3-01. Required te
 2. `npm run test` -> pass
 3. `npm run build` -> pass (existing local Node/Vite warning only)
 
+## Deployment Handoff (Mandatory)
+
+1. Commit implementation and docs on the working branch.
+2. Push the branch to `origin`.
+3. Deploy the latest branch state to Vercel.
+4. Record deployed URLs and commit SHA in `Checkpoint Result`.
+5. If deployment is blocked, document blocker and owner in `Checkpoint Result`.
+
 ## User Checkpoint Test
 
 1. Review this story and confirm each open PRD requirement has exactly one owning story.

@@ -31,6 +31,7 @@ import { AICommandCenter } from '../components/AICommandCenter';
 import { BoardInspectorPanel } from '../components/BoardInspectorPanel';
 import { BoardToolDock, type BoardTool } from '../components/BoardToolDock';
 import { BoardZoomChip } from '../components/BoardZoomChip';
+import { LitigationIntakeDialog } from '../components/LitigationIntakeDialog';
 import { MetricsOverlay } from '../components/MetricsOverlay';
 import { PresenceAvatars } from '../components/PresenceAvatars';
 import { ReconnectBanner } from '../components/ReconnectBanner';
@@ -41,6 +42,7 @@ import { useAICommandCenter } from '../hooks/useAICommandCenter';
 import { useAIExecutor, type AICommitMeta } from '../hooks/useAIExecutor';
 import { useBoardRecents } from '../hooks/useBoardRecents';
 import { useBoardHistory } from '../hooks/useBoardHistory';
+import { useLitigationIntake } from '../hooks/useLitigationIntake';
 import { useBoardSharing } from '../hooks/useBoardSharing';
 import { useCursors } from '../hooks/useCursors';
 import { usePresence } from '../hooks/usePresence';
@@ -112,6 +114,7 @@ import {
   buildRealtimeEventSignature,
   createRealtimeDedupeCache,
 } from '../lib/realtime-dedupe';
+import { buildBoardActionsFromLitigationDraft } from '../lib/litigation-intake-layout';
 import { screenToWorld, worldToScreen } from '../lib/utils';
 import type { BoardObject, BoardObjectsRecord } from '../types/board';
 import type {
@@ -308,6 +311,7 @@ export function Board() {
   const [aiApplyCount, setAiApplyCount] = useState(0);
   const [aiDedupeDrops, setAiDedupeDrops] = useState(0);
   const [isSharePanelOpen, setIsSharePanelOpen] = useState(false);
+  const [isLitigationIntakeOpen, setIsLitigationIntakeOpen] = useState(false);
   const [shareState, setShareState] = useState<'idle' | 'copied' | 'error'>('idle');
 
   const selectedObject =
@@ -371,6 +375,10 @@ export function Board() {
     actorUserId: user?.uid || 'guest',
     getBoardState: serializeBoardObjects,
     commitBoardState: applyAIBoardStateCommit,
+  });
+  const litigationIntake = useLitigationIntake({
+    boardId,
+    user,
   });
   const boardSharing = useBoardSharing({
     boardId,
@@ -533,6 +541,51 @@ export function Board() {
     handleUndoHistory();
   };
 
+  const handleGenerateLitigationDraft = async () => {
+    if (!canEditBoard) {
+      setCanvasNotice('Only editors can generate intake drafts.');
+      return;
+    }
+
+    const generated = await litigationIntake.generateDraft();
+    if (generated) {
+      setCanvasNotice('Litigation draft generated. Review and apply when ready.');
+    }
+  };
+
+  const handleApplyLitigationDraft = async () => {
+    if (!canEditBoard) {
+      setCanvasNotice('Only editors can apply intake drafts.');
+      return;
+    }
+
+    if (!litigationIntake.draft) {
+      setCanvasNotice('Generate an intake draft before applying.');
+      return;
+    }
+
+    const existingObjectIds = Object.keys(serializeBoardObjects());
+    const plan = buildBoardActionsFromLitigationDraft(litigationIntake.draft, {
+      existingObjectIds,
+    });
+
+    if (plan.actions.length === 0) {
+      setCanvasNotice(plan.message);
+      return;
+    }
+
+    const startedAt = performance.now();
+    const applied = await aiExecutor.applyPreviewActions(plan.actions, plan.message);
+    if (!applied) {
+      return;
+    }
+
+    recordAIApplyLatency(performance.now() - startedAt);
+    litigationIntake.resetInput();
+    setIsLitigationIntakeOpen(false);
+    setCanvasNotice('Litigation intake draft applied to board.');
+  };
+
   const textEditorLayout = (() => {
     if (!editingText) {
       return null;
@@ -595,6 +648,7 @@ export function Board() {
     setIsSavingTitle(false);
     setTitleError(null);
     setIsSharePanelOpen(false);
+    setIsLitigationIntakeOpen(false);
     setShareState('idle');
     setBoardAccess(null);
     setBoardMissing(false);
@@ -5258,6 +5312,28 @@ export function Board() {
           void handleSaveToWorkspace();
         }}
       />
+      <LitigationIntakeDialog
+        open={isLitigationIntakeOpen}
+        loading={litigationIntake.loading || aiExecutor.applying}
+        error={litigationIntake.error}
+        message={litigationIntake.message}
+        input={litigationIntake.input}
+        draft={litigationIntake.draft}
+        canGenerate={litigationIntake.canGenerate}
+        uploadedDocuments={litigationIntake.uploadedDocuments}
+        onClose={() => setIsLitigationIntakeOpen(false)}
+        onInputChange={litigationIntake.setInputField}
+        onDocumentsSelected={(files) => {
+          void litigationIntake.addUploadedDocuments(files);
+        }}
+        onRemoveDocument={litigationIntake.removeUploadedDocument}
+        onGenerateDraft={() => {
+          void handleGenerateLitigationDraft();
+        }}
+        onApplyDraft={() => {
+          void handleApplyLitigationDraft();
+        }}
+      />
       <header className="figma-board-topbar">
         <div className="topbar-cluster left">
           <button className="icon-chip" aria-label="Menu">
@@ -5633,6 +5709,14 @@ export function Board() {
           <header className="figma-right-panel-head">
             <p className="figma-right-panel-kicker">Workspace intelligence</p>
             <h2>Review and refine</h2>
+            <button
+              className="secondary-btn litigation-intake-trigger"
+              type="button"
+              disabled={!canEditBoard}
+              onClick={() => setIsLitigationIntakeOpen(true)}
+            >
+              Build board from case input
+            </button>
           </header>
           <AICommandCenter
             state={{

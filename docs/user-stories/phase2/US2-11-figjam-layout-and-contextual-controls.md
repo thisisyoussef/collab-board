@@ -202,6 +202,14 @@ Result (February 19, 2026):
 3. Full suite pass (39 files, 255 tests).
 4. Build pass (Node 18 warning from Vite minimum version + existing chunk-size warning).
 
+## Deployment Handoff (Mandatory)
+
+1. Commit implementation and docs on the working branch.
+2. Push the branch to `origin`.
+3. Deploy the latest branch state to Vercel.
+4. Record deployed URLs and commit SHA in `Checkpoint Result`.
+5. If deployment is blocked, document blocker and owner in `Checkpoint Result`.
+
 ## User Checkpoint Test (Production)
 
 1. Open a board and confirm UI regions:

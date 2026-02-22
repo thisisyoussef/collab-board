@@ -160,6 +160,14 @@ Defect policy:
 2. `npm run test` -> pass (`35` files, `233` tests).
 3. `npm run build` -> pass (known Node/Vite version warning; known chunk-size warning).
 
+## Deployment Handoff (Mandatory)
+
+1. Commit implementation and docs on the working branch.
+2. Push the branch to `origin`.
+3. Deploy the latest branch state to Vercel.
+4. Record deployed URLs and commit SHA in `Checkpoint Result`.
+5. If deployment is blocked, document blocker and owner in `Checkpoint Result`.
+
 ## User Checkpoint Test
 
 1. Prepare 3 sessions:

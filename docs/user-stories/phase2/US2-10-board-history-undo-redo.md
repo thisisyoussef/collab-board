@@ -200,6 +200,14 @@ Red -> Green -> Refactor:
 3. `npm run test` ✅ (37 files, 247 tests)
 4. `npm run build` ✅ (Node/Vite version warning + chunk-size warning only)
 
+## Deployment Handoff (Mandatory)
+
+1. Commit implementation and docs on the working branch.
+2. Push the branch to `origin`.
+3. Deploy the latest branch state to Vercel.
+4. Record deployed URLs and commit SHA in `Checkpoint Result`.
+5. If deployment is blocked, document blocker and owner in `Checkpoint Result`.
+
 ## User Checkpoint Test (When Implemented)
 
 1. Create three manual mutations, then undo three times and verify exact rollback order.

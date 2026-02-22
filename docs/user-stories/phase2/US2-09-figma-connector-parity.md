@@ -290,6 +290,14 @@ Write failing tests first:
    - `/Users/youss/Development/gauntlet/collab-board/src/lib/connector-routing.test.ts`
    - `/Users/youss/Development/gauntlet/collab-board/src/lib/board-object.test.ts`
 
+## Deployment Handoff (Mandatory)
+
+1. Commit implementation and docs on the working branch.
+2. Push the branch to `origin`.
+3. Deploy the latest branch state to Vercel.
+4. Record deployed URLs and commit SHA in `Checkpoint Result`.
+5. If deployment is blocked, document blocker and owner in `Checkpoint Result`.
+
 ## User Checkpoint Test
 
 1. Create straight, bent, curved connectors between multiple shapes.

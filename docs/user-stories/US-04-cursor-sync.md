@@ -214,6 +214,14 @@ function worldToScreen(stage: Konva.Stage, worldPos: { x: number; y: number }) {
 6. Close Browser B. Verify Browser B's cursor disappears from Browser A within 3 seconds.
 7. Pan/zoom the canvas in Browser A. Move cursor in Browser B. Verify the cursor position is still correct relative to canvas objects (world space).
 
+## Deployment Handoff (Mandatory)
+
+1. Commit implementation and docs on the working branch.
+2. Push the branch to `origin`.
+3. Deploy the latest branch state to Vercel.
+4. Record deployed URLs and commit SHA in `Checkpoint Result`.
+5. If deployment is blocked, document blocker and owner in `Checkpoint Result`.
+
 ## Checkpoint Result
 
 - Production Frontend URL: https://collab-board-iota.vercel.app

@@ -219,6 +219,14 @@ The dashboard (`Dashboard.tsx`) uses a 2-column layout:
 7. Go back to dashboard and delete the board, verify it disappears.
 8. Sign out, then try to open `/dashboard` directly and verify redirect to `/`.
 
+## Deployment Handoff (Mandatory)
+
+1. Commit implementation and docs on the working branch.
+2. Push the branch to `origin`.
+3. Deploy the latest branch state to Vercel.
+4. Record deployed URLs and commit SHA in `Checkpoint Result`.
+5. If deployment is blocked, document blocker and owner in `Checkpoint Result`.
+
 ## Checkpoint Result
 
 - Production Frontend URL: https://collab-board-iota.vercel.app

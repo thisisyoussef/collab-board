@@ -329,6 +329,12 @@
   gap: 0.26rem;
 }
 
+.litigation-intake-trigger {
+  margin-top: 0.3rem;
+  width: 100%;
+  justify-content: center;
+}
+
 .figma-right-panel-kicker {
   font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
   font-size: 0.62rem;
@@ -523,6 +529,224 @@
   font-size: 0.73rem;
 }
 
+.litigation-intake-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(12, 18, 28, 0.45);
+  z-index: 9800;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 24px 16px;
+  overflow-y: auto;
+}
+
+.litigation-intake-dialog {
+  width: min(860px, 100%);
+  border: 1px solid #d6d1c8;
+  border-radius: 16px;
+  background: #fffdfa;
+  box-shadow: 0 22px 48px rgba(12, 18, 28, 0.22);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.litigation-intake-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.litigation-intake-kicker {
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #7a705f;
+}
+
+.litigation-intake-header h3 {
+  margin: 2px 0;
+  font-family: 'DM Serif Display', Georgia, serif;
+  font-size: 1.2rem;
+  line-height: 1.2;
+  color: #1e1c19;
+}
+
+.litigation-intake-muted {
+  color: #5f5548;
+  font-size: 0.82rem;
+}
+
+.litigation-intake-example {
+  border: 1px solid #ddd6c9;
+  border-radius: 10px;
+  background: linear-gradient(145deg, #fefcf7, #f6efdf);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.litigation-intake-example strong {
+  color: #2f2a22;
+  font-size: 0.82rem;
+}
+
+.litigation-intake-example p {
+  color: #615748;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.litigation-intake-upload {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.litigation-intake-upload span {
+  color: #443d32;
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.litigation-intake-upload input[type='file'] {
+  border: 1px solid #d6d1c8;
+  border-radius: 10px;
+  background: #faf8f3;
+  color: #1e1c19;
+  padding: 0.55rem 0.62rem;
+  font-size: 0.8rem;
+}
+
+.litigation-intake-file-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid #ddd6c9;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.litigation-intake-file-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+  padding: 10px 12px;
+  border-bottom: 1px solid #eee6d7;
+}
+
+.litigation-intake-file-list li:last-child {
+  border-bottom: 0;
+}
+
+.litigation-intake-file-list strong {
+  color: #1e1c19;
+  font-size: 0.8rem;
+}
+
+.litigation-intake-file-list p {
+  margin-top: 2px;
+  color: #655a4c;
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+.litigation-intake-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.litigation-intake-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.litigation-intake-field span {
+  color: #443d32;
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.litigation-intake-field textarea {
+  width: 100%;
+  border: 1px solid #d6d1c8;
+  border-radius: 10px;
+  background: #faf8f3;
+  color: #1e1c19;
+  padding: 0.6rem 0.64rem;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.litigation-intake-field textarea:focus {
+  outline: 2px solid rgba(212, 149, 43, 0.2);
+  border-color: #d4952b;
+}
+
+.litigation-intake-field textarea:disabled {
+  background: #f3efe6;
+  color: #8a8578;
+}
+
+.litigation-intake-feedback {
+  border: 1px solid #d6d1c8;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 0.78rem;
+}
+
+.litigation-intake-feedback.error {
+  border-color: rgba(196, 69, 62, 0.35);
+  background: rgba(196, 69, 62, 0.08);
+  color: #8f322e;
+}
+
+.litigation-intake-feedback.success {
+  border-color: rgba(74, 143, 204, 0.35);
+  background: rgba(74, 143, 204, 0.08);
+  color: #244f74;
+}
+
+.litigation-intake-preview {
+  border: 1px solid #d6d1c8;
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px 10px;
+}
+
+.litigation-intake-preview h4 {
+  grid-column: 1 / -1;
+  font-size: 0.86rem;
+  color: #1f2937;
+}
+
+.litigation-intake-preview p {
+  color: #5e5346;
+  font-size: 0.76rem;
+}
+
+.litigation-intake-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .property-input,
 .property-textarea,
 .property-select,
@@ -685,5 +909,9 @@
     grid-template-columns: 1fr;
     gap: 0.5rem;
     align-items: flex-start;
+  }
+
+  .litigation-intake-fields {
+    grid-template-columns: 1fr;
   }
 }

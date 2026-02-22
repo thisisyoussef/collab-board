@@ -239,6 +239,14 @@ Replace the static `avatar-badge` in the topbar right cluster with the dynamic `
 3. Close the incognito browser. Within 3 seconds, verify the first browser drops back to 1 avatar, count disappears.
 4. Open the same board in 3 browsers. Verify all 3 show 3 avatars and "3 people".
 
+## Deployment Handoff (Mandatory)
+
+1. Commit implementation and docs on the working branch.
+2. Push the branch to `origin`.
+3. Deploy the latest branch state to Vercel.
+4. Record deployed URLs and commit SHA in `Checkpoint Result`.
+5. If deployment is blocked, document blocker and owner in `Checkpoint Result`.
+
 ## Checkpoint Result
 
 - Production Frontend URL: https://collab-board-iota.vercel.app

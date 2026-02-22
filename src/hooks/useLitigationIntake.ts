@@ -1,0 +1,320 @@
+import type { User } from 'firebase/auth';
+import { useCallback, useRef, useState } from 'react';
+import { logger } from '../lib/logger';
+import type {
+  LitigationIntakeDraft,
+  LitigationIntakeInput,
+  LitigationUploadedDocument,
+} from '../types/litigation';
+
+interface UseLitigationIntakeOptions {
+  boardId?: string;
+  user?: User | null;
+  endpoint?: string;
+}
+
+interface IntakeApiPayload {
+  draft?: unknown;
+  message?: unknown;
+  error?: unknown;
+}
+
+interface UseLitigationIntakeResult {
+  input: LitigationIntakeInput;
+  draft: LitigationIntakeDraft | null;
+  uploadedDocuments: LitigationUploadedDocument[];
+  canGenerate: boolean;
+  loading: boolean;
+  error: string | null;
+  message: string | null;
+  setInputField: (field: keyof LitigationIntakeInput, value: string) => void;
+  addUploadedDocuments: (files: File[]) => Promise<void>;
+  removeUploadedDocument: (documentId: string) => void;
+  clearDraft: () => void;
+  resetInput: () => void;
+  generateDraft: () => Promise<boolean>;
+}
+
+const EMPTY_INPUT: LitigationIntakeInput = {
+  caseSummary: '',
+  claims: '',
+  witnesses: '',
+  evidence: '',
+  timeline: '',
+};
+
+function ensureString(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function ensureDraft(value: unknown): LitigationIntakeDraft {
+  const fallback: LitigationIntakeDraft = {
+    claims: [],
+    evidence: [],
+    witnesses: [],
+    timeline: [],
+    links: [],
+  };
+
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return fallback;
+  }
+
+  const record = value as Record<string, unknown>;
+  return {
+    claims: Array.isArray(record.claims) ? (record.claims as LitigationIntakeDraft['claims']) : [],
+    evidence: Array.isArray(record.evidence) ? (record.evidence as LitigationIntakeDraft['evidence']) : [],
+    witnesses: Array.isArray(record.witnesses) ? (record.witnesses as LitigationIntakeDraft['witnesses']) : [],
+    timeline: Array.isArray(record.timeline) ? (record.timeline as LitigationIntakeDraft['timeline']) : [],
+    links: Array.isArray(record.links) ? (record.links as LitigationIntakeDraft['links']) : [],
+  };
+}
+
+async function parseJsonPayload(response: Response): Promise<IntakeApiPayload> {
+  try {
+    const payload = (await response.json()) as IntakeApiPayload;
+    if (payload && typeof payload === 'object') {
+      return payload;
+    }
+  } catch {
+    // Ignore parse errors and fallback to empty payload.
+  }
+  return {};
+}
+
+function parseApiError(status: number, payloadError: unknown): string {
+  if (typeof payloadError === 'string' && payloadError.trim()) {
+    return payloadError.trim();
+  }
+  if (status === 401) {
+    return 'Sign in again before generating an intake draft.';
+  }
+  if (status === 403) {
+    return 'You need editor access to generate intake drafts.';
+  }
+  return 'Unable to generate intake draft right now.';
+}
+
+function hasAnyInputValue(input: LitigationIntakeInput): boolean {
+  return Object.values(input).some((value) => value.trim().length > 0);
+}
+
+function formatUploadedDocumentLine(document: LitigationUploadedDocument): string {
+  if (!document.excerpt) {
+    return `- ${document.name}`;
+  }
+  return `- ${document.name}: ${document.excerpt}`;
+}
+
+function buildIntakePayload(
+  input: LitigationIntakeInput,
+  uploadedDocuments: LitigationUploadedDocument[],
+): LitigationIntakeInput {
+  if (uploadedDocuments.length === 0) {
+    return input;
+  }
+
+  const uploadedLines = uploadedDocuments.map(formatUploadedDocumentLine);
+  const evidence = [input.evidence.trim(), ...uploadedLines].filter(Boolean).join('\n');
+  const caseSummary =
+    input.caseSummary.trim() ||
+    `Uploaded ${uploadedDocuments.length} document${uploadedDocuments.length === 1 ? '' : 's'} for intake parsing.`;
+
+  return {
+    ...input,
+    caseSummary,
+    evidence,
+  };
+}
+
+function buildDocumentId(file: File): string {
+  const base = file.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'document';
+  return `${base}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function buildExcerpt(content: string): string {
+  return content.replace(/\s+/g, ' ').trim().slice(0, 180);
+}
+
+function isLikelyTextDocument(file: File): boolean {
+  if (file.type.startsWith('text/')) {
+    return true;
+  }
+  return /\.(txt|md|markdown|csv|json|xml|html|htm|rtf)$/i.test(file.name);
+}
+
+async function parseUploadedDocument(file: File): Promise<LitigationUploadedDocument> {
+  const likelyText = isLikelyTextDocument(file);
+  let content = '';
+
+  if (likelyText || file.size <= 1_000_000) {
+    try {
+      content = await file.text();
+    } catch {
+      content = '';
+    }
+  }
+
+  return {
+    id: buildDocumentId(file),
+    name: file.name,
+    mimeType: file.type || 'application/octet-stream',
+    size: file.size,
+    excerpt: buildExcerpt(content),
+    content: content.slice(0, 4000),
+  };
+}
+
+export function useLitigationIntake({
+  boardId,
+  user,
+  endpoint = '/api/ai/intake-to-board',
+}: UseLitigationIntakeOptions): UseLitigationIntakeResult {
+  const [input, setInput] = useState<LitigationIntakeInput>(EMPTY_INPUT);
+  const [draft, setDraft] = useState<LitigationIntakeDraft | null>(null);
+  const [uploadedDocuments, setUploadedDocuments] = useState<LitigationUploadedDocument[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const loadingRef = useRef(false);
+  const inputRef = useRef<LitigationIntakeInput>(EMPTY_INPUT);
+  const uploadedDocumentsRef = useRef<LitigationUploadedDocument[]>([]);
+
+  const setInputField = useCallback((field: keyof LitigationIntakeInput, value: string) => {
+    setInput((previous) => {
+      const next = { ...previous, [field]: value };
+      inputRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const clearDraft = useCallback(() => {
+    setDraft(null);
+    setError(null);
+    setMessage(null);
+  }, []);
+
+  const addUploadedDocuments = useCallback(async (files: File[]) => {
+    if (!Array.isArray(files) || files.length === 0) {
+      return;
+    }
+
+    const parsed = await Promise.all(files.map((file) => parseUploadedDocument(file)));
+    setUploadedDocuments((previous) => {
+      const next = [...previous, ...parsed];
+      uploadedDocumentsRef.current = next;
+      return next;
+    });
+    setError(null);
+    setMessage(null);
+    setDraft(null);
+  }, []);
+
+  const removeUploadedDocument = useCallback((documentId: string) => {
+    setUploadedDocuments((previous) => {
+      const next = previous.filter((entry) => entry.id !== documentId);
+      uploadedDocumentsRef.current = next;
+      return next;
+    });
+    setDraft(null);
+  }, []);
+
+  const resetInput = useCallback(() => {
+    setInput(EMPTY_INPUT);
+    inputRef.current = EMPTY_INPUT;
+    setUploadedDocuments([]);
+    uploadedDocumentsRef.current = [];
+    setDraft(null);
+    setError(null);
+    setMessage(null);
+  }, []);
+
+  const generateDraft = useCallback(async (): Promise<boolean> => {
+    if (loadingRef.current) {
+      return false;
+    }
+
+    if (!boardId) {
+      setError('Board is unavailable. Reload and try again.');
+      return false;
+    }
+
+    const nextInput = inputRef.current;
+    const nextUploadedDocuments = uploadedDocumentsRef.current;
+    const payloadInput = buildIntakePayload(nextInput, nextUploadedDocuments);
+
+    if (!hasAnyInputValue(payloadInput)) {
+      setError('Add at least one intake field before generating.');
+      return false;
+    }
+
+    loadingRef.current = true;
+    setLoading(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+
+      if (user && typeof user.getIdToken === 'function') {
+        try {
+          const token = await user.getIdToken();
+          if (token) {
+            headers.Authorization = `Bearer ${token}`;
+          }
+        } catch {
+          logger.warn('AI', 'Failed to acquire auth token for intake generation request');
+        }
+      }
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          boardId,
+          intake: payloadInput,
+        }),
+      });
+
+      const payload = await parseJsonPayload(response);
+      if (!response.ok) {
+        setDraft(null);
+        setError(parseApiError(response.status, payload.error));
+        return false;
+      }
+
+      const nextDraft = ensureDraft(payload.draft);
+      setDraft(nextDraft);
+      setMessage(
+        ensureString(payload.message).trim() ||
+          `Draft generated with ${nextDraft.claims.length} claims and ${nextDraft.links.length} links.`,
+      );
+      return true;
+    } catch {
+      setDraft(null);
+      setError('Unable to generate intake draft right now.');
+      return false;
+    } finally {
+      loadingRef.current = false;
+      setLoading(false);
+    }
+  }, [boardId, endpoint, user]);
+
+  return {
+    input,
+    draft,
+    uploadedDocuments,
+    canGenerate: hasAnyInputValue(buildIntakePayload(input, uploadedDocuments)),
+    loading,
+    error,
+    message,
+    setInputField,
+    addUploadedDocuments,
+    removeUploadedDocument,
+    clearDraft,
+    resetInput,
+    generateDraft,
+  };
+}

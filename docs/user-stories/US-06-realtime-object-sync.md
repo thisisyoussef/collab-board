@@ -442,6 +442,14 @@ With debounce: write volume is bounded and predictable.
 8. Create 5 objects from each browser (10 total). Wait 5 seconds. Refresh Browser A. Verify all 10 objects reload from Firestore.
 9. Check metrics overlay — "Object avg" should show <100ms with ✅.
 
+## Deployment Handoff (Mandatory)
+
+1. Commit implementation and docs on the working branch.
+2. Push the branch to `origin`.
+3. Deploy the latest branch state to Vercel.
+4. Record deployed URLs and commit SHA in `Checkpoint Result`.
+5. If deployment is blocked, document blocker and owner in `Checkpoint Result`.
+
 ## Checkpoint Result
 
 - Production Frontend URL: https://collab-board-iota.vercel.app

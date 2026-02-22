@@ -176,6 +176,13 @@ describe('Board', () => {
     expect(screen.getByTestId('konva-stage')).toBeInTheDocument();
   });
 
+  it('opens litigation intake dialog from right panel action', async () => {
+    await renderBoardReady();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Build board from case input' }));
+    expect(screen.getByRole('dialog', { name: 'Build board from case input' })).toBeInTheDocument();
+  });
+
   it('renders the new board command shell scaffolding', async () => {
     await renderBoardReady();
 

@@ -21,6 +21,7 @@ A good story should be executable by another engineer without extra decision-mak
 5. Include both local doc audit and web research requirements.
 6. Include TDD failing-test plan before implementation steps.
 7. Include explicit user checkpoint steps.
+8. Include explicit deployment handoff steps (commit, push, Vercel deploy, and recorded URLs/SHA).
 
 ## Preparation Phase Standard
 
@@ -61,8 +62,9 @@ A story document is complete only if it contains all required sections:
 10. TDD Plan
 11. Acceptance Criteria
 12. Local Validation
-13. User Checkpoint Test
-14. Checkpoint Result
+13. Deployment Handoff (Mandatory)
+14. User Checkpoint Test
+15. Checkpoint Result
 
 ## Quality Checklist (Author)
 

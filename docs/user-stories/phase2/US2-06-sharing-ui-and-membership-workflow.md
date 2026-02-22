@@ -173,6 +173,14 @@ Result:
 3. `npm run test` passed (33 files / 217 tests).
 4. `npm run build` passed (Vite Node 20+ warning still present on local Node 18.20.4; artifact built successfully).
 
+## Deployment Handoff (Mandatory)
+
+1. Commit implementation and docs on the working branch.
+2. Push the branch to `origin`.
+3. Deploy the latest branch state to Vercel.
+4. Record deployed URLs and commit SHA in `Checkpoint Result`.
+5. If deployment is blocked, document blocker and owner in `Checkpoint Result`.
+
 ## User Checkpoint Test
 
 1. Owner opens a board, clicks `Share`, changes visibility/roles, and saves.

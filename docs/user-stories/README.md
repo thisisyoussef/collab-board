@@ -55,6 +55,11 @@ All docs live in `docs/` and should be consulted before each story:
 - Phase III stories live in `/Users/youss/Development/gauntlet/collab-board/docs/user-stories/phase3/`.
 - Start from `/Users/youss/Development/gauntlet/collab-board/docs/user-stories/phase3/README.md`.
 
+## Phase IV
+
+- Phase IV stories live in `/Users/youss/Development/gauntlet/collab-board/docs/user-stories/phase4/`.
+- Start from `/Users/youss/Development/gauntlet/collab-board/docs/user-stories/phase4/README.md`.
+
 ## Reusable Story Docs
 
 - Story template: `/Users/youss/Development/gauntlet/collab-board/docs/user-stories/USER-STORY-TEMPLATE.md`
