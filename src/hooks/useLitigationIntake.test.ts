@@ -87,7 +87,30 @@ describe('useLitigationIntake', () => {
     const request = mockFetch.mock.calls[0]?.[1] as RequestInit;
     const parsedBody = JSON.parse(String(request.body));
     expect(parsedBody.intake.evidence).toContain('safety-memo.txt');
+    expect(parsedBody.intake.caseSummary).toBe('');
+    expect(parsedBody.documents).toHaveLength(1);
+    expect(parsedBody.documents[0].name).toBe('safety-memo.txt');
     expect(result.current.message).toBe('Draft generated from uploads.');
+  });
+
+  it('deduplicates repeated uploads by filename and size', async () => {
+    const { result } = renderHook(() =>
+      useLitigationIntake({ boardId: 'board-1', user: { getIdToken: mockGetIdToken } as never }),
+    );
+
+    const first = new File(['Alarm escalation and delayed warning'], 'safety-memo.txt', {
+      type: 'text/plain',
+    });
+    const duplicate = new File(['Alarm escalation and delayed warning'], 'safety-memo.txt', {
+      type: 'text/plain',
+    });
+
+    await act(async () => {
+      await result.current.addUploadedDocuments([first, duplicate]);
+    });
+
+    expect(result.current.uploadedDocuments).toHaveLength(1);
+    expect(result.current.uploadedDocuments[0]?.name).toBe('safety-memo.txt');
   });
 
   it('prevents generation when all output sections are disabled', async () => {

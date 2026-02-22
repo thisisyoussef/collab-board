@@ -151,6 +151,28 @@ function formatUploadedDocumentLine(document: LitigationUploadedDocument): strin
   return `- ${document.name}: ${document.excerpt}`;
 }
 
+function buildUploadSignature(document: LitigationUploadedDocument): string {
+  return `${document.name.toLowerCase()}::${document.size}`;
+}
+
+function dedupeUploadedDocuments(
+  entries: LitigationUploadedDocument[],
+): LitigationUploadedDocument[] {
+  const seen = new Set<string>();
+  const next: LitigationUploadedDocument[] = [];
+
+  entries.forEach((entry) => {
+    const signature = buildUploadSignature(entry);
+    if (seen.has(signature)) {
+      return;
+    }
+    seen.add(signature);
+    next.push(entry);
+  });
+
+  return next;
+}
+
 function buildIntakePayload(
   input: LitigationIntakeInput,
   uploadedDocuments: LitigationUploadedDocument[],
@@ -159,15 +181,12 @@ function buildIntakePayload(
     return input;
   }
 
-  const uploadedLines = uploadedDocuments.map(formatUploadedDocumentLine);
+  const uploadedLines = dedupeUploadedDocuments(uploadedDocuments).map(formatUploadedDocumentLine);
   const evidence = [input.evidence.trim(), ...uploadedLines].filter(Boolean).join('\n');
-  const caseSummary =
-    input.caseSummary.trim() ||
-    `Uploaded ${uploadedDocuments.length} document${uploadedDocuments.length === 1 ? '' : 's'} for intake parsing.`;
 
   return {
     ...input,
-    caseSummary,
+    caseSummary: input.caseSummary.trim(),
     evidence,
   };
 }
@@ -188,16 +207,37 @@ function isLikelyTextDocument(file: File): boolean {
   return /\.(txt|md|markdown|csv|json|xml|html|htm|rtf)$/i.test(file.name);
 }
 
+function looksMostlyBinary(raw: string): boolean {
+  if (!raw) {
+    return false;
+  }
+  const sample = raw.slice(0, 4096);
+  if (!sample) {
+    return false;
+  }
+  let suspicious = 0;
+  for (let index = 0; index < sample.length; index += 1) {
+    const code = sample.charCodeAt(index);
+    const isControl = code < 9 || (code > 13 && code < 32);
+    if (isControl) {
+      suspicious += 1;
+    }
+  }
+  return suspicious / sample.length > 0.08;
+}
+
 async function parseUploadedDocument(file: File): Promise<LitigationUploadedDocument> {
   const likelyText = isLikelyTextDocument(file);
   let content = '';
 
-  if (likelyText || file.size <= 1_000_000) {
-    try {
-      content = await file.text();
-    } catch {
-      content = '';
-    }
+  try {
+    content = await file.slice(0, 600_000).text();
+  } catch {
+    content = '';
+  }
+
+  if (!likelyText && looksMostlyBinary(content)) {
+    content = '';
   }
 
   return {
@@ -273,7 +313,7 @@ export function useLitigationIntake({
 
     const parsed = await Promise.all(files.map((file) => parseUploadedDocument(file)));
     setUploadedDocuments((previous) => {
-      const next = [...previous, ...parsed];
+      const next = dedupeUploadedDocuments([...previous, ...parsed]);
       uploadedDocumentsRef.current = next;
       return next;
     });
@@ -355,6 +395,11 @@ export function useLitigationIntake({
         body: JSON.stringify({
           boardId,
           intake: payloadInput,
+          documents: nextUploadedDocuments.map((document) => ({
+            name: document.name,
+            excerpt: document.excerpt,
+            content: document.content,
+          })),
           preferences: nextPreferences,
         }),
       });

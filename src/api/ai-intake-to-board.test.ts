@@ -181,4 +181,83 @@ describe('AI Intake-to-Board API', () => {
     expect(payload.draft.witnesses).toHaveLength(0);
     expect(payload.draft.timeline.length).toBeGreaterThan(0);
   });
+
+  it('avoids synthetic upload-only claim fallback and de-duplicates repeated evidence lines', async () => {
+    const handler = (await import('../../api/ai/intake-to-board')).default;
+    const req = createMockReq({
+      body: {
+        boardId: 'board-1',
+        intake: {
+          caseSummary: 'Uploaded 2 documents for intake parsing.',
+          claims: '',
+          witnesses: '',
+          evidence:
+            '- 2024-high-school-mock-trial-case-and-exhibits.pdf\n- 2024-high-school-mock-trial-case-and-exhibits.pdf',
+          timeline: '',
+        },
+        preferences: {
+          objective: 'board_overview',
+          includeClaims: true,
+          includeEvidence: true,
+          includeWitnesses: true,
+          includeTimeline: true,
+        },
+      },
+    });
+    const res = createMockRes();
+
+    await handler(req as never, res as never);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(payload.draft.evidence).toHaveLength(1);
+    expect(payload.draft.claims).toHaveLength(1);
+    expect(payload.draft.claims[0].title).not.toContain('Uploaded');
+    expect(payload.draft.links).toHaveLength(1);
+  });
+
+  it('extracts claims/evidence/witness/timeline from structured uploaded overview text', async () => {
+    const handler = (await import('../../api/ai/intake-to-board')).default;
+    const req = createMockReq({
+      body: {
+        boardId: 'board-1',
+        intake: {
+          caseSummary: '',
+          claims: '',
+          witnesses: '',
+          evidence: '',
+          timeline: '',
+        },
+        documents: [
+          {
+            name: 'case-overview.txt',
+            excerpt:
+              'Claims: First-degree murder charge with deliberate design elements\n' +
+              'Evidence/Exhibits: 12 exhibits including financial records, buy-sell agreement, autopsy report\n' +
+              'Witness Statements: 6 sworn witnesses with contradictions across testimony\n' +
+              'Timeline: Events span Feb 27 – March 28, 2023 with key dates',
+            content: '',
+          },
+        ],
+        preferences: {
+          objective: 'board_overview',
+          includeClaims: true,
+          includeEvidence: true,
+          includeWitnesses: true,
+          includeTimeline: true,
+        },
+      },
+    });
+    const res = createMockRes();
+
+    await handler(req as never, res as never);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(payload.draft.claims.length).toBeGreaterThan(0);
+    expect(payload.draft.claims[0].title).toContain('First-degree murder charge');
+    expect(payload.draft.evidence.length).toBeGreaterThan(0);
+    expect(payload.draft.witnesses.length).toBeGreaterThan(0);
+    expect(payload.draft.timeline.length).toBeGreaterThan(0);
+  });
 });

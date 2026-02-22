@@ -15,6 +15,12 @@ interface LitigationIntakeInput {
   timeline: string;
 }
 
+interface LitigationUploadedDocumentInput {
+  name: string;
+  excerpt: string;
+  content: string;
+}
+
 interface LitigationIntakePreferences {
   objective: LitigationIntakeObjective;
   includeClaims: boolean;
@@ -74,6 +80,8 @@ interface BoardDocData {
 }
 
 const MAX_LIST_ITEMS = 24;
+const MAX_DOCUMENTS = 20;
+const MAX_DOCUMENT_TEXT_LENGTH = 6_000;
 const DEFAULT_PREFERENCES: LitigationIntakePreferences = {
   objective: 'board_overview',
   includeClaims: true,
@@ -130,6 +138,10 @@ function asString(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
+function isSyntheticUploadSummary(value: string): boolean {
+  return /^uploaded\s+\d+\s+documents?\s+for intake parsing\.?$/i.test(value.trim());
+}
+
 function sanitizeIdPart(value: string, fallbackPrefix: string): string {
   const normalized = value
     .toLowerCase()
@@ -173,15 +185,40 @@ function parseList(value: string): string[] {
     .slice(0, MAX_LIST_ITEMS);
 }
 
+function dedupeNormalizedLines(lines: string[]): string[] {
+  const seen = new Set<string>();
+  const next: string[] = [];
+
+  lines.forEach((line) => {
+    const key = line.toLowerCase();
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    next.push(line);
+  });
+
+  return next;
+}
+
 function splitTitleAndDetails(value: string): { title: string; detail?: string } {
-  const match = value.match(/^([^:–-]+)\s*[:–-]\s*(.+)$/);
-  if (!match) {
-    return { title: value.trim() };
+  const colonMatch = value.match(/^([^:]+?)\s*:\s*(.+)$/);
+  if (colonMatch) {
+    return {
+      title: colonMatch[1]?.trim() || value.trim(),
+      detail: colonMatch[2]?.trim() || undefined,
+    };
   }
-  return {
-    title: match[1]?.trim() || value.trim(),
-    detail: match[2]?.trim() || undefined,
-  };
+
+  const dashMatch = value.match(/^(.+?)\s[–-]\s(.+)$/);
+  if (dashMatch) {
+    return {
+      title: dashMatch[1]?.trim() || value.trim(),
+      detail: dashMatch[2]?.trim() || undefined,
+    };
+  }
+
+  return { title: value.trim() };
 }
 
 function splitCitation(value: string): { text: string; citation?: string } {
@@ -198,10 +235,11 @@ function splitCitation(value: string): { text: string; citation?: string } {
 }
 
 function buildClaims(input: LitigationIntakeInput, usedIds: Set<string>): LitigationDraftClaim[] {
-  const claimLines = parseList(input.claims);
+  const claimLines = dedupeNormalizedLines(parseList(input.claims));
+  const caseSummary = input.caseSummary.trim();
 
-  if (claimLines.length === 0 && input.caseSummary.trim()) {
-    const fallback = input.caseSummary
+  if (claimLines.length === 0 && caseSummary && !isSyntheticUploadSummary(caseSummary)) {
+    const fallback = caseSummary
       .split(/[.;]\s+/)
       .map((part) => part.trim())
       .filter(Boolean)
@@ -224,18 +262,30 @@ function buildClaims(input: LitigationIntakeInput, usedIds: Set<string>): Litiga
 }
 
 function buildEvidence(input: LitigationIntakeInput, usedIds: Set<string>): LitigationDraftEvidence[] {
-  return parseList(input.evidence).map((line, index) => {
+  const lines = parseList(input.evidence);
+  const seen = new Set<string>();
+  const evidence: LitigationDraftEvidence[] = [];
+
+  lines.forEach((line, index) => {
     const parsed = splitCitation(line);
+    const signature = `${parsed.text.toLowerCase()}::${(parsed.citation || '').toLowerCase()}`;
+    if (seen.has(signature)) {
+      return;
+    }
+    seen.add(signature);
+
     const id = ensureUniqueId(
       `evidence-${sanitizeIdPart(parsed.text || `evidence-${index + 1}`, 'evidence')}`,
       usedIds,
     );
-    return {
+    evidence.push({
       id,
       label: parsed.text.slice(0, 160),
       ...(parsed.citation ? { citation: parsed.citation.slice(0, 160) } : {}),
-    };
+    });
   });
+
+  return evidence;
 }
 
 function buildWitnesses(input: LitigationIntakeInput, usedIds: Set<string>): LitigationDraftWitness[] {
@@ -284,6 +334,129 @@ function buildTimeline(input: LitigationIntakeInput, usedIds: Set<string>): Liti
       event: parsed.event,
     };
   });
+}
+
+function buildFallbackClaimFromEvidence(
+  evidence: LitigationDraftEvidence[],
+  usedIds: Set<string>,
+): LitigationDraftClaim[] {
+  if (evidence.length === 0) {
+    return [];
+  }
+
+  const firstEvidence = evidence[0]?.label || 'uploaded evidence';
+  const titleSeed = firstEvidence
+    .replace(/\.[a-z0-9]{1,8}$/i, '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const title =
+    (titleSeed ? titleSeed.charAt(0).toUpperCase() + titleSeed.slice(1) : 'Primary case theory').slice(0, 120);
+
+  const id = ensureUniqueId(
+    `claim-${sanitizeIdPart(title || 'claim-from-evidence', 'claim')}`,
+    usedIds,
+  );
+  return [
+    {
+      id,
+      title,
+      summary: 'Auto-generated from uploaded evidence. Refine this claim language for litigation strategy.',
+    },
+  ];
+}
+
+function appendSectionLine(existing: string, line: string): string {
+  const cleaned = cleanListLine(line);
+  if (!cleaned) {
+    return existing;
+  }
+  const merged = dedupeNormalizedLines([...(existing ? parseList(existing) : []), cleaned]);
+  return merged.join('\n');
+}
+
+function extractStructuredSectionsFromText(text: string): Partial<LitigationIntakeInput> {
+  const sections: Partial<LitigationIntakeInput> = {};
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  lines.forEach((line) => {
+    let match = line.match(/^claims?:\s*(.+)$/i);
+    if (match?.[1]) {
+      sections.claims = appendSectionLine(sections.claims || '', match[1]);
+      return;
+    }
+
+    match = line.match(/^(?:evidence(?:\/exhibits?)?|exhibits?):\s*(.+)$/i);
+    if (match?.[1]) {
+      sections.evidence = appendSectionLine(sections.evidence || '', match[1]);
+      return;
+    }
+
+    match = line.match(/^(?:witness(?:\s+statements?)?|witnesses?):\s*(.+)$/i);
+    if (match?.[1]) {
+      sections.witnesses = appendSectionLine(sections.witnesses || '', match[1]);
+      return;
+    }
+
+    match = line.match(/^timeline:\s*(.+)$/i);
+    if (match?.[1]) {
+      sections.timeline = appendSectionLine(sections.timeline || '', match[1]);
+      return;
+    }
+
+    match = line.match(/^(?:overview|case summary|summary):\s*(.+)$/i);
+    if (match?.[1]) {
+      sections.caseSummary = appendSectionLine(sections.caseSummary || '', match[1]);
+    }
+  });
+
+  return sections;
+}
+
+function normalizeDocuments(raw: unknown): LitigationUploadedDocumentInput[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw
+    .filter((entry) => entry && typeof entry === 'object' && !Array.isArray(entry))
+    .slice(0, MAX_DOCUMENTS)
+    .map((entry) => {
+      const record = entry as Record<string, unknown>;
+      return {
+        name: asString(record.name).trim(),
+        excerpt: asString(record.excerpt).slice(0, MAX_DOCUMENT_TEXT_LENGTH),
+        content: asString(record.content).slice(0, MAX_DOCUMENT_TEXT_LENGTH),
+      };
+    })
+    .filter((entry) => entry.name || entry.excerpt || entry.content);
+}
+
+function mergeIntakeWithDocuments(
+  input: LitigationIntakeInput,
+  documents: LitigationUploadedDocumentInput[],
+): LitigationIntakeInput {
+  if (documents.length === 0) {
+    return input;
+  }
+
+  const extractedFromDocuments = extractStructuredSectionsFromText(
+    documents
+      .map((entry) => [entry.excerpt, entry.content].filter(Boolean).join('\n'))
+      .filter(Boolean)
+      .join('\n'),
+  );
+
+  return {
+    caseSummary: input.caseSummary || extractedFromDocuments.caseSummary || '',
+    claims: input.claims || extractedFromDocuments.claims || '',
+    witnesses: input.witnesses || extractedFromDocuments.witnesses || '',
+    evidence: [input.evidence, extractedFromDocuments.evidence || ''].filter(Boolean).join('\n'),
+    timeline: input.timeline || extractedFromDocuments.timeline || '',
+  };
 }
 
 function buildLinks(
@@ -335,10 +508,14 @@ function parseIntakeDraft(
   preferences: LitigationIntakePreferences,
 ): LitigationIntakeDraft {
   const usedIds = new Set<string>();
-  const claims = preferences.includeClaims ? buildClaims(input, usedIds) : [];
+  let claims = preferences.includeClaims ? buildClaims(input, usedIds) : [];
   const evidence = preferences.includeEvidence ? buildEvidence(input, usedIds) : [];
   const witnesses = preferences.includeWitnesses ? buildWitnesses(input, usedIds) : [];
   const timeline = preferences.includeTimeline ? buildTimeline(input, usedIds) : [];
+
+  if (preferences.includeClaims && claims.length === 0 && evidence.length > 0) {
+    claims = buildFallbackClaimFromEvidence(evidence, usedIds);
+  }
 
   const draft: LitigationIntakeDraft = {
     claims,
@@ -489,8 +666,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const intake = normalizeInput(bodyRecord.intake);
+  const documents = normalizeDocuments(bodyRecord.documents);
+  const mergedInput = mergeIntakeWithDocuments(intake, documents);
   const preferences = normalizePreferences(bodyRecord.preferences);
-  const draft = parseIntakeDraft(intake, preferences);
+  const draft = parseIntakeDraft(mergedInput, preferences);
 
   return res.status(200).json({
     message: `Parsed intake for ${preferences.objective} into ${draft.claims.length} claims, ${draft.evidence.length} evidence items, ${draft.witnesses.length} witnesses, and ${draft.timeline.length} timeline events.`,

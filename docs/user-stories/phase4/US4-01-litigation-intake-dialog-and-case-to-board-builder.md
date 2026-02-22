@@ -203,4 +203,5 @@ Red -> Green -> Refactor:
   - Added direct document upload in intake dialog, including upload-only generation path (no manual typing required).
   - Added authenticated intake parse endpoint (`/api/ai/intake-to-board`) with board role enforcement.
   - Added deterministic draft-to-actions layout engine and wired apply through existing AI executor commit path.
+  - Fix-forward (February 22, 2026): deduplicated repeated uploads, removed synthetic upload placeholder claim fallback, and added structured section extraction (`Claims:`, `Evidence/Exhibits:`, `Witness Statements:`, `Timeline:`) from uploaded document text passed to intake API.
   - TDD evidence captured via targeted tests for dialog, hook, API route, layout engine, and board entrypoint.
