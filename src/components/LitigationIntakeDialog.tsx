@@ -225,6 +225,9 @@ export function LitigationIntakeDialog({
             aria-label="Upload documents"
             type="file"
             multiple
+            onClick={(event) => {
+              event.currentTarget.value = '';
+            }}
             onChange={(event) => {
               const files = Array.from(event.currentTarget.files || []);
               if (files.length > 0) {
