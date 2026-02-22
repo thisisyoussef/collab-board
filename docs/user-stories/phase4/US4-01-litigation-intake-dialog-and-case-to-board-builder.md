@@ -195,8 +195,8 @@ Red -> Green -> Refactor:
 
 ## Checkpoint Result
 
-- Production Frontend URL: Pending
-- Production Socket URL: Pending
+- Production Frontend URL: https://collab-board-iota.vercel.app
+- Production Socket URL: https://collab-board-0948.onrender.com
 - User Validation: Pending
 - Notes:
   - Implemented intake dialog UI and board entrypoint (`Build board from case input`).
@@ -204,4 +204,6 @@ Red -> Green -> Refactor:
   - Added authenticated intake parse endpoint (`/api/ai/intake-to-board`) with board role enforcement.
   - Added deterministic draft-to-actions layout engine and wired apply through existing AI executor commit path.
   - Fix-forward (February 22, 2026): deduplicated repeated uploads, removed synthetic upload placeholder claim fallback, and added structured section extraction (`Claims:`, `Evidence/Exhibits:`, `Witness Statements:`, `Timeline:`) from uploaded document text passed to intake API.
+  - Commit: `77fd038` (pushed to `origin/main` on February 22, 2026).
+  - Vercel production deploy: `https://collab-board-7fqrva1wy-thisisyoussefs-projects.vercel.app`, aliased to `https://collab-board-iota.vercel.app`.
   - TDD evidence captured via targeted tests for dialog, hook, API route, layout engine, and board entrypoint.
