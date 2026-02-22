@@ -1,4 +1,10 @@
 export type LitigationRelation = 'supports' | 'contradicts' | 'depends_on';
+export type LitigationIntakeObjective =
+  | 'board_overview'
+  | 'chronology'
+  | 'contradictions'
+  | 'witness_prep';
+export type LitigationSectionKey = 'claims' | 'evidence' | 'witnesses' | 'timeline';
 
 export interface LitigationIntakeInput {
   caseSummary: string;
@@ -6,6 +12,14 @@ export interface LitigationIntakeInput {
   witnesses: string;
   evidence: string;
   timeline: string;
+}
+
+export interface LitigationIntakePreferences {
+  objective: LitigationIntakeObjective;
+  includeClaims: boolean;
+  includeEvidence: boolean;
+  includeWitnesses: boolean;
+  includeTimeline: boolean;
 }
 
 export interface LitigationDraftClaim {

@@ -33,6 +33,13 @@ function createMockReq(overrides: Record<string, unknown> = {}) {
         evidence: '- Ex.12 Internal Memo at p.3',
         timeline: '- Mar 2024: Repeated alarms',
       },
+      preferences: {
+        objective: 'board_overview',
+        includeClaims: true,
+        includeEvidence: true,
+        includeWitnesses: true,
+        includeTimeline: true,
+      },
     },
     ...overrides,
   };
@@ -140,5 +147,38 @@ describe('AI Intake-to-Board API', () => {
     expect(payload.draft.claims.length).toBeGreaterThan(0);
     expect(payload.draft.evidence.length).toBeGreaterThan(0);
     expect(payload.draft.witnesses.length).toBeGreaterThan(0);
+  });
+
+  it('applies include-section filters from preferences', async () => {
+    const handler = (await import('../../api/ai/intake-to-board')).default;
+    const req = createMockReq({
+      body: {
+        boardId: 'board-1',
+        intake: {
+          caseSummary: 'Case summary for chronology lane only.',
+          claims: '- Design defect',
+          witnesses: '- Dr. Lee: Alarm issue',
+          evidence: '- Ex.12 Internal Memo',
+          timeline: '- Mar 2024: Repeated alarms',
+        },
+        preferences: {
+          objective: 'chronology',
+          includeClaims: false,
+          includeEvidence: false,
+          includeWitnesses: false,
+          includeTimeline: true,
+        },
+      },
+    });
+    const res = createMockRes();
+
+    await handler(req as never, res as never);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(payload.draft.claims).toHaveLength(0);
+    expect(payload.draft.evidence).toHaveLength(0);
+    expect(payload.draft.witnesses).toHaveLength(0);
+    expect(payload.draft.timeline.length).toBeGreaterThan(0);
   });
 });

@@ -5,6 +5,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { normalizeBoardRole, resolveBoardAccess } from '../../src/lib/access.js';
 
 type LitigationRelation = 'supports' | 'contradicts' | 'depends_on';
+type LitigationIntakeObjective = 'board_overview' | 'chronology' | 'contradictions' | 'witness_prep';
 
 interface LitigationIntakeInput {
   caseSummary: string;
@@ -12,6 +13,14 @@ interface LitigationIntakeInput {
   witnesses: string;
   evidence: string;
   timeline: string;
+}
+
+interface LitigationIntakePreferences {
+  objective: LitigationIntakeObjective;
+  includeClaims: boolean;
+  includeEvidence: boolean;
+  includeWitnesses: boolean;
+  includeTimeline: boolean;
 }
 
 interface LitigationDraftClaim {
@@ -65,6 +74,13 @@ interface BoardDocData {
 }
 
 const MAX_LIST_ITEMS = 24;
+const DEFAULT_PREFERENCES: LitigationIntakePreferences = {
+  objective: 'board_overview',
+  includeClaims: true,
+  includeEvidence: true,
+  includeWitnesses: true,
+  includeTimeline: true,
+};
 
 function getFirebasePrivateKey(): string | null {
   const value = process.env.FIREBASE_PRIVATE_KEY;
@@ -270,7 +286,10 @@ function buildTimeline(input: LitigationIntakeInput, usedIds: Set<string>): Liti
   });
 }
 
-function buildLinks(draft: LitigationIntakeDraft): LitigationDraftLink[] {
+function buildLinks(
+  draft: LitigationIntakeDraft,
+  objective: LitigationIntakeObjective,
+): LitigationDraftLink[] {
   const firstClaim = draft.claims[0];
   if (!firstClaim) {
     return [];
@@ -291,8 +310,11 @@ function buildLinks(draft: LitigationIntakeDraft): LitigationDraftLink[] {
     links.push({
       fromId: entry.id,
       toId: firstClaim.id,
-      relation: 'supports',
-      reason: 'Witness statement linked during intake parsing',
+      relation: objective === 'contradictions' ? 'contradicts' : 'supports',
+      reason:
+        objective === 'contradictions'
+          ? 'Witness contradiction review objective selected'
+          : 'Witness statement linked during intake parsing',
     });
   });
 
@@ -308,12 +330,15 @@ function buildLinks(draft: LitigationIntakeDraft): LitigationDraftLink[] {
   return links;
 }
 
-function parseIntakeDraft(input: LitigationIntakeInput): LitigationIntakeDraft {
+function parseIntakeDraft(
+  input: LitigationIntakeInput,
+  preferences: LitigationIntakePreferences,
+): LitigationIntakeDraft {
   const usedIds = new Set<string>();
-  const claims = buildClaims(input, usedIds);
-  const evidence = buildEvidence(input, usedIds);
-  const witnesses = buildWitnesses(input, usedIds);
-  const timeline = buildTimeline(input, usedIds);
+  const claims = preferences.includeClaims ? buildClaims(input, usedIds) : [];
+  const evidence = preferences.includeEvidence ? buildEvidence(input, usedIds) : [];
+  const witnesses = preferences.includeWitnesses ? buildWitnesses(input, usedIds) : [];
+  const timeline = preferences.includeTimeline ? buildTimeline(input, usedIds) : [];
 
   const draft: LitigationIntakeDraft = {
     claims,
@@ -322,7 +347,7 @@ function parseIntakeDraft(input: LitigationIntakeInput): LitigationIntakeDraft {
     timeline,
     links: [],
   };
-  draft.links = buildLinks(draft);
+  draft.links = buildLinks(draft, preferences.objective);
   return draft;
 }
 
@@ -338,6 +363,57 @@ function normalizeInput(raw: unknown): LitigationIntakeInput {
     witnesses: asString(record.witnesses).trim(),
     evidence: asString(record.evidence).trim(),
     timeline: asString(record.timeline).trim(),
+  };
+}
+
+function normalizePreferences(raw: unknown): LitigationIntakePreferences {
+  const record =
+    raw && typeof raw === 'object' && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>)
+      : {};
+
+  const objectiveRaw = asString(record.objective).trim();
+  const objective: LitigationIntakeObjective =
+    objectiveRaw === 'chronology' ||
+    objectiveRaw === 'contradictions' ||
+    objectiveRaw === 'witness_prep'
+      ? objectiveRaw
+      : 'board_overview';
+
+  const includeClaims =
+    typeof record.includeClaims === 'boolean'
+      ? record.includeClaims
+      : DEFAULT_PREFERENCES.includeClaims;
+  const includeEvidence =
+    typeof record.includeEvidence === 'boolean'
+      ? record.includeEvidence
+      : DEFAULT_PREFERENCES.includeEvidence;
+  const includeWitnesses =
+    typeof record.includeWitnesses === 'boolean'
+      ? record.includeWitnesses
+      : DEFAULT_PREFERENCES.includeWitnesses;
+  const includeTimeline =
+    typeof record.includeTimeline === 'boolean'
+      ? record.includeTimeline
+      : DEFAULT_PREFERENCES.includeTimeline;
+
+  const hasAnySection = includeClaims || includeEvidence || includeWitnesses || includeTimeline;
+  if (!hasAnySection) {
+    return {
+      objective,
+      includeClaims: true,
+      includeEvidence: true,
+      includeWitnesses: true,
+      includeTimeline: true,
+    };
+  }
+
+  return {
+    objective,
+    includeClaims,
+    includeEvidence,
+    includeWitnesses,
+    includeTimeline,
   };
 }
 
@@ -413,10 +489,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const intake = normalizeInput(bodyRecord.intake);
-  const draft = parseIntakeDraft(intake);
+  const preferences = normalizePreferences(bodyRecord.preferences);
+  const draft = parseIntakeDraft(intake, preferences);
 
   return res.status(200).json({
-    message: `Parsed intake into ${draft.claims.length} claims, ${draft.evidence.length} evidence items, ${draft.witnesses.length} witnesses, and ${draft.timeline.length} timeline events.`,
+    message: `Parsed intake for ${preferences.objective} into ${draft.claims.length} claims, ${draft.evidence.length} evidence items, ${draft.witnesses.length} witnesses, and ${draft.timeline.length} timeline events.`,
     draft,
   });
 }

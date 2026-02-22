@@ -19,6 +19,8 @@ function renderDialog(overrides: Partial<ComponentProps<typeof LitigationIntakeD
     onInputChange: vi.fn(),
     onDocumentsSelected: vi.fn(),
     onRemoveDocument: vi.fn(),
+    onObjectiveChange: vi.fn(),
+    onSectionToggle: vi.fn(),
   };
 
   render(
@@ -29,6 +31,13 @@ function renderDialog(overrides: Partial<ComponentProps<typeof LitigationIntakeD
       input={emptyInput}
       draft={null}
       canGenerate={false}
+      objective="board_overview"
+      includedSections={{
+        claims: true,
+        evidence: true,
+        witnesses: true,
+        timeline: true,
+      }}
       uploadedDocuments={[]}
       {...handlers}
       {...overrides}
@@ -43,13 +52,17 @@ describe('LitigationIntakeDialog', () => {
     renderDialog();
 
     expect(screen.getByRole('dialog', { name: 'Build board from case input' })).toBeInTheDocument();
-    expect(screen.getByLabelText('Case summary')).toBeInTheDocument();
-    expect(screen.getByLabelText('Claims')).toBeInTheDocument();
-    expect(screen.getByLabelText('Witness excerpts')).toBeInTheDocument();
-    expect(screen.getByLabelText('Evidence / exhibits')).toBeInTheDocument();
-    expect(screen.getByLabelText('Timeline notes')).toBeInTheDocument();
+    expect(screen.getByLabelText('Case summary', { selector: 'textarea' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Claims', { selector: 'textarea' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Witness excerpts', { selector: 'textarea' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Evidence / exhibits', { selector: 'textarea' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Timeline notes', { selector: 'textarea' })).toBeInTheDocument();
     expect(screen.getByLabelText('Upload documents')).toBeInTheDocument();
     expect(screen.getByText('Need an example input?')).toBeInTheDocument();
+    expect(screen.getByText('What should this board focus on?')).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /Case strategy overview/i })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Claims' })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Timeline' })).toBeInTheDocument();
   });
 
   it('disables generate when all inputs are empty', () => {
@@ -80,6 +93,16 @@ describe('LitigationIntakeDialog', () => {
     expect(onDocumentsSelected).toHaveBeenCalledWith([file]);
   });
 
+  it('calls objective and section handlers when options change', () => {
+    const { onObjectiveChange, onSectionToggle } = renderDialog();
+
+    fireEvent.click(screen.getByRole('radio', { name: /Witness contradiction review/i }));
+    expect(onObjectiveChange).toHaveBeenCalledWith('contradictions');
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Timeline' }));
+    expect(onSectionToggle).toHaveBeenCalledWith('timeline');
+  });
+
   it('renders preview and apply action when draft exists', () => {
     const draft: LitigationIntakeDraft = {
       claims: [{ id: 'c1', title: 'Design defect' }],
@@ -93,6 +116,13 @@ describe('LitigationIntakeDialog', () => {
       draft,
       canGenerate: true,
       input: { ...emptyInput, caseSummary: 'case' },
+      objective: 'chronology',
+      includedSections: {
+        claims: true,
+        evidence: true,
+        witnesses: false,
+        timeline: true,
+      },
       uploadedDocuments: [
         {
           id: 'doc-1',

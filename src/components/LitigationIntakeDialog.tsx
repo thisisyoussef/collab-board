@@ -1,6 +1,8 @@
 import type {
   LitigationIntakeDraft,
   LitigationIntakeInput,
+  LitigationIntakeObjective,
+  LitigationSectionKey,
   LitigationUploadedDocument,
 } from '../types/litigation';
 
@@ -14,9 +16,13 @@ interface LitigationIntakeDialogProps {
   input: LitigationIntakeInput;
   draft: LitigationIntakeDraft | null;
   canGenerate: boolean;
+  objective: LitigationIntakeObjective;
+  includedSections: Record<LitigationSectionKey, boolean>;
   uploadedDocuments: LitigationUploadedDocument[];
   onClose: () => void;
   onInputChange: (field: InputField, value: string) => void;
+  onObjectiveChange: (objective: LitigationIntakeObjective) => void;
+  onSectionToggle: (section: LitigationSectionKey) => void;
   onDocumentsSelected: (files: File[]) => void;
   onRemoveDocument: (documentId: string) => void;
   onGenerateDraft: () => void;
@@ -69,6 +75,40 @@ const FIELD_CONFIG: FieldConfig[] = [
   },
 ];
 
+const OBJECTIVE_OPTIONS: Array<{
+  value: LitigationIntakeObjective;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: 'board_overview',
+    label: 'Case strategy overview',
+    description: 'Build a balanced claims/evidence/witness/timeline board.',
+  },
+  {
+    value: 'chronology',
+    label: 'Chronology and event flow',
+    description: 'Prioritize timeline events and dependencies.',
+  },
+  {
+    value: 'contradictions',
+    label: 'Witness contradiction review',
+    description: 'Emphasize conflicting witness/evidence statements.',
+  },
+  {
+    value: 'witness_prep',
+    label: 'Witness prep pack',
+    description: 'Focus on witness statements tied to supporting exhibits.',
+  },
+];
+
+const SECTION_OPTIONS: Array<{ key: LitigationSectionKey; label: string }> = [
+  { key: 'claims', label: 'Claims' },
+  { key: 'evidence', label: 'Evidence' },
+  { key: 'witnesses', label: 'Witnesses' },
+  { key: 'timeline', label: 'Timeline' },
+];
+
 function hasAnyInputValue(input: LitigationIntakeInput): boolean {
   return Object.values(input).some((value) => value.trim().length > 0);
 }
@@ -81,9 +121,13 @@ export function LitigationIntakeDialog({
   input,
   draft,
   canGenerate,
+  objective,
+  includedSections,
   uploadedDocuments,
   onClose,
   onInputChange,
+  onObjectiveChange,
+  onSectionToggle,
   onDocumentsSelected,
   onRemoveDocument,
   onGenerateDraft,
@@ -125,6 +169,54 @@ export function LitigationIntakeDialog({
             claims/evidence/witness/timeline lanes with connectors.
           </p>
         </div>
+
+        <section className="litigation-intake-options" aria-label="Intake options">
+          <div className="litigation-intake-option-group">
+            <h4>What should this board focus on?</h4>
+            <p>Pick one objective so the generator prioritizes the right structure.</p>
+            <div className="litigation-intake-objective-grid">
+              {OBJECTIVE_OPTIONS.map((option) => {
+                const inputId = `litigation-objective-${option.value}`;
+                return (
+                  <label key={option.value} htmlFor={inputId} className="litigation-intake-choice-card">
+                    <input
+                      id={inputId}
+                      type="radio"
+                      name="litigation-intake-objective"
+                      checked={objective === option.value}
+                      onChange={() => onObjectiveChange(option.value)}
+                      disabled={loading}
+                    />
+                    <span className="litigation-intake-choice-label">{option.label}</span>
+                    <span className="litigation-intake-choice-detail">{option.description}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="litigation-intake-option-group">
+            <h4>What should be included?</h4>
+            <p>Choose exactly which sections should be generated on the board.</p>
+            <div className="litigation-intake-section-toggles">
+              {SECTION_OPTIONS.map((option) => {
+                const inputId = `litigation-section-${option.key}`;
+                return (
+                  <label key={option.key} htmlFor={inputId}>
+                    <input
+                      id={inputId}
+                      type="checkbox"
+                      checked={includedSections[option.key]}
+                      onChange={() => onSectionToggle(option.key)}
+                      disabled={loading}
+                    />
+                    <span>{option.label}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        </section>
 
         <label className="litigation-intake-upload" htmlFor="litigation-documents-upload">
           <span>Upload documents</span>

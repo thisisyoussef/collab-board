@@ -38,6 +38,15 @@ describe('useLitigationIntake', () => {
 
     expect(result.current.draft?.claims).toHaveLength(1);
     expect(result.current.message).toBe('Draft generated.');
+    const request = mockFetch.mock.calls[0]?.[1] as RequestInit;
+    const parsedBody = JSON.parse(String(request.body));
+    expect(parsedBody.preferences).toEqual({
+      objective: 'board_overview',
+      includeClaims: true,
+      includeEvidence: true,
+      includeWitnesses: true,
+      includeTimeline: true,
+    });
   });
 
   it('can generate from uploaded documents without manual text input', async () => {
@@ -79,6 +88,29 @@ describe('useLitigationIntake', () => {
     const parsedBody = JSON.parse(String(request.body));
     expect(parsedBody.intake.evidence).toContain('safety-memo.txt');
     expect(result.current.message).toBe('Draft generated from uploads.');
+  });
+
+  it('prevents generation when all output sections are disabled', async () => {
+    const { result } = renderHook(() =>
+      useLitigationIntake({ boardId: 'board-1', user: { getIdToken: mockGetIdToken } as never }),
+    );
+
+    await act(async () => {
+      result.current.setInputField('caseSummary', 'Case summary text');
+      result.current.toggleSection('claims');
+      result.current.toggleSection('evidence');
+      result.current.toggleSection('witnesses');
+      result.current.toggleSection('timeline');
+    });
+
+    expect(result.current.canGenerate).toBe(false);
+
+    await act(async () => {
+      await result.current.generateDraft();
+    });
+
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(result.current.error).toBe('Select at least one section to include in the board draft.');
   });
 
   it('returns error when board id is missing', async () => {

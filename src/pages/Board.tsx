@@ -5320,9 +5320,13 @@ export function Board() {
         input={litigationIntake.input}
         draft={litigationIntake.draft}
         canGenerate={litigationIntake.canGenerate}
+        objective={litigationIntake.objective}
+        includedSections={litigationIntake.includedSections}
         uploadedDocuments={litigationIntake.uploadedDocuments}
         onClose={() => setIsLitigationIntakeOpen(false)}
         onInputChange={litigationIntake.setInputField}
+        onObjectiveChange={litigationIntake.setObjective}
+        onSectionToggle={litigationIntake.toggleSection}
         onDocumentsSelected={(files) => {
           void litigationIntake.addUploadedDocuments(files);
         }}

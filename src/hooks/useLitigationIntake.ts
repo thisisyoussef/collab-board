@@ -4,6 +4,9 @@ import { logger } from '../lib/logger';
 import type {
   LitigationIntakeDraft,
   LitigationIntakeInput,
+  LitigationIntakeObjective,
+  LitigationIntakePreferences,
+  LitigationSectionKey,
   LitigationUploadedDocument,
 } from '../types/litigation';
 
@@ -23,11 +26,15 @@ interface UseLitigationIntakeResult {
   input: LitigationIntakeInput;
   draft: LitigationIntakeDraft | null;
   uploadedDocuments: LitigationUploadedDocument[];
+  objective: LitigationIntakeObjective;
+  includedSections: Record<LitigationSectionKey, boolean>;
   canGenerate: boolean;
   loading: boolean;
   error: string | null;
   message: string | null;
   setInputField: (field: keyof LitigationIntakeInput, value: string) => void;
+  setObjective: (objective: LitigationIntakeObjective) => void;
+  toggleSection: (section: LitigationSectionKey) => void;
   addUploadedDocuments: (files: File[]) => Promise<void>;
   removeUploadedDocument: (documentId: string) => void;
   clearDraft: () => void;
@@ -41,6 +48,24 @@ const EMPTY_INPUT: LitigationIntakeInput = {
   witnesses: '',
   evidence: '',
   timeline: '',
+};
+
+const DEFAULT_PREFERENCES: LitigationIntakePreferences = {
+  objective: 'board_overview',
+  includeClaims: true,
+  includeEvidence: true,
+  includeWitnesses: true,
+  includeTimeline: true,
+};
+
+const SECTION_TO_PREFERENCE_KEY: Record<
+  LitigationSectionKey,
+  keyof Omit<LitigationIntakePreferences, 'objective'>
+> = {
+  claims: 'includeClaims',
+  evidence: 'includeEvidence',
+  witnesses: 'includeWitnesses',
+  timeline: 'includeTimeline',
 };
 
 function ensureString(value: unknown): string {
@@ -97,6 +122,26 @@ function parseApiError(status: number, payloadError: unknown): string {
 
 function hasAnyInputValue(input: LitigationIntakeInput): boolean {
   return Object.values(input).some((value) => value.trim().length > 0);
+}
+
+function hasEnabledSections(preferences: LitigationIntakePreferences): boolean {
+  return (
+    preferences.includeClaims ||
+    preferences.includeEvidence ||
+    preferences.includeWitnesses ||
+    preferences.includeTimeline
+  );
+}
+
+function toIncludedSections(
+  preferences: LitigationIntakePreferences,
+): Record<LitigationSectionKey, boolean> {
+  return {
+    claims: preferences.includeClaims,
+    evidence: preferences.includeEvidence,
+    witnesses: preferences.includeWitnesses,
+    timeline: preferences.includeTimeline,
+  };
 }
 
 function formatUploadedDocumentLine(document: LitigationUploadedDocument): string {
@@ -172,12 +217,14 @@ export function useLitigationIntake({
 }: UseLitigationIntakeOptions): UseLitigationIntakeResult {
   const [input, setInput] = useState<LitigationIntakeInput>(EMPTY_INPUT);
   const [draft, setDraft] = useState<LitigationIntakeDraft | null>(null);
+  const [preferences, setPreferences] = useState<LitigationIntakePreferences>(DEFAULT_PREFERENCES);
   const [uploadedDocuments, setUploadedDocuments] = useState<LitigationUploadedDocument[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const loadingRef = useRef(false);
   const inputRef = useRef<LitigationIntakeInput>(EMPTY_INPUT);
+  const preferencesRef = useRef<LitigationIntakePreferences>(DEFAULT_PREFERENCES);
   const uploadedDocumentsRef = useRef<LitigationUploadedDocument[]>([]);
 
   const setInputField = useCallback((field: keyof LitigationIntakeInput, value: string) => {
@@ -192,6 +239,31 @@ export function useLitigationIntake({
     setDraft(null);
     setError(null);
     setMessage(null);
+  }, []);
+
+  const setObjective = useCallback((objective: LitigationIntakeObjective) => {
+    setPreferences((previous) => {
+      const next = {
+        ...previous,
+        objective,
+      };
+      preferencesRef.current = next;
+      return next;
+    });
+    setDraft(null);
+  }, []);
+
+  const toggleSection = useCallback((section: LitigationSectionKey) => {
+    const preferenceKey = SECTION_TO_PREFERENCE_KEY[section];
+    setPreferences((previous) => {
+      const next = {
+        ...previous,
+        [preferenceKey]: !previous[preferenceKey],
+      };
+      preferencesRef.current = next;
+      return next;
+    });
+    setDraft(null);
   }, []);
 
   const addUploadedDocuments = useCallback(async (files: File[]) => {
@@ -222,6 +294,8 @@ export function useLitigationIntake({
   const resetInput = useCallback(() => {
     setInput(EMPTY_INPUT);
     inputRef.current = EMPTY_INPUT;
+    setPreferences(DEFAULT_PREFERENCES);
+    preferencesRef.current = DEFAULT_PREFERENCES;
     setUploadedDocuments([]);
     uploadedDocumentsRef.current = [];
     setDraft(null);
@@ -241,10 +315,16 @@ export function useLitigationIntake({
 
     const nextInput = inputRef.current;
     const nextUploadedDocuments = uploadedDocumentsRef.current;
+    const nextPreferences = preferencesRef.current;
     const payloadInput = buildIntakePayload(nextInput, nextUploadedDocuments);
 
     if (!hasAnyInputValue(payloadInput)) {
       setError('Add at least one intake field before generating.');
+      return false;
+    }
+
+    if (!hasEnabledSections(nextPreferences)) {
+      setError('Select at least one section to include in the board draft.');
       return false;
     }
 
@@ -275,6 +355,7 @@ export function useLitigationIntake({
         body: JSON.stringify({
           boardId,
           intake: payloadInput,
+          preferences: nextPreferences,
         }),
       });
 
@@ -302,15 +383,21 @@ export function useLitigationIntake({
     }
   }, [boardId, endpoint, user]);
 
+  const canGenerateSections = hasEnabledSections(preferences);
+
   return {
     input,
     draft,
     uploadedDocuments,
-    canGenerate: hasAnyInputValue(buildIntakePayload(input, uploadedDocuments)),
+    objective: preferences.objective,
+    includedSections: toIncludedSections(preferences),
+    canGenerate: hasAnyInputValue(buildIntakePayload(input, uploadedDocuments)) && canGenerateSections,
     loading,
     error,
     message,
     setInputField,
+    setObjective,
+    toggleSection,
     addUploadedDocuments,
     removeUploadedDocument,
     clearDraft,
