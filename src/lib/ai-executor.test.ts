@@ -28,6 +28,7 @@ describe('ai-executor', () => {
           x: 120,
           y: 120,
           color: '#FFEB3B',
+          nodeRole: 'claim',
         },
       },
       {
@@ -53,6 +54,7 @@ describe('ai-executor', () => {
           fromId: 'sticky-1',
           toId: 'rect-1',
           style: 'arrow',
+          relationType: 'supports',
         },
       },
       {
@@ -113,6 +115,8 @@ describe('ai-executor', () => {
     expect(connector?.fromId).toBe('sticky-1');
     expect(connector?.toId).toBe('rect-1');
     expect(connector?.points).toHaveLength(4);
+    expect(sticky?.nodeRole).toBe('claim');
+    expect(connector?.relationType).toBe('supports');
   });
 
   it('accepts createShape plans with missing dimensions by applying defaults', () => {

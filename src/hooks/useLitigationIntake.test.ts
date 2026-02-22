@@ -68,6 +68,7 @@ describe('useLitigationIntake', () => {
     const parsedBody = JSON.parse(String(request.body));
     expect(parsedBody.preferences).toEqual({
       objective: 'board_overview',
+      layoutMode: 'summary',
       includeClaims: true,
       includeEvidence: true,
       includeWitnesses: true,
@@ -117,6 +118,40 @@ describe('useLitigationIntake', () => {
     expect(parsedBody.documents).toHaveLength(1);
     expect(parsedBody.documents[0].name).toBe('safety-memo.txt');
     expect(result.current.message).toBe('Draft generated from uploads.');
+  });
+
+  it('persists selected layout mode in intake preferences payload', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        message: 'Draft generated.',
+        draft: {
+          claims: [{ id: 'c1', title: 'Design defect' }],
+          evidence: [],
+          witnesses: [],
+          timeline: [],
+          links: [],
+        },
+      }),
+    });
+
+    const { result } = renderHook(() =>
+      useLitigationIntake({ boardId: 'board-1', user: { getIdToken: mockGetIdToken } as never }),
+    );
+
+    await act(async () => {
+      result.current.setLayoutMode('expanded');
+      result.current.setInputField('caseSummary', 'Case summary text');
+    });
+
+    await act(async () => {
+      await result.current.generateDraft();
+    });
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const request = mockFetch.mock.calls[0]?.[1] as RequestInit;
+    const parsedBody = JSON.parse(String(request.body));
+    expect(parsedBody.preferences.layoutMode).toBe('expanded');
   });
 
   it('deduplicates repeated uploads by filename and size', async () => {

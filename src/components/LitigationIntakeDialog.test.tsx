@@ -20,6 +20,7 @@ function renderDialog(overrides: Partial<ComponentProps<typeof LitigationIntakeD
     onDocumentsSelected: vi.fn(),
     onRemoveDocument: vi.fn(),
     onObjectiveChange: vi.fn(),
+    onLayoutModeChange: vi.fn(),
     onSectionToggle: vi.fn(),
   };
 
@@ -32,6 +33,7 @@ function renderDialog(overrides: Partial<ComponentProps<typeof LitigationIntakeD
       draft={null}
       canGenerate={false}
       objective="board_overview"
+      layoutMode="summary"
       includedSections={{
         claims: true,
         evidence: true,
@@ -60,7 +62,10 @@ describe('LitigationIntakeDialog', () => {
     expect(screen.getByLabelText('Upload documents')).toBeInTheDocument();
     expect(screen.getByText('Need an example input?')).toBeInTheDocument();
     expect(screen.getByText('What should this board focus on?')).toBeInTheDocument();
+    expect(screen.getByText('How detailed should this first board be?')).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: /Case strategy overview/i })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /Summary layout/i })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /Expanded layout/i })).toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: 'Claims' })).toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: 'Timeline' })).toBeInTheDocument();
   });
@@ -111,11 +116,14 @@ describe('LitigationIntakeDialog', () => {
     expect(screen.getByText('case-overview.txt')).toBeInTheDocument();
   });
 
-  it('calls objective and section handlers when options change', () => {
-    const { onObjectiveChange, onSectionToggle } = renderDialog();
+  it('calls objective, layout mode, and section handlers when options change', () => {
+    const { onObjectiveChange, onLayoutModeChange, onSectionToggle } = renderDialog();
 
     fireEvent.click(screen.getByRole('radio', { name: /Witness contradiction review/i }));
     expect(onObjectiveChange).toHaveBeenCalledWith('contradictions');
+
+    fireEvent.click(screen.getByRole('radio', { name: /Expanded layout/i }));
+    expect(onLayoutModeChange).toHaveBeenCalledWith('expanded');
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'Timeline' }));
     expect(onSectionToggle).toHaveBeenCalledWith('timeline');
@@ -135,6 +143,7 @@ describe('LitigationIntakeDialog', () => {
       canGenerate: true,
       input: { ...emptyInput, caseSummary: 'case' },
       objective: 'chronology',
+      layoutMode: 'expanded',
       includedSections: {
         claims: true,
         evidence: true,

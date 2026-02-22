@@ -3,7 +3,12 @@ import {
   resolveConnectorPoints,
   sanitizeBoardObjectForFirestore,
 } from './board-object';
-import type { BoardObject, BoardObjectsRecord } from '../types/board';
+import type {
+  BoardObject,
+  BoardObjectsRecord,
+  LitigationConnectorRelation,
+  LitigationNodeRole,
+} from '../types/board';
 import type {
   AIActionPlan,
   AIActionPreview,
@@ -97,6 +102,20 @@ function optionalStringFromInput(input: Record<string, unknown>, key: string): s
 function optionalNumberFromInput(input: Record<string, unknown>, key: string): number | undefined {
   const value = Number(input[key]);
   return Number.isFinite(value) ? value : undefined;
+}
+
+function parseLitigationNodeRole(value: string | undefined): LitigationNodeRole | undefined {
+  if (value === 'claim' || value === 'evidence' || value === 'witness' || value === 'timeline_event') {
+    return value;
+  }
+  return undefined;
+}
+
+function parseLitigationRelation(value: string | undefined): LitigationConnectorRelation | undefined {
+  if (value === 'supports' || value === 'contradicts' || value === 'depends_on') {
+    return value;
+  }
+  return undefined;
 }
 
 function toRecordInput(value: unknown): Record<string, unknown> {
@@ -259,6 +278,7 @@ function actionFromPreview(
       color: optionalStringFromInput(input, 'color'),
       width: optionalNumberFromInput(input, 'width'),
       height: optionalNumberFromInput(input, 'height'),
+      nodeRole: parseLitigationNodeRole(optionalStringFromInput(input, 'nodeRole')),
       zIndex: context.nextZIndex,
       createdBy: context.actorUserId,
       updatedAt: context.nowIso,
@@ -342,6 +362,9 @@ function actionFromPreview(
         : undefined;
     const strokeStyleInput = optionalStringFromInput(input, 'strokeStyle');
     const strokeStyle = strokeStyleInput === 'solid' || strokeStyleInput === 'dashed' ? strokeStyleInput : undefined;
+    const relationType = parseLitigationRelation(
+      optionalStringFromInput(input, 'relationType') || optionalStringFromInput(input, 'relation'),
+    );
     const startArrowInput = optionalStringFromInput(input, 'startArrow');
     const startArrow =
       startArrowInput === 'none' ||
@@ -370,6 +393,7 @@ function actionFromPreview(
       connectorType,
       startArrow,
       endArrow,
+      relationType,
       label: optionalStringFromInput(input, 'label'),
       labelPosition: optionalNumberFromInput(input, 'labelPosition'),
       zIndex: context.nextZIndex,

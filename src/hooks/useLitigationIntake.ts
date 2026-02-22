@@ -10,6 +10,7 @@ import type {
   LitigationIntakeDraft,
   LitigationIntakeInput,
   LitigationIntakeObjective,
+  LitigationLayoutMode,
   LitigationIntakePreferences,
   LitigationSectionKey,
   LitigationUploadedDocument,
@@ -32,6 +33,7 @@ interface UseLitigationIntakeResult {
   draft: LitigationIntakeDraft | null;
   uploadedDocuments: LitigationUploadedDocument[];
   objective: LitigationIntakeObjective;
+  layoutMode: LitigationLayoutMode;
   includedSections: Record<LitigationSectionKey, boolean>;
   canGenerate: boolean;
   loading: boolean;
@@ -39,6 +41,7 @@ interface UseLitigationIntakeResult {
   message: string | null;
   setInputField: (field: keyof LitigationIntakeInput, value: string) => void;
   setObjective: (objective: LitigationIntakeObjective) => void;
+  setLayoutMode: (layoutMode: LitigationLayoutMode) => void;
   toggleSection: (section: LitigationSectionKey) => void;
   addUploadedDocuments: (files: File[]) => Promise<void>;
   removeUploadedDocument: (documentId: string) => void;
@@ -57,6 +60,7 @@ const EMPTY_INPUT: LitigationIntakeInput = {
 
 const DEFAULT_PREFERENCES: LitigationIntakePreferences = {
   objective: 'board_overview',
+  layoutMode: 'summary',
   includeClaims: true,
   includeEvidence: true,
   includeWitnesses: true,
@@ -65,7 +69,7 @@ const DEFAULT_PREFERENCES: LitigationIntakePreferences = {
 
 const SECTION_TO_PREFERENCE_KEY: Record<
   LitigationSectionKey,
-  keyof Omit<LitigationIntakePreferences, 'objective'>
+  keyof Omit<LitigationIntakePreferences, 'objective' | 'layoutMode'>
 > = {
   claims: 'includeClaims',
   evidence: 'includeEvidence',
@@ -307,6 +311,18 @@ export function useLitigationIntake({
     setDraft(null);
   }, []);
 
+  const setLayoutMode = useCallback((layoutMode: LitigationLayoutMode) => {
+    setPreferences((previous) => {
+      const next = {
+        ...previous,
+        layoutMode,
+      };
+      preferencesRef.current = next;
+      return next;
+    });
+    setDraft(null);
+  }, []);
+
   const toggleSection = useCallback((section: LitigationSectionKey) => {
     const preferenceKey = SECTION_TO_PREFERENCE_KEY[section];
     setPreferences((previous) => {
@@ -452,6 +468,7 @@ export function useLitigationIntake({
     draft,
     uploadedDocuments,
     objective: preferences.objective,
+    layoutMode: preferences.layoutMode,
     includedSections: toIncludedSections(preferences),
     canGenerate: hasAnyInputValue(buildIntakePayload(input, uploadedDocuments)) && canGenerateSections,
     loading,
@@ -459,6 +476,7 @@ export function useLitigationIntake({
     message,
     setInputField,
     setObjective,
+    setLayoutMode,
     toggleSection,
     addUploadedDocuments,
     removeUploadedDocument,

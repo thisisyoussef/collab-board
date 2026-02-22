@@ -1,6 +1,7 @@
 import type {
   LitigationIntakeDraft,
   LitigationIntakeInput,
+  LitigationLayoutMode,
   LitigationIntakeObjective,
   LitigationSectionKey,
   LitigationUploadedDocument,
@@ -17,11 +18,13 @@ interface LitigationIntakeDialogProps {
   draft: LitigationIntakeDraft | null;
   canGenerate: boolean;
   objective: LitigationIntakeObjective;
+  layoutMode: LitigationLayoutMode;
   includedSections: Record<LitigationSectionKey, boolean>;
   uploadedDocuments: LitigationUploadedDocument[];
   onClose: () => void;
   onInputChange: (field: InputField, value: string) => void;
   onObjectiveChange: (objective: LitigationIntakeObjective) => void;
+  onLayoutModeChange: (layoutMode: LitigationLayoutMode) => void;
   onSectionToggle: (section: LitigationSectionKey) => void;
   onDocumentsSelected: (files: File[]) => void;
   onRemoveDocument: (documentId: string) => void;
@@ -109,6 +112,23 @@ const SECTION_OPTIONS: Array<{ key: LitigationSectionKey; label: string }> = [
   { key: 'timeline', label: 'Timeline' },
 ];
 
+const LAYOUT_MODE_OPTIONS: Array<{
+  value: LitigationLayoutMode;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: 'summary',
+    label: 'Summary layout (recommended)',
+    description: 'Curates key links and collapses overflow into aggregate cards.',
+  },
+  {
+    value: 'expanded',
+    label: 'Expanded layout',
+    description: 'Places every extracted card and connector for full-fidelity review.',
+  },
+];
+
 function hasAnyInputValue(input: LitigationIntakeInput): boolean {
   return Object.values(input).some((value) => value.trim().length > 0);
 }
@@ -122,11 +142,13 @@ export function LitigationIntakeDialog({
   draft,
   canGenerate,
   objective,
+  layoutMode,
   includedSections,
   uploadedDocuments,
   onClose,
   onInputChange,
   onObjectiveChange,
+  onLayoutModeChange,
   onSectionToggle,
   onDocumentsSelected,
   onRemoveDocument,
@@ -185,6 +207,30 @@ export function LitigationIntakeDialog({
                       name="litigation-intake-objective"
                       checked={objective === option.value}
                       onChange={() => onObjectiveChange(option.value)}
+                      disabled={loading}
+                    />
+                    <span className="litigation-intake-choice-label">{option.label}</span>
+                    <span className="litigation-intake-choice-detail">{option.description}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="litigation-intake-option-group">
+            <h4>How detailed should this first board be?</h4>
+            <p>Start concise for readability, or expanded for full source fidelity.</p>
+            <div className="litigation-intake-layout-grid">
+              {LAYOUT_MODE_OPTIONS.map((option) => {
+                const inputId = `litigation-layout-mode-${option.value}`;
+                return (
+                  <label key={option.value} htmlFor={inputId} className="litigation-intake-choice-card">
+                    <input
+                      id={inputId}
+                      type="radio"
+                      name="litigation-intake-layout-mode"
+                      checked={layoutMode === option.value}
+                      onChange={() => onLayoutModeChange(option.value)}
                       disabled={loading}
                     />
                     <span className="litigation-intake-choice-label">{option.label}</span>

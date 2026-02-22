@@ -614,6 +614,8 @@ export function Board() {
     const existingObjectIds = Object.keys(serializeBoardObjects());
     const plan = buildBoardActionsFromLitigationDraft(litigationIntake.draft, {
       existingObjectIds,
+      objective: litigationIntake.objective,
+      layoutMode: litigationIntake.layoutMode,
     });
 
     if (plan.actions.length === 0) {
@@ -5392,11 +5394,13 @@ export function Board() {
         draft={litigationIntake.draft}
         canGenerate={litigationIntake.canGenerate}
         objective={litigationIntake.objective}
+        layoutMode={litigationIntake.layoutMode}
         includedSections={litigationIntake.includedSections}
         uploadedDocuments={litigationIntake.uploadedDocuments}
         onClose={() => setIsLitigationIntakeOpen(false)}
         onInputChange={litigationIntake.setInputField}
         onObjectiveChange={litigationIntake.setObjective}
+        onLayoutModeChange={litigationIntake.setLayoutMode}
         onSectionToggle={litigationIntake.toggleSection}
         onDocumentsSelected={(files) => {
           void litigationIntake.addUploadedDocuments(files);

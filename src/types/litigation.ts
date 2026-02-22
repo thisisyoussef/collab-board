@@ -4,6 +4,7 @@ export type LitigationIntakeObjective =
   | 'chronology'
   | 'contradictions'
   | 'witness_prep';
+export type LitigationLayoutMode = 'summary' | 'expanded';
 export type LitigationSectionKey = 'claims' | 'evidence' | 'witnesses' | 'timeline';
 
 export interface LitigationIntakeInput {
@@ -16,6 +17,7 @@ export interface LitigationIntakeInput {
 
 export interface LitigationIntakePreferences {
   objective: LitigationIntakeObjective;
+  layoutMode: LitigationLayoutMode;
   includeClaims: boolean;
   includeEvidence: boolean;
   includeWitnesses: boolean;

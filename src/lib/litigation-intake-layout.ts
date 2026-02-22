@@ -1,5 +1,10 @@
 import type { AIActionPreview } from '../types/ai';
-import type { LitigationIntakeDraft } from '../types/litigation';
+import type {
+  LitigationIntakeDraft,
+  LitigationIntakeObjective,
+  LitigationLayoutMode,
+} from '../types/litigation';
+import { condenseLitigationDraftForLayout } from './litigation-graph-condense';
 
 interface BuildBoardActionsFromDraftResult {
   actions: AIActionPreview[];
@@ -8,6 +13,8 @@ interface BuildBoardActionsFromDraftResult {
 
 interface BuildBoardActionsFromDraftOptions {
   existingObjectIds?: Iterable<string>;
+  objective?: LitigationIntakeObjective;
+  layoutMode?: LitigationLayoutMode;
 }
 
 type LaneKey = 'claims' | 'evidence' | 'witnesses' | 'timeline';
@@ -26,11 +33,14 @@ interface LaneCardLayout {
   frameHeight: number;
 }
 
-const LANE_META: Record<LaneKey, { title: string; color: string }> = {
-  claims: { title: 'Claims', color: '#DCE8FF' },
-  evidence: { title: 'Evidence', color: '#E1F4E5' },
-  witnesses: { title: 'Witnesses', color: '#F4E6FF' },
-  timeline: { title: 'Timeline', color: '#FFF1D6' },
+const LANE_META: Record<
+  LaneKey,
+  { title: string; color: string; nodeRole: 'claim' | 'evidence' | 'witness' | 'timeline_event' }
+> = {
+  claims: { title: 'Claims', color: '#DCE8FF', nodeRole: 'claim' },
+  evidence: { title: 'Evidence', color: '#E1F4E5', nodeRole: 'evidence' },
+  witnesses: { title: 'Witnesses', color: '#F4E6FF', nodeRole: 'witness' },
+  timeline: { title: 'Timeline', color: '#FFF1D6', nodeRole: 'timeline_event' },
 } as const;
 
 const BOARD_LAYOUT = {
@@ -202,6 +212,7 @@ function createStickyAction(
   color: string,
   width: number,
   height: number,
+  nodeRole: 'claim' | 'evidence' | 'witness' | 'timeline_event',
 ): AIActionPreview {
   return {
     id: `sticky-${id}`,
@@ -215,6 +226,7 @@ function createStickyAction(
       color,
       width,
       height,
+      nodeRole,
     },
   };
 }
@@ -242,6 +254,7 @@ function createConnectorAction(
       fromId,
       toId,
       ...(label ? { label } : {}),
+      relationType: relation,
       strokeStyle,
       endArrow: 'solid',
       connectorType: options.curved ? 'curved' : 'straight',
@@ -253,14 +266,19 @@ export function buildBoardActionsFromLitigationDraft(
   draft: LitigationIntakeDraft,
   options: BuildBoardActionsFromDraftOptions = {},
 ): BuildBoardActionsFromDraftResult {
+  const layoutMode = options.layoutMode || 'summary';
+  const layoutDraft = condenseLitigationDraftForLayout(draft, {
+    mode: layoutMode,
+    objective: options.objective,
+  });
   const usedIds = new Set<string>(options.existingObjectIds || []);
   const actions: AIActionPreview[] = [];
 
   const hasContent =
-    draft.claims.length > 0 ||
-    draft.evidence.length > 0 ||
-    draft.witnesses.length > 0 ||
-    draft.timeline.length > 0;
+    layoutDraft.claims.length > 0 ||
+    layoutDraft.evidence.length > 0 ||
+    layoutDraft.witnesses.length > 0 ||
+    layoutDraft.timeline.length > 0;
   if (!hasContent) {
     return {
       actions,
@@ -276,10 +294,10 @@ export function buildBoardActionsFromLitigationDraft(
   };
 
   const laneLayouts: Record<LaneKey, LaneCardLayout> = {
-    claims: createLaneCardLayout(draft.claims.length),
-    evidence: createLaneCardLayout(draft.evidence.length),
-    witnesses: createLaneCardLayout(draft.witnesses.length),
-    timeline: createLaneCardLayout(draft.timeline.length),
+    claims: createLaneCardLayout(layoutDraft.claims.length),
+    evidence: createLaneCardLayout(layoutDraft.evidence.length),
+    witnesses: createLaneCardLayout(layoutDraft.witnesses.length),
+    timeline: createLaneCardLayout(layoutDraft.timeline.length),
   };
   const lanePlacements = createLanePlacements(laneLayouts);
 
@@ -320,7 +338,7 @@ export function buildBoardActionsFromLitigationDraft(
 
   const idMap = new Map<string, string>();
 
-  draft.claims.forEach((claim, index) => {
+  layoutDraft.claims.forEach((claim, index) => {
     const objectId = ensureUniqueId(claim.id || `claim-${index + 1}`, usedIds);
     idMap.set(claim.id, objectId);
     const position = laneItemPosition(lanePlacements.claims, laneLayouts.claims, index);
@@ -333,11 +351,12 @@ export function buildBoardActionsFromLitigationDraft(
         LANE_META.claims.color,
         laneLayouts.claims.cardWidth,
         BOARD_LAYOUT.cardHeight,
+        LANE_META.claims.nodeRole,
       ),
     );
   });
 
-  draft.evidence.forEach((evidence, index) => {
+  layoutDraft.evidence.forEach((evidence, index) => {
     const objectId = ensureUniqueId(evidence.id || `evidence-${index + 1}`, usedIds);
     idMap.set(evidence.id, objectId);
     const text = evidence.citation ? `${evidence.label}\n${evidence.citation}` : evidence.label;
@@ -351,11 +370,12 @@ export function buildBoardActionsFromLitigationDraft(
         LANE_META.evidence.color,
         laneLayouts.evidence.cardWidth,
         BOARD_LAYOUT.cardHeight,
+        LANE_META.evidence.nodeRole,
       ),
     );
   });
 
-  draft.witnesses.forEach((witness, index) => {
+  layoutDraft.witnesses.forEach((witness, index) => {
     const objectId = ensureUniqueId(witness.id || `witness-${index + 1}`, usedIds);
     idMap.set(witness.id, objectId);
     const quote = witness.quote ? `\n"${witness.quote}"` : '';
@@ -370,11 +390,12 @@ export function buildBoardActionsFromLitigationDraft(
         LANE_META.witnesses.color,
         laneLayouts.witnesses.cardWidth,
         BOARD_LAYOUT.cardHeight,
+        LANE_META.witnesses.nodeRole,
       ),
     );
   });
 
-  draft.timeline.forEach((timelineEvent, index) => {
+  layoutDraft.timeline.forEach((timelineEvent, index) => {
     const objectId = ensureUniqueId(timelineEvent.id || `timeline-${index + 1}`, usedIds);
     idMap.set(timelineEvent.id, objectId);
     const position = laneItemPosition(lanePlacements.timeline, laneLayouts.timeline, index);
@@ -387,19 +408,23 @@ export function buildBoardActionsFromLitigationDraft(
         LANE_META.timeline.color,
         laneLayouts.timeline.cardWidth,
         BOARD_LAYOUT.cardHeight,
+        LANE_META.timeline.nodeRole,
       ),
     );
   });
 
   const totalNodes =
-    draft.claims.length + draft.evidence.length + draft.witnesses.length + draft.timeline.length;
+    layoutDraft.claims.length +
+    layoutDraft.evidence.length +
+    layoutDraft.witnesses.length +
+    layoutDraft.timeline.length;
   const showConnectorLabels =
-    draft.links.length <= BOARD_LAYOUT.showConnectorLabelsMaxLinks &&
+    layoutDraft.links.length <= BOARD_LAYOUT.showConnectorLabelsMaxLinks &&
     totalNodes <= BOARD_LAYOUT.showConnectorLabelsMaxNodes;
-  const useCurvedConnectors = draft.links.length >= 8 || totalNodes >= 16;
+  const useCurvedConnectors = layoutDraft.links.length >= 8 || totalNodes >= 16;
   const seenLinkKeys = new Set<string>();
 
-  draft.links.forEach((link, index) => {
+  layoutDraft.links.forEach((link, index) => {
     const fromId = idMap.get(link.fromId) || link.fromId;
     const toId = idMap.get(link.toId) || link.toId;
     if (!fromId || !toId) {
@@ -434,6 +459,6 @@ export function buildBoardActionsFromLitigationDraft(
 
   return {
     actions,
-    message: `Generated litigation board draft with ${draft.claims.length} claims, ${draft.evidence.length} evidence items, ${draft.witnesses.length} witnesses, and ${draft.timeline.length} timeline events.`,
+    message: `Generated litigation board draft with ${layoutDraft.claims.length} claims, ${layoutDraft.evidence.length} evidence items, ${layoutDraft.witnesses.length} witnesses, and ${layoutDraft.timeline.length} timeline events.`,
   };
 }

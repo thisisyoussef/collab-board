@@ -79,7 +79,7 @@ describe('buildBoardActionsFromLitigationDraft', () => {
       })),
     };
 
-    const result = buildBoardActionsFromLitigationDraft(denseDraft);
+    const result = buildBoardActionsFromLitigationDraft(denseDraft, { layoutMode: 'expanded' });
 
     const witnessFrame = result.actions.find(
       (action) => action.name === 'createFrame' && action.input.objectId === 'intake-frame-witnesses',
@@ -100,5 +100,60 @@ describe('buildBoardActionsFromLitigationDraft', () => {
     expect(connectors.length).toBeGreaterThan(0);
     expect(connectors.every((connector) => connector.input.label === undefined)).toBe(true);
     expect(connectors.every((connector) => connector.input.connectorType === 'curved')).toBe(true);
+  });
+
+  it('condenses dense drafts in summary mode with aggregate overflow cards', () => {
+    const denseDraft = {
+      claims: [{ id: 'claim-main', title: 'Main claim' }],
+      evidence: Array.from({ length: 9 }, (_, index) => ({
+        id: `evidence-${index + 1}`,
+        label: `Exhibit ${index + 1}`,
+      })),
+      witnesses: Array.from({ length: 4 }, (_, index) => ({
+        id: `witness-${index + 1}`,
+        name: `Witness ${index + 1}`,
+        quote: `Statement ${index + 1}`,
+      })),
+      timeline: Array.from({ length: 5 }, (_, index) => ({
+        id: `timeline-${index + 1}`,
+        dateLabel: `Mar ${index + 1}, 2023`,
+        event: `Event ${index + 1}`,
+      })),
+      links: [
+        ...Array.from({ length: 9 }, (_, index) => ({
+          fromId: `evidence-${index + 1}`,
+          toId: 'claim-main',
+          relation: 'supports' as const,
+          reason: 'Evidence support',
+        })),
+        ...Array.from({ length: 4 }, (_, index) => ({
+          fromId: `witness-${index + 1}`,
+          toId: 'claim-main',
+          relation: 'supports' as const,
+          reason: 'Witness support',
+        })),
+        ...Array.from({ length: 5 }, (_, index) => ({
+          fromId: 'claim-main',
+          toId: `timeline-${index + 1}`,
+          relation: 'depends_on' as const,
+          reason: 'Timeline dependency',
+        })),
+      ],
+    };
+
+    const expanded = buildBoardActionsFromLitigationDraft(denseDraft, { layoutMode: 'expanded' });
+    const summary = buildBoardActionsFromLitigationDraft(denseDraft, { layoutMode: 'summary' });
+
+    const expandedConnectors = expanded.actions.filter((action) => action.name === 'createConnector');
+    const summaryConnectors = summary.actions.filter((action) => action.name === 'createConnector');
+    expect(summaryConnectors.length).toBeLessThan(expandedConnectors.length);
+
+    const summaryStickyTexts = summary.actions
+      .filter((action) => action.name === 'createStickyNote')
+      .map((action) => String(action.input.text));
+
+    expect(summaryStickyTexts.some((text) => text.includes('more evidence'))).toBe(true);
+    expect(summaryStickyTexts.some((text) => text.includes('more witnesses'))).toBe(true);
+    expect(summaryStickyTexts.some((text) => text.includes('more timeline'))).toBe(true);
   });
 });
