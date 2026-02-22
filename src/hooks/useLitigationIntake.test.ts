@@ -2,11 +2,31 @@ import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useLitigationIntake } from './useLitigationIntake';
 
+const mockExtractDocumentText = vi.fn<
+  (file: File, options?: { maxChars?: number; maxPdfPages?: number }) => Promise<string>
+>();
+const mockIsPdfDocument = vi.fn<(file: File) => boolean>();
+
+vi.mock('../lib/documentTextExtraction', () => ({
+  extractDocumentText: mockExtractDocumentText,
+  isPdfDocument: mockIsPdfDocument,
+}));
+
 const mockGetIdToken = vi.fn();
 const mockFetch = vi.fn();
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockExtractDocumentText.mockImplementation(async (file: File) => {
+    try {
+      return await file.text();
+    } catch {
+      return '';
+    }
+  });
+  mockIsPdfDocument.mockImplementation((file: File) => {
+    return file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+  });
   mockGetIdToken.mockResolvedValue('token-123');
   vi.stubGlobal('fetch', mockFetch);
 });
@@ -111,6 +131,52 @@ describe('useLitigationIntake', () => {
 
     expect(result.current.uploadedDocuments).toHaveLength(1);
     expect(result.current.uploadedDocuments[0]?.name).toBe('safety-memo.txt');
+  });
+
+  it('uses extracted PDF text in upload payloads', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        message: 'Draft generated from pdf.',
+        draft: {
+          claims: [{ id: 'c1', title: 'First-degree murder charge' }],
+          evidence: [],
+          witnesses: [],
+          timeline: [],
+          links: [],
+        },
+      }),
+    });
+
+    const extracted =
+      'Claims: First-degree murder charge\n' +
+      'Evidence/Exhibits: 12 exhibits including autopsy report\n' +
+      'Witness Statements: Lou Christoff conflicts with Lane King\n' +
+      'Timeline: Events span Feb 27 - March 28, 2023';
+    mockExtractDocumentText.mockResolvedValueOnce(extracted);
+
+    const { result } = renderHook(() =>
+      useLitigationIntake({ boardId: 'board-1', user: { getIdToken: mockGetIdToken } as never }),
+    );
+
+    const file = new File(['%PDF-1.7\u0000\u0001'], '2024-high-school-mock-trial-case-and-exhibits.pdf', {
+      type: 'application/pdf',
+    });
+
+    await act(async () => {
+      await result.current.addUploadedDocuments([file]);
+    });
+
+    expect(result.current.uploadedDocuments).toHaveLength(1);
+    expect(result.current.uploadedDocuments[0]?.excerpt).toContain('Claims: First-degree murder charge');
+
+    await act(async () => {
+      await result.current.generateDraft();
+    });
+
+    const request = mockFetch.mock.calls[0]?.[1] as RequestInit;
+    const parsedBody = JSON.parse(String(request.body));
+    expect(parsedBody.documents[0]?.content).toContain('Claims: First-degree murder charge');
   });
 
   it('prevents generation when all output sections are disabled', async () => {

@@ -1,61 +1,89 @@
-# AI Development Log (1 Page)
+# AI Development Log
 
 > PRD-required summary of AI-first development workflow.
 
-Date: February 19, 2026
-Project: CollabBoard
+Date: February 22, 2026
+Project: CollabBoard — Real-time collaborative whiteboard with AI board agent
 
 ## 1) Tools and Workflow
 
-- Primary coding agent(s): `Codex`, `Cursor`
-- Secondary support: `Claude` (planning/iteration where used)
-- Workflow model:
-  1. Write or refine user stories and acceptance criteria.
-  2. Start with failing tests for each story.
-  3. Implement minimum change set, then refactor with green tests.
-  4. Validate with local checks and production smoke tests.
+- **Primary agents:** Claude Code (planning, TDD, multi-file implementation), Codex (parallel story execution), Cursor (interactive editing, UI iteration)
+- **Orchestration model:** Multi-agent dispatch — independent user stories assigned to separate agents working in parallel, coordinated via git branches and a shared CLAUDE.md specification
+- **Workflow:**
+  1. Author detailed CLAUDE.md with architecture rules, code patterns, performance targets, and anti-patterns
+  2. Write user stories with explicit acceptance criteria and PRD gap mappings
+  3. TDD: write failing tests first, implement minimum code to pass, refactor with green suite
+  4. Validate locally (`npm run lint && npm test && npm run build`), then smoke-test production deploy
+  5. Commit immediately after each meaningful work unit (auto-deploy via Vercel on push)
 
-## 2) MCP Usage
+## 2) CLAUDE.md as Project-Level System Prompt
 
-- MCPs used: Desktop Commander (file system + process management), Claude in Chrome (browser automation for testing), Firecrawl (documentation scraping), Control Chrome (tab management), Pencil (design prototyping)
-- What MCPs enabled: Automated file scaffolding and multi-file edits across 50+ source files; browser-based smoke testing of deployed URLs; real-time documentation fetching for Socket.IO, Konva, and Firebase APIs during implementation
-- Any MCP limitations and fallback approach: Desktop Commander's file write line limits required chunked writes for large files; browser automation tools couldn't interact with canvas (Konva) elements directly — fell back to manual QA for canvas interactions; Firecrawl occasionally hit rate limits on rapid doc lookups — cached results locally
+The CLAUDE.md file (~800 lines) was the most critical prompting artifact. It functioned as a persistent system prompt that every agent read at session start, ensuring consistency across agents, sessions, and context window resets. Key sections:
 
-## 3) Effective Prompts (3-5)
+- **Critical Performance Pattern:** Explicit "BAD vs GOOD" code examples showing why React state kills canvas performance and how to use Konva refs instead. This prevented every agent from making the most common whiteboard performance mistake.
+- **Board Object Schema:** Exact TypeScript-like schema for all object types, ensuring agents generated compatible data structures without coordination.
+- **Socket.IO Sync Patterns:** Two-layer architecture (Socket.IO for speed, Firestore for durability), volatile vs reliable emit, cursor throttling at 50ms — agents implemented networking correctly on first pass.
+- **AI Tool Schema:** 9 tool definitions with exact parameter signatures, so the AI board agent implementation matched the serverless function API contract.
+- **Anti-Patterns:** Explicit "DO NOT" rules (never store canvas objects in React state, never write every change directly to Firestore, never block UI on Firestore acknowledgment) that prevented common mistakes across all agents.
+- **Build Priority:** Strict numbered order (1-11) ensuring foundational infrastructure was validated before features were built on top.
+- **Auto-Deploy Workflow:** Commit frequency rules and message format ensuring continuous deployment visibility.
+
+**Why this worked:** Each agent session starts fresh with no memory of previous sessions. The CLAUDE.md provided the "memory" — architecture decisions, naming conventions, performance constraints, and code patterns that would otherwise be lost between sessions. When agents drifted, the CLAUDE.md's explicit anti-patterns caught them.
+
+## 3) MCP Usage
+
+- **MCPs used:** Desktop Commander (file system + process management), Claude in Chrome (browser automation for deployed testing), Firecrawl (documentation scraping for Socket.IO/Konva/Firebase APIs), Control Chrome (tab management), Context7 (library documentation lookup)
+- **What MCPs enabled:** Automated file scaffolding and multi-file edits across 50+ source files; browser-based smoke testing of deployed Vercel URLs; real-time documentation fetching during implementation to verify API usage
+- **Limitations:** Desktop Commander's file write limits required chunked writes for large files; browser automation couldn't interact with Konva canvas elements (no DOM nodes) — fell back to manual QA; Firecrawl hit rate limits on rapid lookups — cached results locally
+
+## 4) Effective Prompts (5)
 
 1. **TDD story scaffold:** "Implement US2-03 (AI board agent) using TDD. Write failing tests first for all 9 tool call types (createStickyNote, createShape, moveObject, etc.), then implement the minimum code to pass each test. Use the Vercel serverless pattern from CLAUDE.md."
+   *Why effective:* Referenced CLAUDE.md patterns directly, specified test-first order, named exact scope (9 tool types).
+
 2. **Performance architecture:** "Add viewport culling to the canvas. Create a pure function getVisibleObjects that takes objects, stage position, scale, and viewport size, filters by AABB intersection, and returns only visible objects. Write tests first covering inside, outside, partial overlap, and edge cases."
+   *Why effective:* Specified the function signature, algorithm (AABB), and test cases upfront — left no ambiguity for the agent.
+
 3. **Multi-agent parallel execution:** "I have 5 independent user stories (US3-01 through US3-05) that can be worked on in parallel. Each has its own acceptance criteria and test files. Dispatch them to separate agents, each working in its own git worktree to avoid merge conflicts."
+   *Why effective:* Explicitly addressed the coordination problem (merge conflicts) and the solution (git worktrees) before agents started work.
+
 4. **Socket.IO latency validation:** "Set up a Socket.IO echo test that measures round-trip latency across 100 iterations. The cursor target is <50ms and object sync target is <100ms. Emit timestamped events and compute average/p95/max on the client side. Show results in MetricsOverlay."
-5. **AI A/B benchmark design:** "Design a benchmark system that tests multiple AI providers (Anthropic Claude, OpenAI GPT-4) across the same prompt suite. Use LangSmith tracing for observability. Support deterministic A/B routing with configurable traffic split. Run as a GitHub Actions workflow on deploy."
+   *Why effective:* Quantified targets from CLAUDE.md performance gates, specified measurement method (timestamp-based), and output destination (MetricsOverlay).
 
-## 4) Code Analysis (AI vs Hand-Written)
+5. **CLAUDE.md anti-pattern enforcement:** Including explicit "BAD" and "GOOD" code examples in CLAUDE.md (e.g., `const [objects, setObjects] = useState({})` marked BAD vs `stageRef.current.findOne()` marked GOOD) prevented performance regressions across all agents — more effective than any single prompt.
+   *Why effective:* Agents pattern-match against examples. Showing the wrong approach alongside the right one with clear labels was more effective than describing the rule in prose.
 
-- Estimated AI-generated code: ~85%
-- Estimated hand-written/edited code: ~15%
-- How estimate was computed: Multi-agent workflow — Codex, Cursor, and Claude Code each generated initial implementations from user stories and acceptance criteria. Human review consisted of: (1) writing/refining prompts and acceptance criteria, (2) reviewing and approving generated code, (3) manual integration fixes when agent outputs conflicted, (4) production debugging of deployment-specific issues (Vercel cold starts, Render spin-down). The 15% hand-written estimate covers prompt engineering, merge conflict resolution, environment configuration, and targeted hotfixes.
+## 5) Code Analysis (AI vs Hand-Written)
 
-## 5) Strengths and Limitations
+- **AI-generated code: ~85%** — Codex, Cursor, and Claude Code each generated implementations from user stories and acceptance criteria
+- **Hand-written/edited: ~15%** — Prompt engineering, CLAUDE.md authoring, acceptance criteria, merge conflict resolution, environment configuration, deployment debugging (Vercel cold starts, Render spin-down, Firebase rules)
+- **Methodology:** Compared git blame across 50+ source files; AI agents authored initial implementations, human reviewed and approved; the 15% hand-written work was disproportionately high-leverage (CLAUDE.md, prompts, architecture decisions)
 
-Strengths:
-- Rapid scaffolding of tests and story-driven implementation plans.
-- Faster iteration on repetitive refactors and doc generation.
-- Strong support for edge-case brainstorming.
+## 6) Strengths and Limitations
 
-Limitations:
-- Requires tight prompting and acceptance criteria to avoid drift.
-- Generated code needs careful project-specific validation.
-- Documentation and runtime can diverge unless checkpoints are enforced.
+**Strengths:**
+- CLAUDE.md as persistent project memory eliminated re-explanation across agent sessions
+- TDD-first workflow caught integration issues early (529 tests across 52 files)
+- Multi-agent parallelism compressed a week of work into days
+- Explicit anti-patterns in CLAUDE.md prevented the most common performance and architecture mistakes
 
-## 6) Key Learnings
+**Limitations:**
+- Agents on wrong branches required manual git operations to recover
+- Cross-agent merge conflicts needed human judgment to resolve
+- Canvas (Konva) interactions couldn't be automated — required manual QA
+- Context window limits required session compaction and summary-based continuity
 
-- TDD + story gates improves reliability under time pressure.
-- Explicit acceptance contracts reduce ambiguity in AI-generated output.
-- Splitting work into low-conflict parallel tracks preserves delivery speed.
+## 7) Key Learnings
 
-## 7) Repository Evidence
+- **CLAUDE.md is the highest-ROI artifact** in an AI-first project — invest heavily in it upfront
+- **Anti-patterns > rules:** Showing agents what NOT to do (with code examples) is more effective than describing the correct approach in prose
+- **TDD + story gates** improve reliability under time pressure — agents can't "skip ahead" when tests must pass first
+- **Commit after every unit of work** — auto-deploy catches integration issues immediately; waiting to batch commits loses the safety net
 
-- 529 tests across 52 test files (vitest)
-- GitHub commit history shows AI-first workflow with story-driven commits
-- LangSmith traces available for AI endpoint calls (provider comparison data)
-- Performance metrics validated via MetricsOverlay with PRD threshold indicators
+## 8) Repository Evidence
+
+- 529 tests across 52 test files (vitest), all passing
+- GitHub commit history shows AI-first workflow with story-driven commits (`feat:`, `fix:`, `perf:`, `docs:` prefixes)
+- LangSmith traces for AI endpoint calls (multi-provider comparison: Claude Sonnet vs Haiku vs GPT-4.1)
+- Performance metrics validated via MetricsOverlay with PRD threshold indicators (✅/⚠️/🔴)
+- A/B benchmark automation via GitHub Actions and Vercel serverless endpoint
