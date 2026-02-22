@@ -843,6 +843,12 @@
   text-transform: uppercase;
 }
 
+.litigation-intake-upload-status {
+  color: #5f5548;
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
 .litigation-intake-upload input[type='file'] {
   border: 1px solid #d6d1c8;
   border-radius: 10px;

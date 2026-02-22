@@ -222,6 +222,7 @@ export function LitigationIntakeDialog({
           <span>Upload documents</span>
           <input
             id="litigation-documents-upload"
+            aria-label="Upload documents"
             type="file"
             multiple
             onChange={(event) => {
@@ -229,10 +230,14 @@ export function LitigationIntakeDialog({
               if (files.length > 0) {
                 onDocumentsSelected(files);
               }
-              event.currentTarget.value = '';
             }}
             disabled={loading}
           />
+          <p className="litigation-intake-upload-status" aria-live="polite">
+            {uploadedDocuments.length === 0
+              ? 'No documents uploaded yet.'
+              : `${uploadedDocuments.length} document${uploadedDocuments.length === 1 ? '' : 's'} uploaded.`}
+          </p>
         </label>
 
         {uploadedDocuments.length > 0 ? (

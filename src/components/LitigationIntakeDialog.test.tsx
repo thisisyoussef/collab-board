@@ -93,6 +93,24 @@ describe('LitigationIntakeDialog', () => {
     expect(onDocumentsSelected).toHaveBeenCalledWith([file]);
   });
 
+  it('shows explicit upload status when documents are attached', () => {
+    renderDialog({
+      uploadedDocuments: [
+        {
+          id: 'doc-1',
+          name: 'case-overview.txt',
+          mimeType: 'text/plain',
+          size: 321,
+          excerpt: 'Claims, evidence, and witness summary',
+          content: 'Claims: ...',
+        },
+      ],
+    });
+
+    expect(screen.getByText('1 document uploaded.')).toBeInTheDocument();
+    expect(screen.getByText('case-overview.txt')).toBeInTheDocument();
+  });
+
   it('calls objective and section handlers when options change', () => {
     const { onObjectiveChange, onSectionToggle } = renderDialog();
 
