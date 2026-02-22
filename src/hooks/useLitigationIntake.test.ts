@@ -1,16 +1,18 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockExtractDocumentText, mockIsPdfDocument } = vi.hoisted(() => ({
+const { mockExtractDocumentText, mockIsPdfDocument, mockEncodeFileAsBase64 } = vi.hoisted(() => ({
   mockExtractDocumentText: vi.fn<
-    (file: File, options?: { maxChars?: number; maxPdfPages?: number }) => Promise<string>
+    (file: File, options?: { maxChars?: number }) => Promise<string>
   >(),
   mockIsPdfDocument: vi.fn<(file: File) => boolean>(),
+  mockEncodeFileAsBase64: vi.fn<(file: File, maxBytes?: number) => Promise<string>>(),
 }));
 
 vi.mock('../lib/documentTextExtraction', () => ({
   extractDocumentText: mockExtractDocumentText,
   isPdfDocument: mockIsPdfDocument,
+  encodeFileAsBase64: mockEncodeFileAsBase64,
 }));
 
 import { useLitigationIntake } from './useLitigationIntake';
@@ -30,6 +32,7 @@ beforeEach(() => {
   mockIsPdfDocument.mockImplementation((file: File) => {
     return file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
   });
+  mockEncodeFileAsBase64.mockResolvedValue('');
   mockGetIdToken.mockResolvedValue('token-123');
   vi.stubGlobal('fetch', mockFetch);
 });
@@ -157,6 +160,7 @@ describe('useLitigationIntake', () => {
       'Witness Statements: Lou Christoff conflicts with Lane King\n' +
       'Timeline: Events span Feb 27 - March 28, 2023';
     mockExtractDocumentText.mockResolvedValueOnce(extracted);
+    mockEncodeFileAsBase64.mockResolvedValueOnce('JVBERi0xLjc=');
 
     const { result } = renderHook(() =>
       useLitigationIntake({ boardId: 'board-1', user: { getIdToken: mockGetIdToken } as never }),
@@ -180,6 +184,7 @@ describe('useLitigationIntake', () => {
     const request = mockFetch.mock.calls[0]?.[1] as RequestInit;
     const parsedBody = JSON.parse(String(request.body));
     expect(parsedBody.documents[0]?.content).toContain('Claims: First-degree murder charge');
+    expect(parsedBody.documents[0]?.binaryBase64).toBe('JVBERi0xLjc=');
   });
 
   it('prevents generation when all output sections are disabled', async () => {

@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const { mockPdfParse } = vi.hoisted(() => ({
+  mockPdfParse: vi.fn<(data: Buffer, options?: Record<string, unknown>) => Promise<{ text: string }>>(),
+}));
+
 const mockVerifyIdToken = vi.fn();
 const mockGetApps = vi.fn();
 const mockBoardGet = vi.fn();
@@ -18,6 +22,10 @@ vi.mock('firebase-admin/auth', () => ({
 
 vi.mock('firebase-admin/firestore', () => ({
   getFirestore: () => ({ collection: mockFirestoreCollection }),
+}));
+
+vi.mock('pdf-parse', () => ({
+  default: (data: Buffer, options?: Record<string, unknown>) => mockPdfParse(data, options),
 }));
 
 function createMockReq(overrides: Record<string, unknown> = {}) {
@@ -57,6 +65,7 @@ function createMockRes() {
 describe('AI Intake-to-Board API', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockPdfParse.mockResolvedValue({ text: '' });
     mockGetApps.mockReturnValue([{}]);
     mockVerifyIdToken.mockResolvedValue({ uid: 'user-123' });
     mockBoardGet.mockResolvedValue({
@@ -259,5 +268,99 @@ describe('AI Intake-to-Board API', () => {
     expect(payload.draft.evidence.length).toBeGreaterThan(0);
     expect(payload.draft.witnesses.length).toBeGreaterThan(0);
     expect(payload.draft.timeline.length).toBeGreaterThan(0);
+  });
+
+  it('parses PDF base64 uploads with server-side pdf parser fallback', async () => {
+    mockPdfParse.mockResolvedValueOnce({
+      text:
+        'Claims: First-degree murder charge with deliberate design elements\n' +
+        'Evidence/Exhibits: Exhibit 7 crime scene photo; Exhibit 9 handwritten note\n' +
+        'Witness Statements: Lou Christoff conflicts with Lane King\n' +
+        'Timeline: March 15, 2023 board meeting and March 28, 2023 discovery',
+    });
+
+    const handler = (await import('../../api/ai/intake-to-board')).default;
+    const req = createMockReq({
+      body: {
+        boardId: 'board-1',
+        intake: {
+          caseSummary: '',
+          claims: '',
+          witnesses: '',
+          evidence: '',
+          timeline: '',
+        },
+        documents: [
+          {
+            name: '2024-high-school-mock-trial-case-and-exhibits.pdf',
+            mimeType: 'application/pdf',
+            size: 1024,
+            excerpt: '',
+            content: '',
+            binaryBase64: 'JVBERi0xLjc=',
+          },
+        ],
+        preferences: {
+          objective: 'board_overview',
+          includeClaims: true,
+          includeEvidence: true,
+          includeWitnesses: true,
+          includeTimeline: true,
+        },
+      },
+    });
+    const res = createMockRes();
+
+    await handler(req as never, res as never);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(payload.draft.claims.length).toBeGreaterThan(0);
+    expect(payload.draft.evidence.length).toBeGreaterThan(0);
+    expect(payload.draft.witnesses.length).toBeGreaterThan(0);
+    expect(payload.draft.timeline.length).toBeGreaterThan(0);
+  });
+
+  it('adds OCR recommendation warning when PDF extraction quality is low', async () => {
+    mockPdfParse.mockResolvedValueOnce({ text: '### 11 22 ###' });
+
+    const handler = (await import('../../api/ai/intake-to-board')).default;
+    const req = createMockReq({
+      body: {
+        boardId: 'board-1',
+        intake: {
+          caseSummary: '',
+          claims: '',
+          witnesses: '',
+          evidence: '',
+          timeline: '',
+        },
+        documents: [
+          {
+            name: 'scan.pdf',
+            mimeType: 'application/pdf',
+            size: 1000,
+            excerpt: '',
+            content: '',
+            binaryBase64: 'JVBERi0xLjc=',
+          },
+        ],
+        preferences: {
+          objective: 'board_overview',
+          includeClaims: true,
+          includeEvidence: true,
+          includeWitnesses: true,
+          includeTimeline: true,
+        },
+      },
+    });
+    const res = createMockRes();
+
+    await handler(req as never, res as never);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(payload.message).toContain('low-confidence text extraction');
+    expect(payload.message).toContain('OCR-processed');
   });
 });

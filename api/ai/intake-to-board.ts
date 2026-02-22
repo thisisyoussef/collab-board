@@ -17,8 +17,11 @@ interface LitigationIntakeInput {
 
 interface LitigationUploadedDocumentInput {
   name: string;
+  mimeType: string;
+  size: number;
   excerpt: string;
   content: string;
+  binaryBase64: string;
 }
 
 interface LitigationIntakePreferences {
@@ -82,6 +85,7 @@ interface BoardDocData {
 const MAX_LIST_ITEMS = 24;
 const MAX_DOCUMENTS = 20;
 const MAX_DOCUMENT_TEXT_LENGTH = 6_000;
+const MAX_INLINE_BINARY_BYTES = 3_000_000;
 const DEFAULT_PREFERENCES: LitigationIntakePreferences = {
   objective: 'board_overview',
   includeClaims: true,
@@ -426,37 +430,291 @@ function normalizeDocuments(raw: unknown): LitigationUploadedDocumentInput[] {
     .slice(0, MAX_DOCUMENTS)
     .map((entry) => {
       const record = entry as Record<string, unknown>;
+      const mimeType = asString(record.mimeType).trim();
+      const sizeRaw = record.size;
+      const size = typeof sizeRaw === 'number' && Number.isFinite(sizeRaw) ? Math.max(0, sizeRaw) : 0;
+      const binaryBase64 = asString(record.binaryBase64).trim();
       return {
         name: asString(record.name).trim(),
+        mimeType,
+        size,
         excerpt: asString(record.excerpt).slice(0, MAX_DOCUMENT_TEXT_LENGTH),
         content: asString(record.content).slice(0, MAX_DOCUMENT_TEXT_LENGTH),
+        binaryBase64:
+          binaryBase64.length > 0 && size > 0 && size <= MAX_INLINE_BINARY_BYTES ? binaryBase64 : '',
       };
     })
-    .filter((entry) => entry.name || entry.excerpt || entry.content);
+    .filter((entry) => entry.name || entry.excerpt || entry.content || entry.binaryBase64);
 }
 
-function mergeIntakeWithDocuments(
-  input: LitigationIntakeInput,
-  documents: LitigationUploadedDocumentInput[],
-): LitigationIntakeInput {
-  if (documents.length === 0) {
-    return input;
+interface MergedIntakeResult {
+  input: LitigationIntakeInput;
+  warnings: string[];
+}
+
+interface ParsedDocumentText {
+  name: string;
+  text: string;
+  source: 'provided' | 'pdf_parse';
+  quality: 'high' | 'low';
+}
+
+function isPdfMimeType(mimeType: string, name: string): boolean {
+  return mimeType === 'application/pdf' || /\.pdf$/i.test(name);
+}
+
+let cachedPdfParse:
+  | ((data: Buffer, options?: Record<string, unknown>) => Promise<{ text?: string } | Record<string, unknown>>)
+  | null = null;
+
+async function resolvePdfParse() {
+  if (cachedPdfParse) {
+    return cachedPdfParse;
   }
 
-  const extractedFromDocuments = extractStructuredSectionsFromText(
-    documents
-      .map((entry) => [entry.excerpt, entry.content].filter(Boolean).join('\n'))
-      .filter(Boolean)
-      .join('\n'),
-  );
+  const module = await import('pdf-parse');
+  const candidate = (module as Record<string, unknown>).default || module;
+  if (typeof candidate !== 'function') {
+    throw new Error('pdf-parse module did not export a parser function');
+  }
+
+  cachedPdfParse = candidate as (
+    data: Buffer,
+    options?: Record<string, unknown>,
+  ) => Promise<{ text?: string } | Record<string, unknown>>;
+  return cachedPdfParse;
+}
+
+function cleanExtractedText(text: string): string {
+  return text
+    .replace(/\r/g, '\n')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+async function extractPdfTextFromBase64(base64: string): Promise<string> {
+  if (!base64) {
+    return '';
+  }
+
+  try {
+    const buffer = Buffer.from(base64, 'base64');
+    if (!buffer.length || buffer.length > MAX_INLINE_BINARY_BYTES) {
+      return '';
+    }
+
+    const pdfParse = await resolvePdfParse();
+    const parsed = await pdfParse(buffer, { max: 18 });
+    const text = asString((parsed as Record<string, unknown>).text);
+    return cleanExtractedText(text).slice(0, MAX_DOCUMENT_TEXT_LENGTH * 8);
+  } catch {
+    return '';
+  }
+}
+
+function detectExtractionQuality(text: string): 'high' | 'low' {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (!normalized || normalized.length < 250) {
+    return 'low';
+  }
+
+  const alphaMatches = normalized.match(/[A-Za-z]/g);
+  const alphaCount = alphaMatches ? alphaMatches.length : 0;
+  const alphaRatio = normalized.length > 0 ? alphaCount / normalized.length : 0;
+  if (alphaRatio < 0.45) {
+    return 'low';
+  }
+
+  const wordCount = normalized.split(/\s+/).filter(Boolean).length;
+  return wordCount >= 70 ? 'high' : 'low';
+}
+
+function extractClaimsFromNarrativeText(text: string): string[] {
+  const claims: string[] = [];
+  const chargePatterns = [
+    /has been charged with\s+([^.\n]{6,220})/gi,
+    /charged with\s+([^.\n]{6,220})/gi,
+    /indict(?:ed|ment)[^.\n]*for\s+([^.\n]{6,220})/gi,
+  ];
+
+  chargePatterns.forEach((pattern) => {
+    for (const match of text.matchAll(pattern)) {
+      const value = cleanListLine(match[1] || '');
+      if (value) {
+        const parsed = splitTitleAndDetails(value);
+        claims.push(parsed.title ? `Charge: ${parsed.title}` : value);
+      }
+    }
+  });
+
+  if (claims.length === 0) {
+    const firstDegreeMatch = text.match(/first[- ]degree murder/i);
+    if (firstDegreeMatch) {
+      claims.push('Charge: First-degree murder');
+    }
+  }
+
+  return dedupeNormalizedLines(claims).slice(0, 6);
+}
+
+function extractEvidenceFromNarrativeText(text: string): string[] {
+  const evidence: string[] = [];
+
+  for (const match of text.matchAll(/exhibit[s]?\s+([a-z0-9-]{1,8})\s*(?:is|:|-)?\s*([^\n.]{0,200})/gi)) {
+    const exhibitId = cleanListLine(match[1] || '');
+    const description = cleanListLine(match[2] || '');
+    if (!exhibitId) {
+      continue;
+    }
+    evidence.push(description ? `Exhibit ${exhibitId}: ${description}` : `Exhibit ${exhibitId}`);
+  }
+
+  return dedupeNormalizedLines(evidence).slice(0, 16);
+}
+
+function extractWitnessesFromNarrativeText(text: string): string[] {
+  const witnessLines: string[] = [];
+  const sectionMatch = text.match(/WITNESSES[\s\S]{0,2200}/i);
+  const candidateText = sectionMatch ? sectionMatch[0] : text;
+
+  for (const match of candidateText.matchAll(/\b([A-Z][a-z]+ [A-Z][a-z]+)\b/g)) {
+    const name = (match[1] || '').trim();
+    if (!name) {
+      continue;
+    }
+
+    if (/State of|Circuit Court|Mississippi|High School|Mock Trial/i.test(name)) {
+      continue;
+    }
+
+    witnessLines.push(name);
+  }
+
+  return dedupeNormalizedLines(witnessLines).slice(0, 12);
+}
+
+function extractTimelineFromNarrativeText(text: string): string[] {
+  const timeline: string[] = [];
+  const datePattern =
+    /\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t|tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+\d{1,2}(?:,\s*\d{4})?/gi;
+
+  for (const match of text.matchAll(datePattern)) {
+    if (!match.index && match.index !== 0) {
+      continue;
+    }
+    const dateLabel = match[0];
+    const snippet = text
+      .slice(match.index, match.index + 180)
+      .split(/[.\n]/)[0]
+      ?.replace(/\s+/g, ' ')
+      .trim();
+    if (!dateLabel || !snippet) {
+      continue;
+    }
+    timeline.push(`${dateLabel}: ${snippet}`);
+  }
+
+  return dedupeNormalizedLines(timeline).slice(0, 10);
+}
+
+function deriveSectionsFromNarrativeText(text: string): Partial<LitigationIntakeInput> {
+  const claims = extractClaimsFromNarrativeText(text);
+  const evidence = extractEvidenceFromNarrativeText(text);
+  const witnesses = extractWitnessesFromNarrativeText(text);
+  const timeline = extractTimelineFromNarrativeText(text);
+
+  const summarySentence = text
+    .replace(/\s+/g, ' ')
+    .split(/[.!?]/)[0]
+    ?.trim();
 
   return {
-    caseSummary: input.caseSummary || extractedFromDocuments.caseSummary || '',
-    claims: input.claims || extractedFromDocuments.claims || '',
-    witnesses: input.witnesses || extractedFromDocuments.witnesses || '',
-    evidence: [input.evidence, extractedFromDocuments.evidence || ''].filter(Boolean).join('\n'),
-    timeline: input.timeline || extractedFromDocuments.timeline || '',
+    caseSummary: summarySentence ? summarySentence.slice(0, 280) : '',
+    claims: claims.join('\n'),
+    evidence: evidence.join('\n'),
+    witnesses: witnesses.join('\n'),
+    timeline: timeline.join('\n'),
   };
+}
+
+async function mergeIntakeWithDocuments(
+  input: LitigationIntakeInput,
+  documents: LitigationUploadedDocumentInput[],
+): Promise<MergedIntakeResult> {
+  if (documents.length === 0) {
+    return { input, warnings: [] };
+  }
+
+  const warnings: string[] = [];
+  const parsedDocuments: ParsedDocumentText[] = [];
+
+  for (const entry of documents) {
+    const providedText = cleanExtractedText([entry.excerpt, entry.content].filter(Boolean).join('\n'));
+    let combinedText = providedText;
+    let source: ParsedDocumentText['source'] = 'provided';
+
+    if (isPdfMimeType(entry.mimeType, entry.name) && entry.binaryBase64) {
+      const parsedPdfText = await extractPdfTextFromBase64(entry.binaryBase64);
+      if (parsedPdfText) {
+        combinedText = cleanExtractedText([providedText, parsedPdfText].filter(Boolean).join('\n'));
+        source = 'pdf_parse';
+      }
+    }
+
+    const quality = detectExtractionQuality(combinedText);
+    parsedDocuments.push({
+      name: entry.name,
+      text: combinedText,
+      source,
+      quality,
+    });
+  }
+
+  const lowQualityPdfCount = parsedDocuments.filter(
+    (entry, index) =>
+      isPdfMimeType(documents[index]?.mimeType || '', entry.name) && entry.quality === 'low',
+  ).length;
+  if (lowQualityPdfCount > 0) {
+    warnings.push(
+      `${lowQualityPdfCount} uploaded PDF${lowQualityPdfCount === 1 ? '' : 's'} had low-confidence text extraction. OCR-processed source files will improve board quality.`,
+    );
+  }
+
+  const combinedDocumentText = parsedDocuments
+    .map((entry) => entry.text)
+    .filter(Boolean)
+    .join('\n');
+
+  const extractedFromDocuments = extractStructuredSectionsFromText(combinedDocumentText);
+  const derivedFromNarrative = deriveSectionsFromNarrativeText(combinedDocumentText);
+  const mergedEvidence = dedupeNormalizedLines(
+    [input.evidence, extractedFromDocuments.evidence || '', derivedFromNarrative.evidence || '']
+      .filter(Boolean)
+      .flatMap((entry) => parseList(entry)),
+  ).join('\n');
+
+  const mergedInput: LitigationIntakeInput = {
+    caseSummary:
+      input.caseSummary ||
+      extractedFromDocuments.caseSummary ||
+      derivedFromNarrative.caseSummary ||
+      '',
+    claims: input.claims || extractedFromDocuments.claims || derivedFromNarrative.claims || '',
+    witnesses:
+      input.witnesses ||
+      extractedFromDocuments.witnesses ||
+      derivedFromNarrative.witnesses ||
+      '',
+    evidence: mergedEvidence,
+    timeline:
+      input.timeline ||
+      extractedFromDocuments.timeline ||
+      derivedFromNarrative.timeline ||
+      '',
+  };
+
+  return { input: mergedInput, warnings };
 }
 
 function buildLinks(
@@ -667,12 +925,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const intake = normalizeInput(bodyRecord.intake);
   const documents = normalizeDocuments(bodyRecord.documents);
-  const mergedInput = mergeIntakeWithDocuments(intake, documents);
+  const mergedResult = await mergeIntakeWithDocuments(intake, documents);
   const preferences = normalizePreferences(bodyRecord.preferences);
-  const draft = parseIntakeDraft(mergedInput, preferences);
+  const draft = parseIntakeDraft(mergedResult.input, preferences);
+
+  const warningSuffix =
+    mergedResult.warnings.length > 0
+      ? ` ${mergedResult.warnings.join(' ')}`
+      : '';
 
   return res.status(200).json({
-    message: `Parsed intake for ${preferences.objective} into ${draft.claims.length} claims, ${draft.evidence.length} evidence items, ${draft.witnesses.length} witnesses, and ${draft.timeline.length} timeline events.`,
+    message: `Parsed intake for ${preferences.objective} into ${draft.claims.length} claims, ${draft.evidence.length} evidence items, ${draft.witnesses.length} witnesses, and ${draft.timeline.length} timeline events.${warningSuffix}`,
     draft,
   });
 }

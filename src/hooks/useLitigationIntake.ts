@@ -1,7 +1,11 @@
 import type { User } from 'firebase/auth';
 import { useCallback, useRef, useState } from 'react';
 import { logger } from '../lib/logger';
-import { extractDocumentText, isPdfDocument } from '../lib/documentTextExtraction';
+import {
+  encodeFileAsBase64,
+  extractDocumentText,
+  isPdfDocument,
+} from '../lib/documentTextExtraction';
 import type {
   LitigationIntakeDraft,
   LitigationIntakeInput,
@@ -231,11 +235,15 @@ async function parseUploadedDocument(file: File): Promise<LitigationUploadedDocu
   const likelyText = isLikelyTextDocument(file);
   const pdfDocument = isPdfDocument(file);
   let content = '';
+  let binaryBase64 = '';
 
-  content = await extractDocumentText(file, { maxChars: 4_000, maxPdfPages: 16 });
+  content = await extractDocumentText(file, { maxChars: 4_000 });
+  if (pdfDocument) {
+    binaryBase64 = await encodeFileAsBase64(file);
+  }
 
-  if (!content && pdfDocument) {
-    logger.warn('AI', `Unable to extract readable text from uploaded PDF '${file.name}'.`, {
+  if (!content && pdfDocument && !binaryBase64) {
+    logger.warn('AI', `Uploaded PDF '${file.name}' is too large for inline parsing payload.`, {
       fileName: file.name,
       fileSize: file.size,
     });
@@ -252,6 +260,7 @@ async function parseUploadedDocument(file: File): Promise<LitigationUploadedDocu
     size: file.size,
     excerpt: buildExcerpt(content),
     content: content.slice(0, 4000),
+    ...(binaryBase64 ? { binaryBase64 } : {}),
   };
 }
 
@@ -402,8 +411,11 @@ export function useLitigationIntake({
           intake: payloadInput,
           documents: nextUploadedDocuments.map((document) => ({
             name: document.name,
+            mimeType: document.mimeType,
+            size: document.size,
             excerpt: document.excerpt,
             content: document.content,
+            ...(document.binaryBase64 ? { binaryBase64: document.binaryBase64 } : {}),
           })),
           preferences: nextPreferences,
         }),

@@ -1,10 +1,9 @@
 interface DocumentExtractionOptions {
   maxChars?: number;
-  maxPdfPages?: number;
 }
 
 const DEFAULT_MAX_CHARS = 16_000;
-const DEFAULT_MAX_PDF_PAGES = 12;
+const DEFAULT_MAX_BASE64_BYTES = 3_000_000;
 
 function clamp(value: number, fallback: number): number {
   if (!Number.isFinite(value) || value <= 0) {
@@ -17,76 +16,46 @@ export function isPdfDocument(file: Pick<File, 'name' | 'type'>): boolean {
   return file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
 }
 
-async function extractPdfText(
+export async function extractDocumentText(
   file: File,
-  options: Required<DocumentExtractionOptions>,
+  options: DocumentExtractionOptions = {},
 ): Promise<string> {
+  const maxChars = clamp(options.maxChars ?? DEFAULT_MAX_CHARS, DEFAULT_MAX_CHARS);
+  if (isPdfDocument(file)) {
+    return '';
+  }
+
   try {
-    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
-    const loadingTask = pdfjs.getDocument({
-      data: new Uint8Array(await file.arrayBuffer()),
-      useWorkerFetch: false,
-      isEvalSupported: false,
-      disableFontFace: true,
-      stopAtErrors: true,
-    });
-
-    const documentProxy = await loadingTask.promise;
-    const pageCount = Math.min(documentProxy.numPages, options.maxPdfPages);
-    const chunks: string[] = [];
-    let totalLength = 0;
-
-    for (let page = 1; page <= pageCount; page += 1) {
-      const pageProxy = await documentProxy.getPage(page);
-      const textContent = await pageProxy.getTextContent();
-      const lines = textContent.items
-        .map((entry) => {
-          if (entry && typeof entry === 'object' && 'str' in entry && typeof entry.str === 'string') {
-            return entry.str;
-          }
-          return '';
-        })
-        .join(' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-
-      if (lines) {
-        chunks.push(lines);
-        totalLength += lines.length;
-      }
-
-      pageProxy.cleanup();
-      if (totalLength >= options.maxChars) {
-        break;
-      }
-    }
-
-    documentProxy.cleanup();
-    documentProxy.destroy();
-    return chunks.join('\n').slice(0, options.maxChars);
+    return (await file.slice(0, 600_000).text()).slice(0, maxChars);
   } catch {
     return '';
   }
 }
 
-export async function extractDocumentText(
-  file: File,
-  options: DocumentExtractionOptions = {},
-): Promise<string> {
-  const resolvedOptions = {
-    maxChars: clamp(options.maxChars ?? DEFAULT_MAX_CHARS, DEFAULT_MAX_CHARS),
-    maxPdfPages: clamp(options.maxPdfPages ?? DEFAULT_MAX_PDF_PAGES, DEFAULT_MAX_PDF_PAGES),
-  };
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const chunkSize = 0x8000;
 
-  if (isPdfDocument(file)) {
-    const pdfText = await extractPdfText(file, resolvedOptions);
-    if (pdfText.trim()) {
-      return pdfText;
-    }
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    const chunk = bytes.subarray(offset, offset + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+
+  return btoa(binary);
+}
+
+export async function encodeFileAsBase64(
+  file: File,
+  maxBytes = DEFAULT_MAX_BASE64_BYTES,
+): Promise<string> {
+  const byteLimit = clamp(maxBytes, DEFAULT_MAX_BASE64_BYTES);
+  if (file.size <= 0 || file.size > byteLimit) {
+    return '';
   }
 
   try {
-    return (await file.slice(0, 600_000).text()).slice(0, resolvedOptions.maxChars);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    return bytesToBase64(bytes);
   } catch {
     return '';
   }

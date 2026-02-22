@@ -69,4 +69,5 @@ export interface LitigationUploadedDocument {
   size: number;
   excerpt: string;
   content: string;
+  binaryBase64?: string;
 }
