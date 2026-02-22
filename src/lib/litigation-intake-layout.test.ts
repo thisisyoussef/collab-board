@@ -36,8 +36,10 @@ describe('buildBoardActionsFromLitigationDraft', () => {
     const firstClaimCreate = result.actions.find(
       (action) => action.name === 'createStickyNote' && action.input.objectId === 'claim-design-defect',
     );
-    expect(firstClaimCreate?.input.x).toBe(140);
-    expect(firstClaimCreate?.input.y).toBe(170);
+    expect(firstClaimCreate?.input.x).toBe(104);
+    expect(firstClaimCreate?.input.y).toBe(152);
+    expect(firstClaimCreate?.input.width).toBe(412);
+    expect(firstClaimCreate?.input.height).toBe(102);
   });
 
   it('returns empty actions for empty draft', () => {
@@ -50,5 +52,53 @@ describe('buildBoardActionsFromLitigationDraft', () => {
     });
 
     expect(result.actions).toEqual([]);
+  });
+
+  it('expands lane heights and uses multi-column card layout for dense drafts', () => {
+    const denseDraft = {
+      claims: [{ id: 'claim-main', title: 'Main claim' }],
+      evidence: Array.from({ length: 4 }, (_, index) => ({
+        id: `evidence-${index + 1}`,
+        label: `Exhibit ${index + 1}`,
+      })),
+      witnesses: Array.from({ length: 10 }, (_, index) => ({
+        id: `witness-${index + 1}`,
+        name: `Witness ${index + 1}`,
+        quote: `Statement ${index + 1}`,
+      })),
+      timeline: Array.from({ length: 10 }, (_, index) => ({
+        id: `timeline-${index + 1}`,
+        dateLabel: `Mar ${index + 1}, 2023`,
+        event: `Event ${index + 1}`,
+      })),
+      links: Array.from({ length: 20 }, (_, index) => ({
+        fromId: index < 10 ? `witness-${index + 1}` : `timeline-${index - 9}`,
+        toId: 'claim-main',
+        relation: 'supports' as const,
+        reason: 'Witness statement linked during intake parsing',
+      })),
+    };
+
+    const result = buildBoardActionsFromLitigationDraft(denseDraft);
+
+    const witnessFrame = result.actions.find(
+      (action) => action.name === 'createFrame' && action.input.objectId === 'intake-frame-witnesses',
+    );
+    const timelineFrame = result.actions.find(
+      (action) => action.name === 'createFrame' && action.input.objectId === 'intake-frame-timeline',
+    );
+    expect(witnessFrame?.input.height).toBeGreaterThan(650);
+    expect(timelineFrame?.input.height).toBeGreaterThan(650);
+
+    const witnessCards = result.actions.filter(
+      (action) => action.name === 'createStickyNote' && String(action.input.objectId).startsWith('witness-'),
+    );
+    const witnessXPositions = new Set(witnessCards.map((card) => card.input.x));
+    expect(witnessXPositions.size).toBeGreaterThan(1);
+
+    const connectors = result.actions.filter((action) => action.name === 'createConnector');
+    expect(connectors.length).toBeGreaterThan(0);
+    expect(connectors.every((connector) => connector.input.label === undefined)).toBe(true);
+    expect(connectors.every((connector) => connector.input.connectorType === 'curved')).toBe(true);
   });
 });
