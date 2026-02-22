@@ -1,6 +1,7 @@
 import type { User } from 'firebase/auth';
 import { useCallback, useRef, useState } from 'react';
 import { logger } from '../lib/logger';
+import { extractDocumentText, isPdfDocument } from '../lib/documentTextExtraction';
 import type {
   LitigationIntakeDraft,
   LitigationIntakeInput,
@@ -228,15 +229,19 @@ function looksMostlyBinary(raw: string): boolean {
 
 async function parseUploadedDocument(file: File): Promise<LitigationUploadedDocument> {
   const likelyText = isLikelyTextDocument(file);
+  const pdfDocument = isPdfDocument(file);
   let content = '';
 
-  try {
-    content = await file.slice(0, 600_000).text();
-  } catch {
-    content = '';
+  content = await extractDocumentText(file, { maxChars: 4_000, maxPdfPages: 16 });
+
+  if (!content && pdfDocument) {
+    logger.warn('AI', `Unable to extract readable text from uploaded PDF '${file.name}'.`, {
+      fileName: file.name,
+      fileSize: file.size,
+    });
   }
 
-  if (!likelyText && looksMostlyBinary(content)) {
+  if (!likelyText && !pdfDocument && looksMostlyBinary(content)) {
     content = '';
   }
 

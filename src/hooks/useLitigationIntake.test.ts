@@ -1,16 +1,19 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { useLitigationIntake } from './useLitigationIntake';
 
-const mockExtractDocumentText = vi.fn<
-  (file: File, options?: { maxChars?: number; maxPdfPages?: number }) => Promise<string>
->();
-const mockIsPdfDocument = vi.fn<(file: File) => boolean>();
+const { mockExtractDocumentText, mockIsPdfDocument } = vi.hoisted(() => ({
+  mockExtractDocumentText: vi.fn<
+    (file: File, options?: { maxChars?: number; maxPdfPages?: number }) => Promise<string>
+  >(),
+  mockIsPdfDocument: vi.fn<(file: File) => boolean>(),
+}));
 
 vi.mock('../lib/documentTextExtraction', () => ({
   extractDocumentText: mockExtractDocumentText,
   isPdfDocument: mockIsPdfDocument,
 }));
+
+import { useLitigationIntake } from './useLitigationIntake';
 
 const mockGetIdToken = vi.fn();
 const mockFetch = vi.fn();
