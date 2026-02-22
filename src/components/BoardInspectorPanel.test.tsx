@@ -141,6 +141,31 @@ describe('BoardInspectorPanel', () => {
     expect(onUpdateConnector).toHaveBeenCalledWith('connector-1', {
       connectorType: 'curved',
     });
+
+    fireEvent.change(screen.getByLabelText('Relation'), {
+      target: { value: 'contradicts' },
+    });
+    expect(onUpdateConnector).toHaveBeenCalledWith('connector-1', {
+      relationType: 'contradicts',
+    });
+  });
+
+  it('shows node role control and emits object role updates', () => {
+    const claim = baseObject({
+      id: 'claim-1',
+      type: 'text',
+      text: 'Breach claim',
+      fontSize: 16,
+    });
+    const { onUpdateObject } = renderPanel(claim, [claim.id]);
+
+    fireEvent.change(screen.getByLabelText('Node role'), {
+      target: { value: 'claim' },
+    });
+
+    expect(onUpdateObject).toHaveBeenCalledWith('claim-1', {
+      nodeRole: 'claim',
+    });
   });
 
   it('shows connector stroke in StylePanel', () => {

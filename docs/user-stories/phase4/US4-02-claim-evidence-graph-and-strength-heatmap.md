@@ -2,7 +2,7 @@
 
 ## Status
 
-- State: Pending
+- State: In Progress
 - Owner: Codex
 - Depends on: US4-01 approved
 
@@ -64,8 +64,16 @@ Out of scope:
 
 3. Preparation Notes
 - assumptions:
+  - Existing board object persistence and realtime paths remain the single source of truth.
+  - Deterministic scoring is preferred over probabilistic model output for legal explainability.
 - risks:
+  - Frequent recompute on large boards could add UI overhead if not revision-gated.
+  - Connector relation fallbacks (from labels) could conflict with user-authored freeform labels.
 - planned failing tests:
+  - metadata roundtrip: `nodeRole` / `relationType` survive normalize + sanitize.
+  - graph extraction + score cap behavior.
+  - inspector controls for role/relation update callbacks.
+  - right-rail heatmap integration and empty-state behavior.
 
 ## UX Script
 
@@ -157,11 +165,11 @@ Red -> Green -> Refactor:
 
 ## Acceptance Criteria
 
-- [ ] Object role and connector relation tags are editable in inspector.
-- [ ] Board model persists tags through Firestore/realtime roundtrips.
-- [ ] Claim scoring is deterministic and test-backed.
-- [ ] Heatmap panel shows score, level, and reasons per claim.
-- [ ] Canvas indicators are visible and non-destructive.
+- [x] Object role and connector relation tags are editable in inspector.
+- [x] Board model persists tags through Firestore/realtime roundtrips.
+- [x] Claim scoring is deterministic and test-backed.
+- [x] Heatmap panel shows score, level, and reasons per claim.
+- [x] Canvas indicators are visible and non-destructive.
 
 ## Local Validation
 
@@ -190,4 +198,13 @@ Red -> Green -> Refactor:
 - Production Frontend URL: Pending
 - Production Socket URL: Pending
 - User Validation: Pending
-- Notes: Pending implementation.
+- Notes:
+  - Added litigation graph metadata to board object model: `nodeRole` + `relationType`.
+  - Added deterministic graph pass (`evaluateClaimStrength`) with explainability reasons and score caps.
+  - Added `ClaimStrengthPanel` in right rail with click-to-focus claim behavior.
+  - Added non-destructive on-canvas claim heatmap indicators (outline + level badge) driven by graph output.
+  - TDD evidence:
+    - `npm run test -- src/lib/board-object.test.ts src/lib/litigation-graph.test.ts src/components/BoardInspectorPanel.test.tsx src/components/ClaimStrengthPanel.test.tsx src/pages/Board.test.tsx`
+    - `npm run lint`
+    - `npm run test`
+    - `npm run build`

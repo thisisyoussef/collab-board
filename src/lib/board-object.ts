@@ -11,6 +11,8 @@ import type {
   ConnectorArrowHead,
   ConnectorAttachmentMode,
   ConnectorPathType,
+  LitigationConnectorRelation,
+  LitigationNodeRole,
   ConnectorStrokeStyle,
 } from '../types/board';
 
@@ -127,6 +129,25 @@ function parseConnectorArrowHead(value: unknown, fallback: ConnectorArrowHead): 
   return fallback;
 }
 
+function parseLitigationNodeRole(value: unknown): LitigationNodeRole | undefined {
+  if (
+    value === 'claim' ||
+    value === 'evidence' ||
+    value === 'witness' ||
+    value === 'timeline_event'
+  ) {
+    return value;
+  }
+  return undefined;
+}
+
+function parseLitigationRelation(value: unknown): LitigationConnectorRelation | undefined {
+  if (value === 'supports' || value === 'contradicts' || value === 'depends_on') {
+    return value;
+  }
+  return undefined;
+}
+
 function clamp(value: number, min: number, max: number): number {
   if (value < min) {
     return min;
@@ -219,6 +240,7 @@ export function createDefaultObject(
     height: numberOr(overrides.height, 80),
     rotation: numberOr(overrides.rotation, 0),
     color: stringOr(overrides.color, RECT_DEFAULT_COLOR),
+    nodeRole: parseLitigationNodeRole(overrides.nodeRole),
     zIndex,
     createdBy,
     updatedAt: nowIso,
@@ -325,9 +347,9 @@ export function createDefaultObject(
     fromId ? 'side-center' : 'free',
   );
   const toAttachmentMode = parseConnectorAttachmentMode(overrides.toAttachmentMode, toId ? 'side-center' : 'free');
-  return {
-    ...base,
-    type: 'connector',
+    return {
+      ...base,
+      type: 'connector',
     width: Math.max(LINE_MIN_LENGTH, numberOr(overrides.width, bounds.width)),
     height: Math.max(LINE_MIN_LENGTH, numberOr(overrides.height, bounds.height)),
     color: stringOr(overrides.color, CONNECTOR_DEFAULT_COLOR),
@@ -359,11 +381,12 @@ export function createDefaultObject(
     pathControlY: Number.isFinite(Number(overrides.pathControlY))
       ? Number(overrides.pathControlY)
       : undefined,
-    curveOffset: Number.isFinite(Number(overrides.curveOffset))
-      ? Number(overrides.curveOffset)
-      : undefined,
-  };
-}
+      curveOffset: Number.isFinite(Number(overrides.curveOffset))
+        ? Number(overrides.curveOffset)
+        : undefined,
+      relationType: parseLitigationRelation(overrides.relationType),
+    };
+  }
 
 export function clampObjectDimensions(
   partial: Partial<BoardObject> & { id: string; type: BoardObjectType; x: number; y: number },
@@ -412,6 +435,7 @@ export function sanitizeBoardObjectForFirestore(entry: BoardObject): BoardObject
       text: normalized.text || '',
       color: normalized.color,
       fontSize: normalized.fontSize || 14,
+      nodeRole: normalized.nodeRole,
       zIndex: normalized.zIndex,
       createdBy: normalized.createdBy,
       updatedAt: normalized.updatedAt,
@@ -431,6 +455,7 @@ export function sanitizeBoardObjectForFirestore(entry: BoardObject): BoardObject
       stroke: normalized.stroke,
       strokeWidth: normalized.strokeWidth,
       radius: normalized.type === 'circle' ? normalized.radius : undefined,
+      nodeRole: normalized.nodeRole,
       zIndex: normalized.zIndex,
       createdBy: normalized.createdBy,
       updatedAt: normalized.updatedAt,
@@ -449,6 +474,7 @@ export function sanitizeBoardObjectForFirestore(entry: BoardObject): BoardObject
       text: normalized.text || '',
       color: normalized.color,
       fontSize: normalized.fontSize || TEXT_DEFAULT_FONT_SIZE,
+      nodeRole: normalized.nodeRole,
       zIndex: normalized.zIndex,
       createdBy: normalized.createdBy,
       updatedAt: normalized.updatedAt,
@@ -468,6 +494,7 @@ export function sanitizeBoardObjectForFirestore(entry: BoardObject): BoardObject
       color: normalized.color,
       stroke: normalized.stroke || FRAME_DEFAULT_STROKE,
       strokeWidth: normalized.strokeWidth || 2,
+      nodeRole: normalized.nodeRole,
       zIndex: normalized.zIndex,
       createdBy: normalized.createdBy,
       updatedAt: normalized.updatedAt,
@@ -486,6 +513,7 @@ export function sanitizeBoardObjectForFirestore(entry: BoardObject): BoardObject
       points: normalized.points,
       color: normalized.color,
       strokeWidth: normalized.strokeWidth || 2,
+      nodeRole: normalized.nodeRole,
       zIndex: normalized.zIndex,
       createdBy: normalized.createdBy,
       updatedAt: normalized.updatedAt,
@@ -529,6 +557,7 @@ export function sanitizeBoardObjectForFirestore(entry: BoardObject): BoardObject
     curveOffset: Number.isFinite(Number(normalized.curveOffset))
       ? Number(normalized.curveOffset)
       : undefined,
+    relationType: normalized.relationType,
     color: normalized.color,
     strokeWidth: normalized.strokeWidth || 2,
     zIndex: normalized.zIndex,

@@ -17,7 +17,7 @@
 // re-renders when dragging/updating 500+ objects on the canvas.
 import { doc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore/lite';
 import Konva from 'konva';
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Circle as KonvaCircleShape,
   Layer,
@@ -31,6 +31,7 @@ import { AICommandCenter } from '../components/AICommandCenter';
 import { BoardInspectorPanel } from '../components/BoardInspectorPanel';
 import { BoardToolDock, type BoardTool } from '../components/BoardToolDock';
 import { BoardZoomChip } from '../components/BoardZoomChip';
+import { ClaimStrengthPanel } from '../components/ClaimStrengthPanel';
 import { LitigationIntakeDialog } from '../components/LitigationIntakeDialog';
 import { MetricsOverlay } from '../components/MetricsOverlay';
 import { PresenceAvatars } from '../components/PresenceAvatars';
@@ -115,6 +116,7 @@ import {
   createRealtimeDedupeCache,
 } from '../lib/realtime-dedupe';
 import { buildBoardActionsFromLitigationDraft } from '../lib/litigation-intake-layout';
+import { claimStrengthColor, evaluateClaimStrength } from '../lib/litigation-graph';
 import { screenToWorld, worldToScreen } from '../lib/utils';
 import type { BoardObject, BoardObjectsRecord } from '../types/board';
 import type {
@@ -319,6 +321,51 @@ export function Board() {
   const selectedObjects = selectedIds
     .map((id) => objectsRef.current.get(id))
     .filter((obj): obj is BoardObject => obj != null);
+  const claimStrengthResults = useMemo(() => {
+    // `boardRevision` is the explicit invalidation signal for ref-backed canvas objects.
+    void boardRevision;
+    return evaluateClaimStrength(objectsRef.current.values());
+  }, [boardRevision]);
+  const claimStrengthById = useMemo(
+    () => new Map(claimStrengthResults.map((result) => [result.claimId, result])),
+    [claimStrengthResults],
+  );
+  const claimStrengthIndicators = useMemo(() => {
+    const selectedSet = new Set(selectedIds);
+    const indicators: Array<{
+      id: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      color: string;
+      levelLabel: string;
+      selected: boolean;
+    }> = [];
+
+    objectsRef.current.forEach((entry) => {
+      if (entry.type === 'connector' || entry.nodeRole !== 'claim') {
+        return;
+      }
+      const result = claimStrengthById.get(entry.id);
+      if (!result) {
+        return;
+      }
+
+      indicators.push({
+        id: entry.id,
+        x: entry.x,
+        y: entry.y,
+        width: entry.width,
+        height: entry.height,
+        color: claimStrengthColor(result.level),
+        levelLabel: result.level.toUpperCase(),
+        selected: selectedSet.has(entry.id),
+      });
+    });
+
+    return indicators;
+  }, [claimStrengthById, selectedIds]);
   const selectedConnector =
     selectedObject && selectedObject.type === 'connector' ? selectedObject : null;
   const canStartConnectorFromAnchor = canEditBoard && activeTool === 'connector';
@@ -5164,6 +5211,30 @@ export function Board() {
     }
   };
 
+  const handleFocusClaim = (claimId: string) => {
+    const claim = objectsRef.current.get(claimId);
+    if (!claim || claim.type === 'connector') {
+      return;
+    }
+
+    setSelectedIds([claim.id]);
+    const stage = stageRef.current;
+    if (!stage) {
+      return;
+    }
+
+    const scale = stage.scaleX() || 1;
+    const claimCenterX = claim.x + claim.width / 2;
+    const claimCenterY = claim.y + claim.height / 2;
+
+    stage.position({
+      x: stage.width() / 2 - claimCenterX * scale,
+      y: stage.height() / 2 - claimCenterY * scale,
+    });
+    stage.batchDraw();
+    scheduleViewportSave();
+  };
+
   if (!boardId) {
     return <div className="centered-screen">Board unavailable.</div>;
   }
@@ -5494,6 +5565,55 @@ export function Board() {
 
               <Layer ref={selectionLayerRef}>
                 <Transformer ref={transformerRef} rotateEnabled />
+                {claimStrengthIndicators.map((indicator) => {
+                  const badgeWidth = 74;
+                  const badgeHeight = 22;
+                  const badgeX = indicator.x + indicator.width - badgeWidth + 6;
+                  const badgeY = indicator.y - badgeHeight - 8;
+
+                  return (
+                    <Fragment key={`${indicator.id}-claim-strength`}>
+                      <KonvaRectShape
+                        x={indicator.x - 6}
+                        y={indicator.y - 6}
+                        width={indicator.width + 12}
+                        height={indicator.height + 12}
+                        cornerRadius={10}
+                        stroke={indicator.color}
+                        strokeWidth={indicator.selected ? 3 : 2}
+                        dash={[8, 4]}
+                        opacity={0.82}
+                        listening={false}
+                      />
+                      <KonvaRectShape
+                        x={badgeX}
+                        y={badgeY}
+                        width={badgeWidth}
+                        height={badgeHeight}
+                        cornerRadius={badgeHeight / 2}
+                        fill="#ffffff"
+                        stroke={indicator.color}
+                        strokeWidth={1.5}
+                        shadowBlur={4}
+                        shadowOpacity={0.08}
+                        listening={false}
+                      />
+                      <KonvaTextShape
+                        x={badgeX}
+                        y={badgeY}
+                        width={badgeWidth}
+                        height={badgeHeight}
+                        text={indicator.levelLabel}
+                        fontSize={11}
+                        fontFamily={CONNECTOR_LABEL_FONT_FAMILY}
+                        fill={indicator.color}
+                        align="center"
+                        verticalAlign="middle"
+                        listening={false}
+                      />
+                    </Fragment>
+                  );
+                })}
                 {connectorLabels.map((label) => (
                   <Fragment key={`${label.id}-label`}>
                     <KonvaRectShape
@@ -5772,6 +5892,10 @@ export function Board() {
             onDuplicate={handleDuplicate}
             onCopy={handleCopy}
             onPaste={handlePaste}
+          />
+          <ClaimStrengthPanel
+            results={claimStrengthResults}
+            onFocusClaim={handleFocusClaim}
           />
         </aside>
       </section>

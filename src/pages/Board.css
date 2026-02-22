@@ -365,6 +365,161 @@
   gap: 0.72rem;
 }
 
+.claim-strength-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.claim-strength-panel-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  border-bottom: 1px solid #ebe4d7;
+  padding-bottom: 0.38rem;
+}
+
+.claim-strength-panel-header h3 {
+  font-family: 'DM Serif Display', Georgia, serif;
+  font-size: 1.02rem;
+  line-height: 1.1;
+  color: #1e1c19;
+}
+
+.claim-strength-panel-header p {
+  color: #695f51;
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+.claim-strength-empty {
+  border: 1px dashed #ddd5c6;
+  border-radius: 10px;
+  background: #faf7f0;
+  color: #6f6658;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  padding: 0.62rem;
+}
+
+.claim-strength-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.52rem;
+}
+
+.claim-strength-item {
+  border: 1px solid #ddd5c6;
+  border-left-width: 4px;
+  border-radius: 10px;
+  padding: 0.5rem 0.56rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.32rem;
+  background: #fffdfa;
+}
+
+.claim-strength-item.level-strong {
+  border-left-color: #1f8f5b;
+}
+
+.claim-strength-item.level-medium {
+  border-left-color: #b9811b;
+}
+
+.claim-strength-item.level-weak {
+  border-left-color: #c4453e;
+}
+
+.claim-strength-focus {
+  border: 1px solid #d6d1c8;
+  border-radius: 8px;
+  background: #faf8f3;
+  color: #1e1c19;
+  padding: 0.42rem 0.48rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.claim-strength-focus:hover {
+  background: #f2eee4;
+}
+
+.claim-strength-focus:focus-visible {
+  outline: 2px solid rgba(212, 149, 43, 0.45);
+  outline-offset: 2px;
+}
+
+.claim-strength-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #2f2a22;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.claim-strength-score {
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.78rem;
+  color: #423a2f;
+}
+
+.claim-strength-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.45rem;
+  color: #655a4c;
+  font-size: 0.72rem;
+}
+
+.claim-strength-level {
+  border-radius: 999px;
+  border: 1px solid;
+  padding: 0.08rem 0.42rem;
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.64rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.claim-strength-level.is-strong {
+  border-color: rgba(31, 143, 91, 0.45);
+  color: #1f8f5b;
+  background: rgba(31, 143, 91, 0.12);
+}
+
+.claim-strength-level.is-medium {
+  border-color: rgba(185, 129, 27, 0.45);
+  color: #8f6514;
+  background: rgba(185, 129, 27, 0.12);
+}
+
+.claim-strength-level.is-weak {
+  border-color: rgba(196, 69, 62, 0.45);
+  color: #9f3731;
+  background: rgba(196, 69, 62, 0.12);
+}
+
+.claim-strength-reasons {
+  list-style: disc;
+  margin: 0 0 0 1rem;
+  color: #615748;
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+  font-size: 0.73rem;
+  line-height: 1.35;
+}
+
 .ai-panel-header {
   display: flex;
   align-items: center;

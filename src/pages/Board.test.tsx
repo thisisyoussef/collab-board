@@ -183,6 +183,13 @@ describe('Board', () => {
     expect(screen.getByRole('dialog', { name: 'Build board from case input' })).toBeInTheDocument();
   });
 
+  it('renders claim strength heatmap panel in the right rail', async () => {
+    await renderBoardReady();
+
+    expect(screen.getByText('Claim strength heatmap')).toBeInTheDocument();
+    expect(screen.getByText('Tag at least one claim node to compute strength.')).toBeInTheDocument();
+  });
+
   it('renders the new board command shell scaffolding', async () => {
     await renderBoardReady();
 

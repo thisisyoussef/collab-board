@@ -39,6 +39,19 @@ function selectedLabel(object: BoardObject): string {
   return 'Connector';
 }
 
+const NODE_ROLE_OPTIONS: Array<{ value: NonNullable<BoardObject['nodeRole']>; label: string }> = [
+  { value: 'claim', label: 'Claim' },
+  { value: 'evidence', label: 'Evidence' },
+  { value: 'witness', label: 'Witness' },
+  { value: 'timeline_event', label: 'Timeline event' },
+];
+
+const RELATION_OPTIONS: Array<{ value: NonNullable<BoardObject['relationType']>; label: string }> = [
+  { value: 'supports', label: 'Supports' },
+  { value: 'contradicts', label: 'Contradicts' },
+  { value: 'depends_on', label: 'Depends on' },
+];
+
 export function BoardInspectorPanel({
   selectedIds,
   selectedObject,
@@ -47,6 +60,7 @@ export function BoardInspectorPanel({
   canEditBoard,
   onDeleteSelected,
   onDeleteObject,
+  onUpdateObject,
   onUpdateConnector,
   onBatchStyleChange,
   onDuplicate,
@@ -156,8 +170,54 @@ export function BoardInspectorPanel({
             onStyleChange={onBatchStyleChange}
           />
 
+          {selectedObject.type !== 'connector' ? (
+            <label className="property-row" htmlFor="node-role">
+              <span>Node role</span>
+              <select
+                id="node-role"
+                value={selectedObject.nodeRole || ''}
+                disabled={!canEditBoard}
+                onChange={(event) => {
+                  const nextRole = event.target.value;
+                  onUpdateObject(selectedObject.id, {
+                    nodeRole: nextRole ? (nextRole as NonNullable<BoardObject['nodeRole']>) : undefined,
+                  });
+                }}
+              >
+                <option value="">None</option>
+                {NODE_ROLE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+
           {selectedObject.type === 'connector' ? (
             <>
+              <label className="property-row" htmlFor="connector-relation">
+                <span>Relation</span>
+                <select
+                  id="connector-relation"
+                  value={selectedObject.relationType || ''}
+                  disabled={!canEditBoard}
+                  onChange={(event) =>
+                    onUpdateConnector(selectedObject.id, {
+                      relationType: event.target.value
+                        ? (event.target.value as NonNullable<BoardObject['relationType']>)
+                        : undefined,
+                    })
+                  }
+                >
+                  <option value="">None</option>
+                  {RELATION_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <label className="property-row" htmlFor="connector-type">
                 <span>Path</span>
                 <select
@@ -301,4 +361,3 @@ export function BoardInspectorPanel({
     </section>
   );
 }
-

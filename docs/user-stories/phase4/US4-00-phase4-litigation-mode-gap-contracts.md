@@ -97,10 +97,10 @@ Local docs and code reviewed:
 | H2 | Intake guidance/examples + upload-oriented UX | Not implemented | US4-01 |
 | H3 | AI-assisted intake parsing into structured board schema | Not implemented | US4-01 |
 | H4 | Human-approve apply flow from intake preview to board state | Not implemented | US4-01 |
-| H5 | Node role tagging (`claim`, `evidence`, `witness`, `timeline_event`) | Not implemented | US4-02 |
-| H6 | Connector relation tagging (`supports`, `contradicts`, `depends_on`) | Not implemented | US4-02 |
-| H7 | Deterministic claim scoring engine | Not implemented | US4-02 |
-| H8 | Strength heatmap UI + explainability panel | Not implemented | US4-02 |
+| H5 | Node role tagging (`claim`, `evidence`, `witness`, `timeline_event`) | Implemented in US4-02 (pending user checkpoint) | US4-02 |
+| H6 | Connector relation tagging (`supports`, `contradicts`, `depends_on`) | Implemented in US4-02 (pending user checkpoint) | US4-02 |
+| H7 | Deterministic claim scoring engine | Implemented in US4-02 (pending user checkpoint) | US4-02 |
+| H8 | Strength heatmap UI + explainability panel | Implemented in US4-02 (pending user checkpoint) | US4-02 |
 | H9 | AI contradiction radar from selected sources | Not implemented | US4-03 |
 | H10 | Citation-required contradiction schema guardrails | Not implemented | US4-03 |
 | H11 | Confidence threshold + review/accept/reject workflow | Not implemented | US4-03 |

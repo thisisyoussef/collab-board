@@ -213,6 +213,50 @@ describe('board-object normalize/sanitize', () => {
     expect(connector.labelBackground).toBe(false);
   });
 
+  it('preserves litigation metadata on roundtrip sanitize and normalize', () => {
+    const claim = createDefaultObject('rect', {
+      id: 'claim-1',
+      x: 20,
+      y: 40,
+      width: 240,
+      height: 120,
+      createdBy: 'u1',
+      zIndex: 1,
+    });
+    const evidence = createDefaultObject('sticky', {
+      id: 'evidence-1',
+      x: 320,
+      y: 60,
+      createdBy: 'u1',
+      zIndex: 2,
+    });
+    const connector = createDefaultObject('connector', {
+      id: 'connector-1',
+      fromId: evidence.id,
+      toId: claim.id,
+      points: [320, 120, 260, 100],
+      createdBy: 'u1',
+      zIndex: 3,
+    });
+
+    const claimWithRole = { ...claim, nodeRole: 'claim' } as BoardObject;
+    const connectorWithRelation = { ...connector, relationType: 'supports' } as BoardObject;
+
+    const sanitizedClaim = sanitizeBoardObjectForFirestore(claimWithRole) as Record<string, unknown>;
+    const sanitizedConnector = sanitizeBoardObjectForFirestore(connectorWithRelation) as Record<
+      string,
+      unknown
+    >;
+
+    expect(sanitizedClaim.nodeRole).toBe('claim');
+    expect(sanitizedConnector.relationType).toBe('supports');
+
+    const normalizedClaim = normalizeLoadedObject(sanitizedClaim, 'guest');
+    const normalizedConnector = normalizeLoadedObject(sanitizedConnector, 'guest');
+    expect((normalizedClaim as Record<string, unknown> | null)?.nodeRole).toBe('claim');
+    expect((normalizedConnector as Record<string, unknown> | null)?.relationType).toBe('supports');
+  });
+
   it('applies brand-aligned default colors across object types', () => {
     const sticky = createDefaultObject('sticky', { id: 'sticky-brand' });
     const rect = createDefaultObject('rect', { id: 'rect-brand' });

@@ -12,6 +12,8 @@ export type ConnectorStrokeStyle = 'solid' | 'dashed';
 export type ConnectorPathType = 'straight' | 'bent' | 'curved';
 export type ConnectorAttachmentMode = 'side-center' | 'arbitrary' | 'free';
 export type ConnectorArrowHead = 'none' | 'solid' | 'line' | 'triangle' | 'diamond';
+export type LitigationNodeRole = 'claim' | 'evidence' | 'witness' | 'timeline_event';
+export type LitigationConnectorRelation = 'supports' | 'contradicts' | 'depends_on';
 
 export interface BoardObject {
   id: string;
@@ -48,6 +50,8 @@ export interface BoardObject {
   pathControlX?: number;
   pathControlY?: number;
   curveOffset?: number;
+  nodeRole?: LitigationNodeRole;
+  relationType?: LitigationConnectorRelation;
   zIndex: number;
   createdBy: string;
   updatedAt: string;
