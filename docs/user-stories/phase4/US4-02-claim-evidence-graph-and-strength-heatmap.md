@@ -2,7 +2,7 @@
 
 ## Status
 
-- State: In Progress
+- State: Ready for User Checkpoint
 - Owner: Codex
 - Depends on: US4-01 approved
 
@@ -195,14 +195,16 @@ Red -> Green -> Refactor:
 
 ## Checkpoint Result
 
-- Production Frontend URL: Pending
-- Production Socket URL: Pending
+- Production Frontend URL: https://collab-board-iota.vercel.app
+- Production Socket URL: https://collab-board-0948.onrender.com
 - User Validation: Pending
 - Notes:
   - Added litigation graph metadata to board object model: `nodeRole` + `relationType`.
   - Added deterministic graph pass (`evaluateClaimStrength`) with explainability reasons and score caps.
   - Added `ClaimStrengthPanel` in right rail with click-to-focus claim behavior.
   - Added non-destructive on-canvas claim heatmap indicators (outline + level badge) driven by graph output.
+  - Commit: `d38a46c` (pushed to `origin/main` on February 22, 2026).
+  - Vercel production deploy: `https://collab-board-dwls6elkh-thisisyoussefs-projects.vercel.app`, aliased to `https://collab-board-iota.vercel.app`.
   - TDD evidence:
     - `npm run test -- src/lib/board-object.test.ts src/lib/litigation-graph.test.ts src/components/BoardInspectorPanel.test.tsx src/components/ClaimStrengthPanel.test.tsx src/pages/Board.test.tsx`
     - `npm run lint`
