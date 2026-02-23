@@ -12,7 +12,8 @@ Project: CollabBoard
 | Output tokens | ~4M (development) + ~600K (AI endpoint testing/benchmarks) |
 | Model/provider(s) used | Anthropic Claude Sonnet 4 (primary), Claude 3.5 Haiku (fast tasks), OpenAI GPT-4.1 (A/B benchmarks) |
 | Total development AI spend (USD) | ~$5 (Anthropic API for board AI endpoint + benchmarks) |
-| Other AI-related costs (if any) | $0 — Claude Code, Cursor, and Codex usage covered by existing subscriptions; LangSmith free tier for tracing |
+| Infrastructure cost | $7 (Render paid tier for always-on Socket.IO server) |
+| Other AI-related costs (if any) | $0 incremental — Claude Code (Claude Max plan), Codex (Codex Plus plan), and Cursor covered by existing subscriptions; LangSmith free tier for tracing |
 
 ## 2) Production Cost Projection Assumptions
 
