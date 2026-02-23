@@ -204,6 +204,28 @@ export function BoardInspectorPanel({
             </label>
           ) : null}
 
+          {selectedObject.type !== 'connector' && selectedObject.nodeRole === 'claim' ? (
+            <label className="property-row" htmlFor="claim-strength-override">
+              <span>Claim strength</span>
+              <select
+                id="claim-strength-override"
+                value={selectedObject.manualStrengthOverride || 'auto'}
+                disabled={!canEditBoard}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  onUpdateObject(selectedObject.id, {
+                    manualStrengthOverride: value === 'auto' ? undefined : (value as 'weak' | 'moderate' | 'strong'),
+                  });
+                }}
+              >
+                <option value="auto">Auto (AI)</option>
+                <option value="weak">Weak</option>
+                <option value="moderate">Moderate</option>
+                <option value="strong">Strong</option>
+              </select>
+            </label>
+          ) : null}
+
           {selectedObject.type === 'connector' ? (
             <>
               <label className="property-row" htmlFor="connector-relation">
