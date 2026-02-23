@@ -9,6 +9,7 @@ describe('BoardToolDock', () => {
     const toolbar = screen.getByRole('toolbar', { name: 'Board tools' });
     expect(toolbar).toBeInTheDocument();
     expect(toolbar).toHaveClass('board-tool-dock--wide');
+    expect(toolbar).toHaveClass('board-tool-dock--edge-to-edge');
     const toolbarWrap = toolbar.closest('.board-tool-dock-wrap');
     expect(toolbarWrap).not.toBeNull();
     expect(toolbarWrap).toHaveClass('board-tool-dock-wrap--expanded');

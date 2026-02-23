@@ -1043,8 +1043,11 @@
 }
 
 .board-tool-dock-wrap--expanded {
-  width: min(1880px, calc(100vw - 8px));
-  max-width: calc(100vw - 8px);
+  left: 4px;
+  right: 4px;
+  transform: none;
+  width: auto;
+  max-width: none;
 }
 
 .board-tool-dock {
@@ -1069,6 +1072,25 @@
 
 .board-tool-dock--wide {
   justify-content: flex-start;
+}
+
+.board-tool-dock--edge-to-edge {
+  gap: 0.34rem;
+  padding: 0.4rem 0.44rem;
+}
+
+.board-tool-dock--edge-to-edge .dock-group-tools {
+  gap: 0.24rem;
+}
+
+.board-tool-dock--edge-to-edge .dock-group + .dock-group {
+  padding-left: 0.44rem;
+}
+
+.board-tool-dock--edge-to-edge .dock-btn {
+  width: 54px;
+  height: 46px;
+  padding: 0.2rem 0.16rem;
 }
 
 .board-tool-dock::-webkit-scrollbar {
@@ -1186,6 +1208,19 @@
 
   .dock-group {
     gap: 0;
+  }
+}
+
+@media (max-width: 1200px) {
+  .board-tool-dock--edge-to-edge .dock-btn {
+    width: 50px;
+    height: 44px;
+    padding: 0.18rem 0.14rem;
+  }
+
+  .board-tool-dock--edge-to-edge .dock-btn-label {
+    font-size: 0.52rem;
+    letter-spacing: 0.02em;
   }
 }
 
