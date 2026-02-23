@@ -171,16 +171,16 @@ describe('Board', () => {
     // Verify layout elements
     expect(screen.getByText('CollabBoard')).toHaveClass('topbar-title-text');
     expect(screen.getByText('Test Board Title')).toHaveClass('topbar-title-text');
-    expect(screen.getByText('Inspector')).toBeInTheDocument();
-    expect(screen.getByText('AI Command Center')).toBeInTheDocument();
+    expect(screen.getByText('Case element inspector')).toBeInTheDocument();
+    expect(screen.getByText('AI Co-Counsel')).toBeInTheDocument();
     expect(screen.getByTestId('konva-stage')).toBeInTheDocument();
   });
 
   it('opens litigation intake dialog from right panel action', async () => {
     await renderBoardReady();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Build board from case input' }));
-    expect(screen.getByRole('dialog', { name: 'Build board from case input' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Open Litigation Intake' }));
+    expect(screen.getByRole('dialog', { name: 'Litigation board intake' })).toBeInTheDocument();
   });
 
   it('renders claim strength heatmap panel in the right rail', async () => {
@@ -193,8 +193,9 @@ describe('Board', () => {
   it('renders the new board command shell scaffolding', async () => {
     await renderBoardReady();
 
-    expect(screen.getByText('Canvas workspace')).toBeInTheDocument();
-    expect(screen.getByText('Workspace intelligence')).toBeInTheDocument();
+    expect(screen.getByText('Litigation workspace')).toBeInTheDocument();
+    expect(screen.getByText('Figma for lawyers')).toBeInTheDocument();
+    expect(screen.getByText('Design your case theory')).toBeInTheDocument();
     expect(screen.getByText('Session note')).toBeInTheDocument();
   });
 
@@ -223,13 +224,13 @@ describe('Board', () => {
 
     expect(screen.getByRole('toolbar', { name: 'Board tools' })).toBeInTheDocument();
     expect(screen.getByLabelText('Select tool')).toBeInTheDocument();
-    expect(screen.getByLabelText('Sticky note tool')).toBeInTheDocument();
-    expect(screen.getByLabelText('Rectangle tool')).toBeInTheDocument();
-    expect(screen.getByLabelText('Circle tool')).toBeInTheDocument();
+    expect(screen.getByLabelText('Case card tool')).toBeInTheDocument();
+    expect(screen.getByLabelText('Region tool')).toBeInTheDocument();
+    expect(screen.getByLabelText('Marker tool')).toBeInTheDocument();
     expect(screen.getByLabelText('Line tool')).toBeInTheDocument();
-    expect(screen.getByLabelText('Text tool')).toBeInTheDocument();
-    expect(screen.getByLabelText('Frame tool')).toBeInTheDocument();
-    expect(screen.getByLabelText('Connector tool')).toBeInTheDocument();
+    expect(screen.getByLabelText('Annotation tool')).toBeInTheDocument();
+    expect(screen.getByLabelText('Case group tool')).toBeInTheDocument();
+    expect(screen.getByLabelText('Relationship tool')).toBeInTheDocument();
   });
 
   it('treats Backspace as a delete shortcut when not typing', async () => {
@@ -259,7 +260,7 @@ describe('Board', () => {
   it('renders the right inspector panel', async () => {
     await renderBoardReady();
 
-    const inspectorHeading = screen.getByRole('heading', { name: 'Inspector' });
+    const inspectorHeading = screen.getByRole('heading', { name: 'Case element inspector' });
     const inspectorPanel = inspectorHeading.closest('section');
     expect(inspectorPanel).not.toBeNull();
     if (!inspectorPanel) {
@@ -280,10 +281,10 @@ describe('Board', () => {
     expect(avatar.textContent).toBe('TU');
   });
 
-  it('navigates to dashboard when Dashboard button is clicked', async () => {
+  it('navigates to dashboard when Cases button is clicked', async () => {
     await renderBoardReady();
 
-    fireEvent.click(screen.getByText('Dashboard'));
+    fireEvent.click(screen.getByText('Cases'));
     expect(mockNavigate).toHaveBeenCalledWith('/dashboard');
   });
 
@@ -323,7 +324,7 @@ describe('Board', () => {
     await renderBoardReady('board-share-test');
 
     fireEvent.click(screen.getByText('Share'));
-    expect(await screen.findByText('Share board')).toBeInTheDocument();
+    expect(await screen.findByText('Share case board')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Copy link' }));
 
     await waitFor(() => {
@@ -366,7 +367,7 @@ describe('Board', () => {
     await screen.findByText('Shared Board');
 
     fireEvent.click(screen.getByText('Share'));
-    fireEvent.click(await screen.findByRole('button', { name: 'Save to workspace' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Save to my caseload' }));
 
     await waitFor(() => {
       expect(setDoc).toHaveBeenCalledTimes(1);
@@ -397,10 +398,10 @@ describe('Board', () => {
 
     await renderBoardReady('board-ai-test');
 
-    fireEvent.change(screen.getByLabelText('AI prompt'), {
+    fireEvent.change(screen.getByLabelText('Message to AI'), {
       target: { value: 'Create a kickoff sticky note' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Generate Plan' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Generate' }));
 
     await waitFor(() => {
       expect(mockFetch).toHaveBeenCalledWith(
@@ -411,9 +412,9 @@ describe('Board', () => {
       );
     });
 
-    await screen.findByText('Created a starting idea.');
+    await expect(screen.findAllByText('Created a starting idea.')).resolves.toHaveLength(1);
     expect(screen.getByText('createStickyNote')).toBeInTheDocument();
-    expect(screen.getByText(/Auto mode applies generated actions immediately./i)).toBeInTheDocument();
+    expect(screen.getByText('Conversation')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Preview mode' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Apply changes' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Undo last change' })).toBeDisabled();
@@ -460,8 +461,8 @@ describe('Board', () => {
     renderBoard('board-viewer');
     await screen.findByText('Viewer Board');
 
-    expect(screen.getByLabelText('Sticky note tool')).toBeDisabled();
-    expect(screen.getByLabelText('AI prompt')).toBeDisabled();
+    expect(screen.getByLabelText('Case card tool')).toBeDisabled();
+    expect(screen.getByLabelText('Message to AI')).toBeDisabled();
     expect(screen.getByText(/Read-only mode/i)).toBeInTheDocument();
   });
 
@@ -495,6 +496,15 @@ describe('Board', () => {
 
     fireEvent.click(screen.getByText('Share'));
 
-    expect(await screen.findByText('Only owner can change sharing settings.')).toBeInTheDocument();
+    expect(await screen.findByText('Only lead counsel can change sharing settings.')).toBeInTheDocument();
+  });
+
+  it('renders the contradiction radar panel in the right rail', async () => {
+    await renderBoardReady();
+
+    expect(screen.getByText('Contradiction Radar')).toBeInTheDocument();
+    expect(
+      screen.getByText('AI-detected contradictions between selected sources.'),
+    ).toBeInTheDocument();
   });
 });

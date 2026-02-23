@@ -2,9 +2,10 @@
 
 ## Status
 
-- State: Pending
+- State: Ready for User Checkpoint
 - Owner: Codex
 - Depends on: US4-02 approved
+- Implementation: Complete (TDD red-green, all 31 tests pass, lint clean, build clean)
 
 ## Persona
 

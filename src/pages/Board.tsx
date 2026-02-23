@@ -32,6 +32,7 @@ import { BoardInspectorPanel } from '../components/BoardInspectorPanel';
 import { BoardToolDock, type BoardTool } from '../components/BoardToolDock';
 import { BoardZoomChip } from '../components/BoardZoomChip';
 import { ClaimStrengthPanel } from '../components/ClaimStrengthPanel';
+import { ContradictionRadarPanel } from '../components/ContradictionRadarPanel';
 import { LitigationIntakeDialog } from '../components/LitigationIntakeDialog';
 import { MetricsOverlay } from '../components/MetricsOverlay';
 import { PresenceAvatars } from '../components/PresenceAvatars';
@@ -43,6 +44,7 @@ import { useAICommandCenter } from '../hooks/useAICommandCenter';
 import { useAIExecutor, type AICommitMeta } from '../hooks/useAIExecutor';
 import { useBoardRecents } from '../hooks/useBoardRecents';
 import { useBoardHistory } from '../hooks/useBoardHistory';
+import { useContradictionRadar } from '../hooks/useContradictionRadar';
 import { useLitigationIntake } from '../hooks/useLitigationIntake';
 import { useBoardSharing } from '../hooks/useBoardSharing';
 import { useCursors } from '../hooks/useCursors';
@@ -427,6 +429,10 @@ export function Board() {
     boardId,
     user,
   });
+  const contradictionRadar = useContradictionRadar({
+    boardId,
+    user,
+  });
   const boardSharing = useBoardSharing({
     boardId,
     userId: user?.uid ?? null,
@@ -615,7 +621,6 @@ export function Board() {
     const plan = buildBoardActionsFromLitigationDraft(litigationIntake.draft, {
       existingObjectIds,
       objective: litigationIntake.objective,
-      layoutMode: litigationIntake.layoutMode,
     });
 
     if (plan.actions.length === 0) {
@@ -4918,7 +4923,7 @@ export function Board() {
 
     const cleaned = titleDraft.trim();
     if (!cleaned) {
-      setTitleError('Board name cannot be empty.');
+      setTitleError('Case name cannot be empty.');
       return;
     }
 
@@ -5013,7 +5018,7 @@ export function Board() {
   const handleSaveToWorkspace = async () => {
     const saved = await boardSharing.saveToWorkspace();
     if (saved) {
-      setCanvasNotice('Board saved to your workspace.');
+      setCanvasNotice('Case board saved to your caseload.');
     }
   };
 
@@ -5394,13 +5399,11 @@ export function Board() {
         draft={litigationIntake.draft}
         canGenerate={litigationIntake.canGenerate}
         objective={litigationIntake.objective}
-        layoutMode={litigationIntake.layoutMode}
         includedSections={litigationIntake.includedSections}
         uploadedDocuments={litigationIntake.uploadedDocuments}
         onClose={() => setIsLitigationIntakeOpen(false)}
         onInputChange={litigationIntake.setInputField}
         onObjectiveChange={litigationIntake.setObjective}
-        onLayoutModeChange={litigationIntake.setLayoutMode}
         onSectionToggle={litigationIntake.toggleSection}
         onDocumentsSelected={(files) => {
           void litigationIntake.addUploadedDocuments(files);
@@ -5423,7 +5426,7 @@ export function Board() {
               <span className="logo-dot small" />
               <span className="topbar-title-text">CollabBoard</span>
             </div>
-            <span className="board-brand-kicker">Canvas workspace</span>
+            <span className="board-brand-kicker">Litigation workspace</span>
           </div>
           {editingTitle ? (
             <form
@@ -5508,7 +5511,7 @@ export function Board() {
           {user ? (
             <>
               <button className="secondary-btn" onClick={() => navigate('/dashboard')}>
-                Dashboard
+                Cases
               </button>
               <button className="primary-btn" onClick={() => void signOut().then(() => navigate('/'))}>
                 Sign out
@@ -5835,15 +5838,15 @@ export function Board() {
 
         <aside className="figma-right-panel">
           <header className="figma-right-panel-head">
-            <p className="figma-right-panel-kicker">Workspace intelligence</p>
-            <h2>Review and refine</h2>
+            <p className="figma-right-panel-kicker">Figma for lawyers</p>
+            <h2>Design your case theory</h2>
             <button
               className="secondary-btn litigation-intake-trigger"
               type="button"
               disabled={!canEditBoard}
               onClick={() => setIsLitigationIntakeOpen(true)}
             >
-              Build board from case input
+              Open Litigation Intake
             </button>
           </header>
           <AICommandCenter
@@ -5854,6 +5857,7 @@ export function Board() {
               error: aiCommandCenter.error,
               message: aiCommandCenter.message,
               actions: aiCommandCenter.actions,
+              conversation: aiCommandCenter.conversation,
               applying: aiExecutor.applying,
               applyDisabled:
                 !canApplyAI ||
@@ -5865,7 +5869,7 @@ export function Board() {
               executionMessage: aiExecutor.message,
             }}
             disabled={!canApplyAI}
-            disabledReason="AI requires signed-in editor access on this board."
+            disabledReason="AI requires signed-in editor access on this case board."
             onPromptChange={aiCommandCenter.setPrompt}
             onModeChange={aiCommandCenter.setMode}
             onSubmit={() => {
@@ -5900,6 +5904,29 @@ export function Board() {
           <ClaimStrengthPanel
             results={claimStrengthResults}
             onFocusClaim={handleFocusClaim}
+          />
+          <ContradictionRadarPanel
+            candidates={contradictionRadar.candidates}
+            filteredCandidates={contradictionRadar.filteredCandidates}
+            decisions={contradictionRadar.decisions}
+            confidenceThreshold={contradictionRadar.confidenceThreshold}
+            loading={contradictionRadar.loading}
+            error={contradictionRadar.error}
+            onAccept={contradictionRadar.accept}
+            onReject={contradictionRadar.reject}
+            onThresholdChange={contradictionRadar.setConfidenceThreshold}
+            onApply={() => {
+              const execActions = contradictionRadar.applyAccepted();
+              if (execActions.length === 0) return;
+              const previews = execActions.map((a, i) => ({
+                id: `contra-preview-${i}`,
+                name: a.kind === 'create' ? `create${a.object.type.charAt(0).toUpperCase()}${a.object.type.slice(1)}` : a.kind,
+                summary: a.kind === 'create' ? `Create ${a.object.type}: ${(a.object.text || '').slice(0, 60)}` : a.kind,
+                input: a.kind === 'create' ? { ...a.object } : {},
+              }));
+              void aiExecutor.applyPreviewActions(previews, 'Contradiction radar: applied accepted contradictions');
+            }}
+            acceptedCount={contradictionRadar.acceptedCandidates.length}
           />
         </aside>
       </section>
