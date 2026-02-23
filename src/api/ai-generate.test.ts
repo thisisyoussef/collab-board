@@ -330,6 +330,55 @@ describe('AI Generate API Endpoint', () => {
       expect(responseData.toolCalls).toHaveLength(1);
     });
 
+    it('returns AI-generated quick action chips when intent is quick_actions', async () => {
+      process.env.AI_PROVIDER_MODE = 'openai';
+      mockOpenAIChatCreate.mockResolvedValueOnce({
+        choices: [
+          {
+            finish_reason: 'stop',
+            message: {
+              content: JSON.stringify({
+                quickActions: [
+                  'Map contradictions between key witness statements',
+                  'Build a claim-evidence chain with weak-link flags',
+                  'Generate a chronology from exhibits and testimony',
+                ],
+              }),
+            },
+          },
+        ],
+      });
+
+      const handler = (await import('../../api/ai/generate')).default;
+      const req = createMockReq({
+        body: {
+          prompt: 'Suggest what to do next',
+          boardId: 'board-1',
+          boardState: {},
+          intent: 'quick_actions',
+          conversation: [
+            { role: 'user', text: 'We need to prepare witness prep.' },
+            { role: 'assistant', text: 'Understood.' },
+          ],
+        },
+      });
+      const res = createMockRes();
+
+      await handler(req as never, res as never);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({
+        quickActions: [
+          'Map contradictions between key witness statements',
+          'Build a claim-evidence chain with weak-link flags',
+          'Generate a chronology from exhibits and testimony',
+        ],
+        provider: 'openai',
+        model: 'gpt-4o-mini',
+        usedFallback: false,
+      });
+    });
+
     it('handles body being null/undefined', async () => {
       const handler = (await import('../../api/ai/generate')).default;
       const req = createMockReq({ body: null });

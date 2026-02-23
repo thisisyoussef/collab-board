@@ -41,6 +41,7 @@ export interface AIGenerateToolCall {
 export interface AIGenerateResponse {
   toolCalls?: AIGenerateToolCall[];
   message?: string | null;
+  quickActions?: string[];
   stopReason?: string | null;
   error?: string;
 }

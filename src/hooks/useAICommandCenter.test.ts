@@ -249,4 +249,40 @@ describe('useAICommandCenter', () => {
     // Latency should still be recorded even on error responses
     expect(result.current.lastRequestLatencyMs).toBeGreaterThanOrEqual(0);
   });
+
+  it('requests AI-generated quick action chips and stores them', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({
+        quickActions: [
+          'Map contradictions between witness statements',
+          'Build a claim-evidence graph with strength flags',
+        ],
+      }),
+    } as Response);
+
+    const { result } = renderHook(() =>
+      useAICommandCenter({
+        boardId: 'board-quick',
+        user: { getIdToken: mockGetIdToken } as never,
+      }),
+    );
+
+    await act(async () => {
+      const quickActions = await result.current.refreshQuickActions('Suggest litigation next steps');
+      expect(quickActions).toEqual([
+        'Map contradictions between witness statements',
+        'Build a claim-evidence graph with strength flags',
+      ]);
+    });
+
+    expect(result.current.quickActions).toEqual([
+      'Map contradictions between witness statements',
+      'Build a claim-evidence graph with strength flags',
+    ]);
+    const request = mockFetch.mock.calls[0]?.[1] as RequestInit;
+    const parsedBody = JSON.parse(String(request.body));
+    expect(parsedBody.intent).toBe('quick_actions');
+  });
 });

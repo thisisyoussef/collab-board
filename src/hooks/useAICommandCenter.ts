@@ -26,12 +26,17 @@ interface UseAICommandCenterResult {
   error: string | null;
   message: string | null;
   actions: AIActionPreview[];
+  quickActions: string[];
+  quickActionsLoading: boolean;
+  quickActionsError: string | null;
   conversation: AIConversationMessage[];
   lastRequestLatencyMs: number | null;
   averageRequestLatencyMs: number;
   setPrompt: (value: string) => void;
   setMode: (mode: AIApplyMode) => void;
   submitPrompt: () => Promise<AICommandRunResult | null>;
+  submitPromptWithText: (value: string) => Promise<AICommandRunResult | null>;
+  refreshQuickActions: (seedPrompt?: string) => Promise<string[]>;
   retryLast: () => Promise<AICommandRunResult | null>;
   clearResult: () => void;
 }
@@ -124,6 +129,27 @@ function normalizeToolCalls(toolCalls: AIGenerateToolCall[] | undefined): AIActi
     .filter((entry) => entry.name !== 'unknown_action' || Object.keys(entry.input).length > 0);
 }
 
+function normalizeQuickActions(quickActions: string[] | undefined): string[] {
+  if (!Array.isArray(quickActions)) {
+    return [];
+  }
+
+  const deduped = new Set<string>();
+  quickActions.forEach((action) => {
+    if (typeof action !== 'string') {
+      return;
+    }
+
+    const normalized = action.trim();
+    if (!normalized || normalized.length > 96) {
+      return;
+    }
+    deduped.add(normalized);
+  });
+
+  return Array.from(deduped).slice(0, 8);
+}
+
 function createConversationId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -178,8 +204,12 @@ export function useAICommandCenter({
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [actions, setActions] = useState<AIActionPreview[]>([]);
+  const [quickActions, setQuickActions] = useState<string[]>([]);
+  const [quickActionsLoading, setQuickActionsLoading] = useState(false);
+  const [quickActionsError, setQuickActionsError] = useState<string | null>(null);
   const [conversation, setConversation] = useState<AIConversationMessage[]>(() => buildConversationSeed());
   const loadingRef = useRef(false);
+  const quickActionsLoadingRef = useRef(false);
   const lastPromptRef = useRef('');
   const conversationRef = useRef<AIConversationMessage[]>(buildConversationSeed());
   const [lastRequestLatencyMs, setLastRequestLatencyMs] = useState<number | null>(null);
@@ -198,6 +228,96 @@ export function useAICommandCenter({
     setModeState(normalizedMode);
     persistMode(normalizedMode);
   }, []);
+
+  const getAuthHeaders = useCallback(async (): Promise<Record<string, string>> => {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    if (user && typeof user.getIdToken === 'function') {
+      try {
+        const token = await user.getIdToken();
+        if (token) {
+          headers.Authorization = `Bearer ${token}`;
+        }
+      } catch {
+        logger.warn('AI', 'Could not retrieve auth token for AI request, continuing without auth');
+      }
+    }
+
+    return headers;
+  }, [user]);
+
+  const refreshQuickActions = useCallback(
+    async (seedPrompt?: string): Promise<string[]> => {
+      if (quickActionsLoadingRef.current) {
+        return quickActions;
+      }
+
+      if (!boardId) {
+        setQuickActionsError('Board is unavailable. Reload and try again.');
+        return [];
+      }
+
+      const basePrompt =
+        (typeof seedPrompt === 'string' && seedPrompt.trim()) ||
+        prompt.trim() ||
+        lastPromptRef.current ||
+        'Suggest next litigation board actions based on the current case map.';
+
+      quickActionsLoadingRef.current = true;
+      setQuickActionsLoading(true);
+      setQuickActionsError(null);
+
+      try {
+        const headers = await getAuthHeaders();
+        const requestBody: {
+          intent: 'quick_actions';
+          prompt: string;
+          boardId: string;
+          conversation?: Array<{ role: 'user' | 'assistant'; text: string }>;
+          boardState?: BoardObjectsRecord;
+        } = {
+          intent: 'quick_actions',
+          prompt: basePrompt,
+          boardId,
+          conversation: normalizeConversationPayload(conversationRef.current),
+        };
+
+        if (getBoardState) {
+          try {
+            requestBody.boardState = getBoardState();
+          } catch {
+            requestBody.boardState = undefined;
+          }
+        }
+
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(requestBody),
+        });
+        const payload = await parseJsonPayload(response);
+
+        if (!response.ok) {
+          const errMsg = parseApiError(response.status, payload.error);
+          setQuickActionsError(errMsg);
+          return [];
+        }
+
+        const nextQuickActions = normalizeQuickActions(payload.quickActions);
+        setQuickActions(nextQuickActions);
+        return nextQuickActions;
+      } catch {
+        setQuickActionsError('Unable to generate quick actions right now.');
+        return [];
+      } finally {
+        quickActionsLoadingRef.current = false;
+        setQuickActionsLoading(false);
+      }
+    },
+    [boardId, endpoint, getAuthHeaders, getBoardState, prompt, quickActions],
+  );
 
   const runPrompt = useCallback(
     async (nextPrompt: string): Promise<AICommandRunResult | null> => {
@@ -234,21 +354,7 @@ export function useAICommandCenter({
       const requestStartMs = Date.now();
 
       try {
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json',
-        };
-
-        if (user && typeof user.getIdToken === 'function') {
-          try {
-            const token = await user.getIdToken();
-            if (token) {
-              headers.Authorization = `Bearer ${token}`;
-            }
-          } catch {
-            logger.warn('AI', 'Could not retrieve auth token for AI request, continuing without auth');
-            // Token retrieval failures should not block AI planning UX.
-          }
-        }
+        const headers = await getAuthHeaders();
 
         const requestBody: {
           prompt: string;
@@ -297,6 +403,7 @@ export function useAICommandCenter({
         }
 
         const nextActions = normalizeToolCalls(payload.toolCalls);
+        const nextQuickActions = normalizeQuickActions(payload.quickActions);
         const nextMessage =
           typeof payload.message === 'string' && payload.message.trim()
             ? payload.message.trim()
@@ -315,6 +422,10 @@ export function useAICommandCenter({
         }
 
         setActions(nextActions);
+        if (nextQuickActions.length > 0) {
+          setQuickActions(nextQuickActions);
+          setQuickActionsError(null);
+        }
         setMessage(nextMessage);
         lastPromptRef.current = trimmedPrompt;
         appendConversation({
@@ -346,12 +457,25 @@ export function useAICommandCenter({
         setLoading(false);
       }
     },
-    [appendConversation, boardId, endpoint, getBoardState, user],
+    [appendConversation, boardId, endpoint, getAuthHeaders, getBoardState],
   );
 
   const submitPrompt = useCallback(async () => {
     return runPrompt(prompt);
   }, [prompt, runPrompt]);
+
+  const submitPromptWithText = useCallback(
+    async (value: string) => {
+      const nextValue = value.trim();
+      if (!nextValue) {
+        setError('Enter a message before generating.');
+        return null;
+      }
+      setPrompt(nextValue);
+      return runPrompt(nextValue);
+    },
+    [runPrompt],
+  );
 
   const retryLast = useCallback(async () => {
     const fallbackPrompt = prompt.trim() || lastPromptRef.current;
@@ -368,6 +492,8 @@ export function useAICommandCenter({
     setError(null);
     setMessage(null);
     setActions([]);
+    setQuickActions([]);
+    setQuickActionsError(null);
     const seed = buildConversationSeed();
     setConversation(seed);
     conversationRef.current = seed;
@@ -387,12 +513,17 @@ export function useAICommandCenter({
     error,
     message,
     actions,
+    quickActions,
+    quickActionsLoading,
+    quickActionsError,
     conversation,
     lastRequestLatencyMs,
     averageRequestLatencyMs,
     setPrompt,
     setMode,
     submitPrompt,
+    submitPromptWithText,
+    refreshQuickActions,
     retryLast,
     clearResult,
   };

@@ -172,7 +172,8 @@ describe('Board', () => {
     expect(screen.getByText('CollabBoard')).toHaveClass('topbar-title-text');
     expect(screen.getByText('Test Board Title')).toHaveClass('topbar-title-text');
     expect(screen.getByText('Case element inspector')).toBeInTheDocument();
-    expect(screen.getByText('AI Case Assistant')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open AI assistant' })).toBeInTheDocument();
+    expect(screen.queryByText('AI Case Assistant')).not.toBeInTheDocument();
     expect(screen.getByTestId('konva-stage')).toBeInTheDocument();
   });
 
@@ -389,6 +390,13 @@ describe('Board', () => {
       ok: true,
       status: 200,
       json: vi.fn().mockResolvedValue({
+        quickActions: ['Map witness contradictions with citations'],
+      }),
+    } as Response);
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({
         message: 'Created a starting idea.',
         toolCalls: [
           {
@@ -406,6 +414,7 @@ describe('Board', () => {
     } as Response);
 
     await renderBoardReady('board-ai-test');
+    fireEvent.click(screen.getByRole('button', { name: 'Open AI assistant' }));
 
     fireEvent.change(screen.getByLabelText('Case AI prompt'), {
       target: { value: 'Create a kickoff sticky note' },
@@ -423,7 +432,7 @@ describe('Board', () => {
 
     await expect(screen.findAllByText('Created a starting idea.')).resolves.toHaveLength(1);
     expect(screen.getByText('createStickyNote')).toBeInTheDocument();
-    expect(screen.getByText('Conversation')).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Conversation' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Preview mode' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Apply changes' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Undo last change' })).toBeDisabled();
@@ -473,7 +482,7 @@ describe('Board', () => {
     expect(screen.getByLabelText('Case card tool')).toBeDisabled();
     expect(screen.getByLabelText('Evidence node tool')).toBeDisabled();
     expect(screen.getByLabelText('Contradicts link tool')).toBeDisabled();
-    expect(screen.getByLabelText('Case AI prompt')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Open AI assistant' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Legal quick start' })).toBeDisabled();
     expect(screen.getByText(/Read-only mode/i)).toBeInTheDocument();
   });

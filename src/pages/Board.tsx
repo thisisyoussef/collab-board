@@ -27,7 +27,7 @@ import {
   Transformer,
 } from 'react-konva';
 import { useNavigate, useParams } from 'react-router-dom';
-import { AICommandCenter } from '../components/AICommandCenter';
+import { AIAssistantFab } from '../components/AIAssistantFab';
 import { BoardInspectorPanel } from '../components/BoardInspectorPanel';
 import { BoardToolDock, type BoardTool } from '../components/BoardToolDock';
 import { BoardZoomChip } from '../components/BoardZoomChip';
@@ -658,12 +658,14 @@ export function Board() {
     }
   };
 
-  const handleSubmitAI = async () => {
+  const handleSubmitAI = async (promptOverride?: string) => {
     if (!canApplyAI) {
       setCanvasNotice('AI planning is available only to signed-in editors.');
       return;
     }
-    const result = await aiCommandCenter.submitPrompt();
+    const result = promptOverride
+      ? await aiCommandCenter.submitPromptWithText(promptOverride)
+      : await aiCommandCenter.submitPrompt();
     if (!result || aiCommandCenter.mode !== 'auto' || result.actions.length === 0) {
       return;
     }
@@ -684,6 +686,10 @@ export function Board() {
 
   const handleUndoAI = () => {
     handleUndoHistory();
+  };
+
+  const handleQuickActionChip = (quickActionPrompt: string) => {
+    void handleSubmitAI(quickActionPrompt);
   };
 
   const handleGenerateLitigationDraft = async () => {
@@ -6355,43 +6361,6 @@ export function Board() {
               Open Litigation Intake
             </button>
           </header>
-          <AICommandCenter
-            state={{
-              prompt: aiCommandCenter.prompt,
-              mode: aiCommandCenter.mode,
-              loading: aiCommandCenter.loading,
-              error: aiCommandCenter.error,
-              message: aiCommandCenter.message,
-              actions: aiCommandCenter.actions,
-              conversation: aiCommandCenter.conversation,
-              applying: aiExecutor.applying,
-              applyDisabled:
-                !canApplyAI ||
-                aiExecutor.applying ||
-                aiCommandCenter.loading ||
-                aiCommandCenter.actions.length === 0,
-              canUndo: canEditBoard && boardHistory.canUndo,
-              executionError: aiExecutor.error,
-              executionMessage: aiExecutor.message,
-            }}
-            disabled={!canApplyAI}
-            disabledReason="AI requires signed-in editor access on this case board."
-            onPromptChange={aiCommandCenter.setPrompt}
-            onModeChange={aiCommandCenter.setMode}
-            onSubmit={() => {
-              void handleSubmitAI();
-            }}
-            onApply={() => {
-              void handleApplyAIPlan();
-            }}
-            onUndo={() => {
-              void handleUndoAI();
-            }}
-            onRetry={() => {
-              void handleRetryAI();
-            }}
-            onClear={aiCommandCenter.clearResult}
-          />
           <BoardInspectorPanel
             selectedIds={selectedIds}
             selectedObject={selectedObject}
@@ -6447,6 +6416,49 @@ export function Board() {
           />
         </aside>
       </section>
+      <AIAssistantFab
+        state={{
+          prompt: aiCommandCenter.prompt,
+          mode: aiCommandCenter.mode,
+          loading: aiCommandCenter.loading,
+          error: aiCommandCenter.error,
+          message: aiCommandCenter.message,
+          actions: aiCommandCenter.actions,
+          conversation: aiCommandCenter.conversation,
+          applying: aiExecutor.applying,
+          applyDisabled:
+            !canApplyAI ||
+            aiExecutor.applying ||
+            aiCommandCenter.loading ||
+            aiCommandCenter.actions.length === 0,
+          canUndo: canEditBoard && boardHistory.canUndo,
+          executionError: aiExecutor.error,
+          executionMessage: aiExecutor.message,
+        }}
+        quickActions={aiCommandCenter.quickActions}
+        quickActionsLoading={aiCommandCenter.quickActionsLoading}
+        quickActionsError={aiCommandCenter.quickActionsError}
+        disabled={!canApplyAI}
+        disabledReason="AI requires signed-in editor access on this case board."
+        onPromptChange={aiCommandCenter.setPrompt}
+        onSubmit={() => {
+          void handleSubmitAI();
+        }}
+        onApply={() => {
+          void handleApplyAIPlan();
+        }}
+        onUndo={() => {
+          void handleUndoAI();
+        }}
+        onRetry={() => {
+          void handleRetryAI();
+        }}
+        onClear={aiCommandCenter.clearResult}
+        onRefreshQuickActions={() => {
+          void aiCommandCenter.refreshQuickActions();
+        }}
+        onQuickActionSelect={handleQuickActionChip}
+      />
       <BoardToolDock
         activeTool={activeTool}
         canEditBoard={canEditBoard}

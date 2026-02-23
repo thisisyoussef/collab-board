@@ -481,6 +481,21 @@ Pros and Cons — create 2 frames side by side (350x400 each, 50px gap):
   "Cons": x=500, y=100, width=350, height=400, color=#E57373
   Place 3 sticky notes in each frame with placeholder content.`;
 
+const QUICK_ACTION_SYSTEM_PROMPT = `You generate quick action chips for a litigation board AI assistant.
+
+Return concise, actionable prompts that a litigator would click.
+
+Rules:
+- Return 4 to 8 suggestions.
+- Each suggestion must be imperative and specific.
+- Keep each under 90 characters.
+- Focus on litigation strategy tasks (claims, evidence, witnesses, chronology, contradictions).
+- Do not mention UI actions (like "click" or "open").
+- Return valid JSON only in this shape:
+{
+  "quickActions": ["Suggestion 1", "Suggestion 2"]
+}`;
+
 const MAX_PROMPT_LENGTH = 500;
 const MAX_BOARD_STATE_OBJECTS = 100;
 const MAX_PLANNING_ATTEMPTS = 2;
@@ -511,6 +526,27 @@ interface PlanGenerationResult {
   toolCalls: OutgoingToolCall[];
   message: string | null;
   stopReason: string | null;
+  provider: AIProvider;
+  model: string;
+}
+
+interface QuickActionConversationTurn {
+  role: 'user' | 'assistant';
+  text: string;
+}
+
+interface QuickActionGenerationInput {
+  prompt: string;
+  truncatedBoardState: unknown;
+  boardId: string;
+  actorUserId: string;
+  provider: AIProvider;
+  modelOverride: string | null;
+  conversation: QuickActionConversationTurn[];
+}
+
+interface QuickActionGenerationResult {
+  quickActions: string[];
   provider: AIProvider;
   model: string;
 }
@@ -918,6 +954,100 @@ function buildExpansionUserContent(
   ].join('\n');
 }
 
+function normalizeConversationTurns(value: unknown): QuickActionConversationTurn[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const parsed: QuickActionConversationTurn[] = [];
+  value.forEach((entry) => {
+    if (!entry || typeof entry !== 'object') {
+      return;
+    }
+    const role = (entry as { role?: unknown }).role;
+    const text = (entry as { text?: unknown }).text;
+    if ((role === 'user' || role === 'assistant') && typeof text === 'string' && text.trim()) {
+      parsed.push({
+        role,
+        text: text.trim(),
+      });
+    }
+  });
+
+  return parsed.slice(-8);
+}
+
+function normalizeQuickActionCandidates(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const deduped = new Set<string>();
+  value.forEach((entry) => {
+    if (typeof entry !== 'string') {
+      return;
+    }
+
+    const normalized = entry.trim().replace(/\s+/g, ' ');
+    if (normalized.length < 8 || normalized.length > 96) {
+      return;
+    }
+    deduped.add(normalized);
+  });
+
+  return Array.from(deduped).slice(0, 8);
+}
+
+function extractQuickActionsFromText(text: string | null): string[] {
+  if (!text) {
+    return [];
+  }
+
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as { quickActions?: unknown } | unknown[];
+    if (Array.isArray(parsed)) {
+      return normalizeQuickActionCandidates(parsed);
+    }
+    if (parsed && typeof parsed === 'object' && 'quickActions' in parsed) {
+      return normalizeQuickActionCandidates((parsed as { quickActions?: unknown }).quickActions);
+    }
+  } catch {
+    // fall back to bullet parsing below
+  }
+
+  const lines = trimmed
+    .split('\n')
+    .map((line) => line.replace(/^[-*•\d.)\s]+/, '').trim())
+    .filter((line) => line.length > 0);
+
+  return normalizeQuickActionCandidates(lines);
+}
+
+function buildQuickActionsUserContent(
+  prompt: string,
+  conversation: QuickActionConversationTurn[],
+  truncatedBoardState: unknown,
+): string {
+  const conversationLines =
+    conversation.length > 0
+      ? conversation
+          .map((entry) => `${entry.role.toUpperCase()}: ${entry.text}`)
+          .join('\n')
+      : '(none)';
+
+  return [
+    `User request: ${prompt}`,
+    `Recent conversation:\n${conversationLines}`,
+    `Board object count: ${getBoardObjectCount(truncatedBoardState)}`,
+    'Generate quick actions now.',
+  ].join('\n\n');
+}
+
 function getBoardObjectCount(boardState: unknown): number {
   if (boardState && typeof boardState === 'object' && !Array.isArray(boardState)) {
     return Object.keys(boardState as Record<string, unknown>).length;
@@ -1216,6 +1346,86 @@ const generatePlan = LANGSMITH_TRACING_ENABLED
     })
   : generatePlanCore;
 
+async function generateQuickActionsCore({
+  prompt,
+  truncatedBoardState,
+  boardId,
+  actorUserId,
+  provider,
+  modelOverride,
+  conversation,
+}: QuickActionGenerationInput): Promise<QuickActionGenerationResult> {
+  const resolvedModel =
+    modelOverride ||
+    (provider === 'openai' ? getOpenAISimpleModelName() : getAnthropicSimpleModelName());
+  const userContent = buildQuickActionsUserContent(prompt, conversation, truncatedBoardState);
+
+  if (provider === 'openai') {
+    const completion = await createOpenAIPlanningMessage(
+      {
+        model: resolvedModel,
+        max_tokens: 350,
+        messages: [
+          {
+            role: 'system',
+            content: QUICK_ACTION_SYSTEM_PROMPT,
+          },
+          {
+            role: 'user',
+            content: userContent,
+          },
+        ],
+      },
+      'ai.generate.quick-actions.openai',
+      {
+        boardId,
+        actorUserId,
+        provider,
+        model: resolvedModel,
+        promptLength: prompt.length,
+        boardObjectCount: getBoardObjectCount(truncatedBoardState),
+      },
+    );
+
+    const content = extractOpenAITextMessage(completion);
+    return {
+      quickActions: extractQuickActionsFromText(content),
+      provider,
+      model: resolvedModel,
+    };
+  }
+
+  const message = await createAnthropicPlanningMessage(
+    {
+      model: resolvedModel,
+      max_tokens: 350,
+      system: QUICK_ACTION_SYSTEM_PROMPT,
+      messages: [
+        {
+          role: 'user',
+          content: userContent,
+        },
+      ],
+    },
+    'ai.generate.quick-actions.anthropic',
+    {
+      boardId,
+      actorUserId,
+      provider,
+      model: resolvedModel,
+      promptLength: prompt.length,
+      boardObjectCount: getBoardObjectCount(truncatedBoardState),
+    },
+  );
+
+  const content = extractTextMessage(message);
+  return {
+    quickActions: extractQuickActionsFromText(content),
+    provider,
+    model: resolvedModel,
+  };
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -1231,7 +1441,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { prompt, boardState, boardId, providerOverride, modelOverride } = req.body ?? {};
+  const {
+    prompt,
+    boardState,
+    boardId,
+    providerOverride,
+    modelOverride,
+    intent,
+    conversation,
+  } = req.body ?? {};
 
   if (!prompt || typeof prompt !== 'string') {
     apiLogger.warn('AI', 'Request rejected: missing or invalid prompt');
@@ -1347,6 +1565,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       truncatedBoardState = Object.fromEntries(entries.slice(0, MAX_BOARD_STATE_OBJECTS));
     }
   }
+  const conversationTurns = normalizeConversationTurns(conversation);
 
   // Complexity-based routing: simple → OpenAI gpt-4o-mini, complex → Anthropic Sonnet
   const primaryProvider = isAIProvider(requestedProvider)
@@ -1363,6 +1582,93 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const hasFallback = effectiveProvider !== fallbackProvider && isProviderAvailable(fallbackProvider);
 
   res.setHeader('X-AI-Provider', effectiveProvider);
+
+  if (intent === 'quick_actions') {
+    const runQuickActions = async (
+      provider: AIProvider,
+      isFallback: boolean,
+    ): Promise<QuickActionGenerationResult> => {
+      const label = isFallback ? 'fallback' : 'primary';
+      apiLogger.info(
+        'AI',
+        `Generating quick actions via ${provider} (${label}, model: ${sanitizedModelOverride || 'default'})`,
+        {
+          boardId: trimmedBoardId,
+          provider,
+          isFallback,
+          promptLength: prompt.length,
+          boardObjectCount: getBoardObjectCount(truncatedBoardState),
+        },
+      );
+
+      return generateQuickActionsCore({
+        prompt,
+        truncatedBoardState,
+        boardId: trimmedBoardId,
+        actorUserId,
+        provider,
+        modelOverride: sanitizedModelOverride,
+        conversation: conversationTurns,
+      });
+    };
+
+    try {
+      let quickActionsResult: QuickActionGenerationResult;
+      let usedFallback = false;
+
+      try {
+        quickActionsResult = await runQuickActions(effectiveProvider, false);
+      } catch (primaryErr) {
+        const isRateLimit =
+          primaryErr instanceof Error &&
+          'status' in primaryErr &&
+          (primaryErr as { status: number }).status === 429;
+        if (isRateLimit || !hasFallback) {
+          throw primaryErr;
+        }
+        apiLogger.warn(
+          'AI',
+          `Quick action generation failed on ${effectiveProvider}, falling back to ${fallbackProvider}: ${
+            primaryErr instanceof Error ? primaryErr.message : 'Unknown error'
+          }`,
+          {
+            boardId: trimmedBoardId,
+            primaryProvider: effectiveProvider,
+            fallbackProvider,
+          },
+        );
+        quickActionsResult = await runQuickActions(fallbackProvider, true);
+        usedFallback = true;
+        res.setHeader('X-AI-Provider', fallbackProvider);
+      }
+
+      res.setHeader('X-AI-Model', quickActionsResult.model);
+      await flushLangSmithTracesBestEffort();
+
+      return res.status(200).json({
+        quickActions: quickActionsResult.quickActions,
+        provider: quickActionsResult.provider,
+        model: quickActionsResult.model,
+        usedFallback,
+      });
+    } catch (err) {
+      const isRateLimit =
+        err instanceof Error && 'status' in err && (err as { status: number }).status === 429;
+      if (isRateLimit) {
+        return res.status(429).json({ error: 'AI rate limit reached. Please try again shortly.' });
+      }
+      apiLogger.error(
+        'AI',
+        `Quick action generation failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
+        {
+          boardId: trimmedBoardId,
+          provider: effectiveProvider,
+          userId: actorUserId,
+        },
+      );
+      return res.status(500).json({ error: 'AI request failed' });
+    }
+  }
 
   const attemptGeneration = async (provider: AIProvider, isFallback: boolean): Promise<PlanGenerationResult> => {
     const label = isFallback ? 'fallback' : 'primary';
