@@ -521,40 +521,6 @@ The CLAUDE.md file (~800 lines) was the most critical prompting artifact — a p
 
 ---
 
-## Demo Video Script
-
-### 0:00–0:20 — Intro
-- "Welcome to CollabBoard, a real-time collaborative whiteboard with an AI board agent."
-
-### 0:20–1:10 — Core Board Features
-- Create sticky note, shape, connector, and text
-- Move/resize objects and show selection behavior
-- Refresh — state persists from Firestore
-
-### 1:10–2:00 — Multiplayer Collaboration
-- Open second browser/user
-- Show presence avatars and cursor labels
-- Move/create objects from both sessions — live sync visible
-
-### 2:00–3:10 — AI Agent Commands
-- Show command center
-- Run one command from each category:
-  1. Creation: "Add a yellow sticky note that says User Research"
-  2. Manipulation: "Change the sticky note color to green"
-  3. Layout: "Arrange these notes in a grid"
-  4. Complex: "Create a SWOT analysis template"
-- Mention preview/apply flow and shared AI results across users
-
-### 3:10–4:10 — Architecture + Reliability
-- Stack callout: React + Konva, Socket.IO on Render, Firebase, Vercel serverless
-- Mention reconnect behavior and performance targets
-
-### 4:10–4:40 — Close
-- "That's CollabBoard: real-time collaboration plus AI-assisted board building."
-- Links to repo, deployed app, and documentation in the submission package
-
----
-
 ## Submission Deliverables
 
 | # | Deliverable | Location | Status |
@@ -564,8 +530,8 @@ The CLAUDE.md file (~800 lines) was the most critical prompting artifact — a p
 | 3 | Pre-Search document | [docs/pre-search.md](docs/pre-search.md) | Complete |
 | 4 | AI Development Log | [AI Development Log](#ai-development-log) (above) | Complete |
 | 5 | AI Cost Analysis | [AI Cost Analysis](#ai-cost-analysis) (above) | Complete |
-| 6 | Demo video (3–5 min) | Recorded | Complete |
-| 7 | Social post (X or LinkedIn, tag @GauntletAI) | Ready to post | Complete |
+| 6 | Demo video (3–5 min) | Uploaaded | Complete |
+| 7 | Social post (X or LinkedIn, tag @GauntletAI) | Posted | Complete |
 
 ---
 
