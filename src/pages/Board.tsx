@@ -123,6 +123,10 @@ import {
 } from '../lib/realtime-dedupe';
 import { buildBoardActionsFromLitigationDraft } from '../lib/litigation-intake-layout';
 import { claimStrengthColor, evaluateClaimStrength } from '../lib/litigation-graph';
+import {
+  computeLegalStickyDecorationMetrics,
+  computeStickyResizeState,
+} from '../lib/litigation-node-layout';
 import { screenToWorld, worldToScreen } from '../lib/utils';
 import type {
   BoardObject,
@@ -2483,14 +2487,24 @@ export function Board() {
   function applyStickyTransform(node: Konva.Group, object: BoardObject) {
     const scaleX = node.scaleX() || 1;
     const scaleY = node.scaleY() || 1;
-    const width = Math.max(STICKY_MIN_WIDTH, object.width * scaleX);
-    const height = Math.max(STICKY_MIN_HEIGHT, object.height * scaleY);
+    const resized = computeStickyResizeState({
+      width: object.width,
+      height: object.height,
+      fontSize: object.fontSize,
+      scaleX,
+      scaleY,
+    });
 
     const body = node.findOne('.sticky-body') as Konva.Rect | null;
     const label = node.findOne('.sticky-label') as Konva.Text | null;
 
-    body?.setAttrs({ width, height });
-    label?.setAttrs({ width, height });
+    body?.setAttrs({ width: resized.width, height: resized.height });
+    label?.setAttrs({
+      width: resized.width,
+      height: resized.height,
+      fontSize: resized.fontSize,
+    });
+    syncStickyRoleDecorations(node, object.nodeRole, resized.width, resized.height);
     node.scale({ x: 1, y: 1 });
   }
 
@@ -2932,9 +2946,13 @@ export function Board() {
 
     if (current.type === 'sticky' && node instanceof Konva.Group) {
       const body = node.findOne('.sticky-body') as Konva.Rect | null;
+      const label = node.findOne('.sticky-label') as Konva.Text | null;
       if (body) {
         width = body.width();
         height = body.height();
+      }
+      if (label) {
+        fontSize = label.fontSize();
       }
     }
 
@@ -3191,6 +3209,7 @@ export function Board() {
         fill: getStickyRenderColor(entry.text),
         fontSize: entry.fontSize || 14,
       });
+      syncStickyRoleDecorations(node, entry.nodeRole, entry.width, entry.height);
       return true;
     }
 
@@ -3260,15 +3279,23 @@ export function Board() {
     return false;
   }
 
-  function createRoleBadge(role: BoardObject['nodeRole'], parentWidth: number): Konva.Group | null {
+  function createRoleBadge(
+    role: BoardObject['nodeRole'],
+    parentWidth: number,
+    parentHeight: number,
+  ): Konva.Group | null {
     if (!role) return null;
     const meta = NODE_ROLE_COLORS[role];
     if (!meta) return null;
+    const metrics = computeLegalStickyDecorationMetrics({
+      width: parentWidth,
+      height: parentHeight,
+    });
 
     const badgeText = new Konva.Text({
       name: 'role-badge-text',
       text: meta.label,
-      fontSize: 9,
+      fontSize: metrics.badgeFontSize,
       fontFamily: BOARD_FONT_FAMILY,
       fontStyle: 'bold',
       fill: '#FFFFFF',
@@ -3276,13 +3303,13 @@ export function Board() {
       listening: false,
     });
     const textWidth = badgeText.width();
-    const pillW = textWidth + 10;
-    const pillH = 16;
+    const pillW = textWidth + metrics.badgePaddingX * 2;
+    const pillH = metrics.badgeHeight;
 
     const badgeGroup = new Konva.Group({
       name: 'role-badge',
-      x: parentWidth - pillW - 6,
-      y: 6,
+      x: parentWidth - pillW - metrics.badgeInset,
+      y: metrics.badgeInset,
       listening: false,
     });
 
@@ -3291,20 +3318,25 @@ export function Board() {
       width: pillW,
       height: pillH,
       fill: meta.badge,
-      cornerRadius: 8,
+      cornerRadius: pillH / 2,
       listening: false,
     });
 
-    badgeText.setAttrs({ x: 5, y: 3 });
+    badgeText.setAttrs({ x: metrics.badgePaddingX, y: metrics.badgeTextOffsetY });
     badgeGroup.add(pill);
     badgeGroup.add(badgeText);
     return badgeGroup;
   }
 
-  function updateRoleBadge(group: Konva.Group, role: BoardObject['nodeRole'], parentWidth: number) {
+  function updateRoleBadge(
+    group: Konva.Group,
+    role: BoardObject['nodeRole'],
+    parentWidth: number,
+    parentHeight: number,
+  ) {
     const existing = group.findOne('.role-badge') as Konva.Group | null;
     if (existing) existing.destroy();
-    const badge = createRoleBadge(role, parentWidth);
+    const badge = createRoleBadge(role, parentWidth, parentHeight);
     if (badge) group.add(badge);
   }
 
@@ -3314,13 +3346,19 @@ export function Board() {
     width: number,
     height: number,
   ) {
-    updateRoleBadge(group, role, width);
+    const metrics = computeLegalStickyDecorationMetrics({
+      width,
+      height,
+    });
+    updateRoleBadge(group, role, width, height);
 
     const existingStripe = group.findOne('.role-stripe') as Konva.Rect | null;
     if (role && NODE_ROLE_COLORS[role]) {
       if (existingStripe) {
         existingStripe.setAttrs({
+          width: metrics.stripeWidth,
           height,
+          cornerRadius: [metrics.stripeCornerRadius, 0, 0, metrics.stripeCornerRadius],
           fill: NODE_ROLE_COLORS[role].badge,
         });
         return;
@@ -3329,10 +3367,10 @@ export function Board() {
         name: 'role-stripe',
         x: 0,
         y: 0,
-        width: 4,
+        width: metrics.stripeWidth,
         height,
         fill: NODE_ROLE_COLORS[role].badge,
-        cornerRadius: [4, 0, 0, 4],
+        cornerRadius: [metrics.stripeCornerRadius, 0, 0, metrics.stripeCornerRadius],
         listening: false,
       });
       group.add(stripe);
@@ -3383,27 +3421,8 @@ export function Board() {
     });
 
     group.add(body);
-
-    // Left edge accent stripe for role-typed nodes
-    if (object.nodeRole && NODE_ROLE_COLORS[object.nodeRole]) {
-      const stripe = new Konva.Rect({
-        name: 'role-stripe',
-        x: 0,
-        y: 0,
-        width: 4,
-        height: object.height,
-        fill: NODE_ROLE_COLORS[object.nodeRole].badge,
-        cornerRadius: [4, 0, 0, 4],
-        listening: false,
-      });
-      group.add(stripe);
-    }
-
     group.add(label);
-
-    // Add role badge pill (top-right corner)
-    const badge = createRoleBadge(object.nodeRole, object.width);
-    if (badge) group.add(badge);
+    syncStickyRoleDecorations(group, object.nodeRole, object.width, object.height);
 
     group.on('click tap', (event) => {
       handleObjectSelection(event, object.id);
