@@ -1,6 +1,14 @@
 import type { AIGenerateToolCall } from './ai';
 
-export type DemoCasePackKey = 'pi' | 'employment' | 'criminal';
+export type DemoCasePackKey =
+  | 'pi'
+  | 'employment'
+  | 'criminal'
+  | 'credibility'
+  | 'causation'
+  | 'damages'
+  | 'johnson'
+  | 'defectco';
 
 export interface ClaimStrengthRecommendation {
   claimId: string;
@@ -14,4 +22,3 @@ export interface ClaimStrengthRecommendationResponse {
   message: string;
   recommendations: ClaimStrengthRecommendation[];
 }
-

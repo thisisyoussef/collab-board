@@ -125,7 +125,7 @@ import {
   buildRealtimeEventSignature,
   createRealtimeDedupeCache,
 } from '../lib/realtime-dedupe';
-import { buildDemoCasePack } from '../lib/demo-case-packs';
+import { buildDemoCasePack, DEMO_CASE_PACK_OPTIONS } from '../lib/demo-case-packs';
 import { buildBoardActionsFromLitigationDraft } from '../lib/litigation-intake-layout';
 import { claimStrengthColor, evaluateClaimStrength, type ClaimStrengthResult } from '../lib/litigation-graph';
 import {
@@ -6365,36 +6365,19 @@ export function Board() {
           </button>
           {isDemoLauncherOpen ? (
             <div id="start-demo-launcher" className="demo-launcher-popover" role="menu" aria-label="Start Demo">
-              <button
-                type="button"
-                className="secondary-btn"
-                role="menuitem"
-                onClick={() => {
-                  void handleLoadDemoCasePack('pi');
-                }}
-              >
-                Load PI pack
-              </button>
-              <button
-                type="button"
-                className="secondary-btn"
-                role="menuitem"
-                onClick={() => {
-                  void handleLoadDemoCasePack('employment');
-                }}
-              >
-                Load Employment pack
-              </button>
-              <button
-                type="button"
-                className="secondary-btn"
-                role="menuitem"
-                onClick={() => {
-                  void handleLoadDemoCasePack('criminal');
-                }}
-              >
-                Load Criminal pack
-              </button>
+              {DEMO_CASE_PACK_OPTIONS.map((option) => (
+                <button
+                  key={option.pack}
+                  type="button"
+                  className="secondary-btn"
+                  role="menuitem"
+                  onClick={() => {
+                    void handleLoadDemoCasePack(option.pack);
+                  }}
+                >
+                  {option.menuLabel}
+                </button>
+              ))}
             </div>
           ) : null}
           <button

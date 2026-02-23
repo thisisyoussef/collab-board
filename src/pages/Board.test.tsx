@@ -222,6 +222,25 @@ describe('Board', () => {
     expect(screen.getByRole('button', { name: 'Legal quick start' })).toBeEnabled();
   });
 
+  it('shows all demo pack templates in Start Demo launcher', async () => {
+    await renderBoardReady();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start Demo' }));
+
+    expect(screen.getByRole('menuitem', { name: 'Load PI pack' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Load Employment pack' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Load Criminal pack' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Load Credibility pack' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Load Causation pack' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Load Damages pack' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('menuitem', { name: 'Load Strong Case (Johnson v. TechCorp)' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('menuitem', { name: 'Load Contradiction Setup (DefectCo)' }),
+    ).toBeInTheDocument();
+  });
+
   it('renders advanced tools section for intake and contradiction flows', async () => {
     await renderBoardReady();
 
@@ -433,7 +452,11 @@ describe('Board', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open AI assistant' }));
     expect(await screen.findByText('Quick actions')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Refresh|Generating\.\.\./ })).toBeInTheDocument();
-    expect(screen.getByText('Map contradictions between key witness statements')).toBeInTheDocument();
+    expect(
+      await screen.findByRole('button', {
+        name: 'Quick action: Map contradictions between key witness statements',
+      }),
+    ).toBeInTheDocument();
     expect(screen.queryByText('Prepare opposing counsel counter-argument map')).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('Case AI prompt'), {
