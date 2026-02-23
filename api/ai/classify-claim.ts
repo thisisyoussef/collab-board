@@ -50,11 +50,11 @@ function isValidLevel(value: unknown): value is ClaimLevel {
 }
 
 function buildPrompt(claimText: string, nodes: ConnectedNode[]): string {
-  let prompt = `Classify the following legal claim as "weak", "moderate", or "strong" based on its supporting and contradicting evidence.\n\n`;
+  let prompt = `You are an expert litigation analyst. Classify the strength of the following legal claim as "weak", "moderate", or "strong".\n\n`;
   prompt += `## Claim\n"${claimText}"\n\n`;
 
   if (nodes.length > 0) {
-    prompt += `## Connected Nodes\n`;
+    prompt += `## Connected Evidence & Context\n`;
     for (const node of nodes) {
       prompt += `- [${node.role}] (${node.relationToClaim}): "${node.text}"\n`;
     }
@@ -63,7 +63,13 @@ function buildPrompt(claimText: string, nodes: ConnectedNode[]): string {
     prompt += `No connected evidence, witnesses, or timeline events.\n\n`;
   }
 
-  prompt += `Respond with ONLY a JSON object: {"level": "weak"|"moderate"|"strong", "reason": "<1-2 sentence explanation>"}`;
+  prompt += `## Instructions\n`;
+  prompt += `Evaluate the claim holistically — don't just count links. Consider:\n`;
+  prompt += `- **Quality of support**: Is the evidence specific, credible, and directly relevant? A single strong piece of evidence (e.g., a signed contract) can outweigh multiple weak ones.\n`;
+  prompt += `- **Severity of contradictions**: A vague or tangential contradiction barely weakens the claim, while a direct factual rebuttal with evidence is devastating. Judge the actual substance.\n`;
+  prompt += `- **Dependency gaps**: Are there critical elements the claim relies on that haven't been established?\n`;
+  prompt += `- **Logical coherence**: Does the claim and its evidence tell a consistent, compelling story?\n\n`;
+  prompt += `Respond with ONLY a JSON object: {"level": "weak"|"moderate"|"strong", "reason": "<1-2 sentence explanation referencing the specific evidence>"}`;
   return prompt;
 }
 
@@ -114,8 +120,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     const anthropic = new Anthropic({ apiKey });
     const message = await anthropic.messages.create({
       model: MODEL,
-      max_tokens: 300,
-      system: 'You are a litigation analysis assistant. Classify claim strength based on available evidence. Always respond with valid JSON only.',
+      max_tokens: 400,
+      system: 'You are an expert litigation analyst. Evaluate claim strength by reading and reasoning about the actual substance of evidence and contradictions — not just counting links. A weak contradiction with no backing should barely affect strength, while a direct rebuttal with documentary proof is significant. Always respond with valid JSON only.',
       messages: [{ role: 'user', content: buildPrompt(body.claimText, connectedNodes) }],
     });
 
