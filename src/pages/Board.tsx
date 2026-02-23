@@ -20,6 +20,7 @@ import Konva from 'konva';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Circle as KonvaCircleShape,
+  Group as KonvaGroup,
   Layer,
   Rect as KonvaRectShape,
   Stage,
@@ -228,6 +229,19 @@ type LegalNodeTemplateKey =
   | 'legal_timeline'
   | 'legal_contradiction';
 
+interface HoveredClaimIndicator {
+  id: string;
+  screenX: number;
+  screenY: number;
+  aiReason: string;
+  levelLabel: string;
+  score: number;
+  color: string;
+  supportCount: number;
+  contradictionCount: number;
+  dependencyGapCount: number;
+}
+
 const LEGAL_CONNECTOR_TOOLS = new Set<ActiveTool>([
   'connector',
   'legal_link_supports',
@@ -414,6 +428,7 @@ export function Board() {
   const [isDemoLauncherOpen, setIsDemoLauncherOpen] = useState(false);
   const [isAdvancedToolsOpen, setIsAdvancedToolsOpen] = useState(false);
   const [shareState, setShareState] = useState<'idle' | 'copied' | 'error'>('idle');
+  const [hoveredClaimIndicator, setHoveredClaimIndicator] = useState<HoveredClaimIndicator | null>(null);
 
   const selectedObject =
     selectedIds.length === 1 ? objectsRef.current.get(selectedIds[0]) ?? null : null;
@@ -6493,7 +6508,7 @@ export function Board() {
                       <KonvaGroup
                         x={badgeX}
                         y={badgeY}
-                        onMouseEnter={(e) => {
+                        onMouseEnter={(e: Konva.KonvaEventObject<MouseEvent>) => {
                           const stage = e.target.getStage();
                           if (!stage) return;
                           const scale = stage.scaleX();
@@ -6512,7 +6527,7 @@ export function Board() {
                           });
                           stage.container().style.cursor = 'help';
                         }}
-                        onMouseLeave={(e) => {
+                        onMouseLeave={(e: Konva.KonvaEventObject<MouseEvent>) => {
                           setHoveredClaimIndicator(null);
                           const stage = e.target.getStage();
                           if (stage) stage.container().style.cursor = '';
