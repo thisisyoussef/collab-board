@@ -70,6 +70,7 @@ import {
   FRAME_DEFAULT_STROKE,
   FRAME_MIN_HEIGHT,
   FRAME_MIN_WIDTH,
+  getAutoColorForRole,
   getObjectSideAnchorCandidates,
   getObjectBounds,
   LINE_DEFAULT_COLOR,
