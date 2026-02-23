@@ -3,7 +3,8 @@ import Anthropic from '@anthropic-ai/sdk';
 import { getApps, initializeApp, cert } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 
-const MODEL = process.env.CLAIM_CLASSIFY_MODEL || 'claude-3-5-haiku-latest';
+const CLAIM_CLASSIFY_MODEL_FALLBACK = 'claude-sonnet-4-20250514';
+const CLAIM_CLASSIFY_MODEL_LEGACY_FALLBACK = 'claude-3-5-haiku-latest';
 
 function getFirebasePrivateKey(): string | undefined {
   const raw = process.env.FIREBASE_PRIVATE_KEY;
@@ -27,6 +28,44 @@ function extractBearerToken(req: VercelRequest): string | null {
   if (!value || typeof value !== 'string') return null;
   const match = value.match(/^Bearer\s+(.+)$/i);
   return match?.[1] ?? null;
+}
+
+function sanitizeModelName(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function getModelCandidates(): string[] {
+  const values = [
+    process.env.CLAIM_CLASSIFY_MODEL,
+    process.env.ANTHROPIC_MODEL_SIMPLE,
+    process.env.ANTHROPIC_MODEL,
+    process.env.ANTHROPIC_MODEL_COMPLEX,
+    CLAIM_CLASSIFY_MODEL_FALLBACK,
+    CLAIM_CLASSIFY_MODEL_LEGACY_FALLBACK,
+  ];
+
+  const unique = new Set<string>();
+  for (const value of values) {
+    const model = sanitizeModelName(value);
+    if (model) unique.add(model);
+  }
+  return Array.from(unique);
+}
+
+function isModelNotFoundError(err: unknown): boolean {
+  const candidate = err as { status?: unknown; message?: unknown; error?: { type?: unknown } };
+  if (candidate?.status === 404) {
+    return true;
+  }
+  if (candidate?.error?.type === 'not_found_error') {
+    return true;
+  }
+  const message = typeof candidate?.message === 'string' ? candidate.message.toLowerCase() : '';
+  return message.includes('not_found_error') && message.includes('model');
 }
 
 interface ConnectedNode {
@@ -118,30 +157,49 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
   try {
     const anthropic = new Anthropic({ apiKey });
-    const message = await anthropic.messages.create({
-      model: MODEL,
-      max_tokens: 400,
-      system: 'You are an expert litigation analyst. Evaluate claim strength by reading and reasoning about the actual substance of evidence and contradictions — not just counting links. A weak contradiction with no backing should barely affect strength, while a direct rebuttal with documentary proof is significant. Always respond with valid JSON only.',
-      messages: [{ role: 'user', content: buildPrompt(body.claimText, connectedNodes) }],
-    });
+    const models = getModelCandidates();
 
-    const textBlock = message.content.find((b) => b.type === 'text');
-    if (!textBlock || textBlock.type !== 'text') {
-      res.status(500).json({ error: 'No text response from AI' });
-      return;
+    let lastError: unknown = null;
+    for (const model of models) {
+      try {
+        const message = await anthropic.messages.create({
+          model,
+          max_tokens: 400,
+          system: 'You are an expert litigation analyst. Evaluate claim strength by reading and reasoning about the actual substance of evidence and contradictions — not just counting links. A weak contradiction with no backing should barely affect strength, while a direct rebuttal with documentary proof is significant. Always respond with valid JSON only.',
+          messages: [{ role: 'user', content: buildPrompt(body.claimText, connectedNodes) }],
+        });
+
+        const textBlock = message.content.find((b) => b.type === 'text');
+        if (!textBlock || textBlock.type !== 'text') {
+          res.status(500).json({ error: 'No text response from AI' });
+          return;
+        }
+
+        let jsonText = textBlock.text.trim();
+        const codeBlockMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/);
+        if (codeBlockMatch) {
+          jsonText = codeBlockMatch[1].trim();
+        }
+
+        const parsed = JSON.parse(jsonText);
+        const level = isValidLevel(parsed.level) ? parsed.level : 'moderate';
+        const reason =
+          typeof parsed.reason === 'string'
+            ? parsed.reason.slice(0, 500)
+            : 'No explanation provided.';
+
+        res.status(200).json({ level, reason });
+        return;
+      } catch (err) {
+        lastError = err;
+        if (isModelNotFoundError(err)) {
+          continue;
+        }
+        throw err;
+      }
     }
 
-    let jsonText = textBlock.text.trim();
-    const codeBlockMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (codeBlockMatch) {
-      jsonText = codeBlockMatch[1].trim();
-    }
-
-    const parsed = JSON.parse(jsonText);
-    const level = isValidLevel(parsed.level) ? parsed.level : 'moderate';
-    const reason = typeof parsed.reason === 'string' ? parsed.reason.slice(0, 500) : 'No explanation provided.';
-
-    res.status(200).json({ level, reason });
+    throw lastError ?? new Error('No valid model candidates configured');
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     res.status(500).json({ error: `Classification failed: ${message}` });

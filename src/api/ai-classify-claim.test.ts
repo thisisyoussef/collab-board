@@ -89,4 +89,37 @@ describe('classify-claim endpoint', () => {
       expect.objectContaining({ level: 'strong', reason: expect.any(String) }),
     );
   });
+
+  it('retries with fallback model when configured model is not found', async () => {
+    process.env.CLAIM_CLASSIFY_MODEL = 'claude-3-5-haiku-latest';
+    process.env.ANTHROPIC_MODEL_SIMPLE = 'claude-sonnet-4-20250514';
+
+    mockCreate
+      .mockRejectedValueOnce(
+        new Error(
+          '404 {"type":"error","error":{"type":"not_found_error","message":"model: claude-3-5-haiku-latest"}}',
+        ),
+      )
+      .mockResolvedValueOnce({
+        content: [{ type: 'text', text: '{"level":"strong","reason":"Supported by documentary evidence."}' }],
+      });
+
+    const req = makeReq();
+    const res = makeRes();
+    await handler(req, res);
+
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+    expect(mockCreate).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ model: 'claude-3-5-haiku-latest' }),
+    );
+    expect(mockCreate).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ model: 'claude-sonnet-4-20250514' }),
+    );
+    expect(res._status).toBe(200);
+    expect(res._json).toEqual(
+      expect.objectContaining({ level: 'strong', reason: expect.any(String) }),
+    );
+  });
 });
