@@ -218,7 +218,16 @@ describe('Board', () => {
 
     expect(screen.getByRole('button', { name: 'Undo' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Redo' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Start Demo' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Legal quick start' })).toBeEnabled();
+  });
+
+  it('renders advanced tools section for intake and contradiction flows', async () => {
+    await renderBoardReady();
+
+    expect(screen.getByText('Advanced tools')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open Litigation Intake' })).toBeInTheDocument();
+    expect(screen.getByText('Contradiction Radar')).toBeInTheDocument();
   });
 
   it('renders the bottom tool dock buttons', async () => {

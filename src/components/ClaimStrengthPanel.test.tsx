@@ -41,4 +41,43 @@ describe('ClaimStrengthPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Focus claim Claim A' }));
     expect(onFocusClaim).toHaveBeenCalledWith('claim-1');
   });
+
+  it('renders quick controls and AI recommendation actions', () => {
+    const onFocusWeakest = vi.fn();
+    const onRecommendFixes = vi.fn();
+    const onApplyRecommendedFixes = vi.fn();
+
+    render(
+      <ClaimStrengthPanel
+        results={[
+          {
+            claimId: 'claim-weak',
+            claimLabel: 'Weak Claim',
+            score: 23,
+            level: 'weak',
+            supportCount: 0,
+            contradictionCount: 1,
+            dependencyGapCount: 1,
+            reasons: ['No support links found.'],
+          },
+        ]}
+        onFocusClaim={vi.fn()}
+        onFocusWeakest={onFocusWeakest}
+        onRecommendFixes={onRecommendFixes}
+        onApplyRecommendedFixes={onApplyRecommendedFixes}
+        recommendationLoading={false}
+        recommendationError={null}
+        recommendationCount={2}
+        canRecommend={true}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Focus weakest claim' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Recommend fixes (AI)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Apply recommended fixes' }));
+
+    expect(onFocusWeakest).toHaveBeenCalledTimes(1);
+    expect(onRecommendFixes).toHaveBeenCalledTimes(1);
+    expect(onApplyRecommendedFixes).toHaveBeenCalledTimes(1);
+  });
 });
