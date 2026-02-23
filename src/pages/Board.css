@@ -37,6 +37,7 @@
 
 .topbar-cluster.middle {
   justify-content: center;
+  position: relative;
 }
 
 .topbar-cluster.right {
@@ -187,6 +188,27 @@
 
 .chip-btn:disabled:hover {
   background: rgba(255, 255, 255, 0.08);
+}
+
+.demo-launcher-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 8;
+  min-width: 196px;
+  border: 1px solid #d6d1c8;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 12px 24px rgba(17, 24, 39, 0.2);
+  padding: 0.5rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.demo-launcher-popover .secondary-btn {
+  width: 100%;
+  justify-content: flex-start;
 }
 
 .presence-pill {
@@ -371,6 +393,21 @@
   gap: 0.6rem;
 }
 
+.claim-strength-quick-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.32rem;
+}
+
+.claim-strength-feedback.error {
+  border: 1px solid rgba(196, 69, 62, 0.32);
+  border-radius: 8px;
+  background: rgba(196, 69, 62, 0.08);
+  color: #9f3731;
+  font-size: 0.73rem;
+  padding: 0.45rem 0.5rem;
+}
+
 .claim-strength-panel-header {
   display: flex;
   flex-direction: column;
@@ -542,6 +579,63 @@
   color: #666;
   margin-top: 0.25rem;
   line-height: 1.3;
+}
+
+.board-quick-actions-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.board-quick-actions-header {
+  border-bottom: 1px solid #ebe4d7;
+  padding-bottom: 0.36rem;
+}
+
+.board-quick-actions-header h3 {
+  font-family: 'DM Serif Display', Georgia, serif;
+  font-size: 1.02rem;
+  line-height: 1.1;
+}
+
+.board-quick-actions-header p {
+  font-size: 0.74rem;
+  color: #6c6355;
+  margin-top: 0.2rem;
+}
+
+.board-quick-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.34rem;
+}
+
+.board-quick-actions-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.34rem;
+}
+
+.advanced-tools-shell {
+  border: 1px solid #d6d1c8;
+  border-radius: 12px;
+  background: #fff;
+  padding: 0.5rem 0.6rem;
+}
+
+.advanced-tools-shell summary {
+  cursor: pointer;
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #6f6658;
+}
+
+.advanced-tools-body {
+  margin-top: 0.6rem;
+  display: grid;
+  gap: 0.55rem;
 }
 
 .ai-panel-header {

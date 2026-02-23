@@ -28,6 +28,7 @@ import {
 } from 'react-konva';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AIAssistantFab } from '../components/AIAssistantFab';
+import { BoardQuickActionsPanel } from '../components/BoardQuickActionsPanel';
 import { BoardInspectorPanel } from '../components/BoardInspectorPanel';
 import { BoardToolDock, type BoardTool } from '../components/BoardToolDock';
 import { BoardZoomChip } from '../components/BoardZoomChip';
@@ -49,6 +50,7 @@ import { useBoardHistory } from '../hooks/useBoardHistory';
 import { useSessionReplay } from '../hooks/useSessionReplay';
 import { useContradictionRadar } from '../hooks/useContradictionRadar';
 import { useLitigationIntake } from '../hooks/useLitigationIntake';
+import { useClaimStrengthRecommendations } from '../hooks/useClaimStrengthRecommendations';
 import { useBoardSharing } from '../hooks/useBoardSharing';
 import { useCursors } from '../hooks/useCursors';
 import { usePresence } from '../hooks/usePresence';
@@ -122,6 +124,7 @@ import {
   buildRealtimeEventSignature,
   createRealtimeDedupeCache,
 } from '../lib/realtime-dedupe';
+import { buildDemoCasePack } from '../lib/demo-case-packs';
 import { buildBoardActionsFromLitigationDraft } from '../lib/litigation-intake-layout';
 import { claimStrengthColor, evaluateClaimStrength, type ClaimStrengthResult } from '../lib/litigation-graph';
 import {
@@ -150,6 +153,7 @@ import type {
   ShapeDraftState,
 } from '../types/board-canvas';
 import type { AIActionPreview } from '../types/ai';
+import type { DemoCasePackKey } from '../types/claim-strength-tools';
 import type {
   ObjectCreatePayload,
   ObjectDeletePayload,
@@ -407,6 +411,8 @@ export function Board() {
   const [aiDedupeDrops, setAiDedupeDrops] = useState(0);
   const [isSharePanelOpen, setIsSharePanelOpen] = useState(false);
   const [isLitigationIntakeOpen, setIsLitigationIntakeOpen] = useState(false);
+  const [isDemoLauncherOpen, setIsDemoLauncherOpen] = useState(false);
+  const [isAdvancedToolsOpen, setIsAdvancedToolsOpen] = useState(false);
   const [shareState, setShareState] = useState<'idle' | 'copied' | 'error'>('idle');
 
   const selectedObject =
@@ -414,6 +420,18 @@ export function Board() {
   const selectedObjects = selectedIds
     .map((id) => objectsRef.current.get(id))
     .filter((obj): obj is BoardObject => obj != null);
+  const selectedClaimForSupports =
+    selectedObjects.find((entry) => entry.type !== 'connector' && entry.nodeRole === 'claim') || null;
+  const selectedSupportSources = selectedObjects.filter(
+    (entry) =>
+      entry.type !== 'connector' &&
+      entry.nodeRole !== 'claim' &&
+      (entry.nodeRole === 'evidence' ||
+        entry.nodeRole === 'witness' ||
+        entry.nodeRole === 'timeline_event'),
+  );
+  const canLinkSelectedSupportsToClaim =
+    Boolean(selectedClaimForSupports) && selectedSupportSources.length > 0;
   const claimStrengthResults = useMemo(() => {
     // `boardRevision` is the explicit invalidation signal for ref-backed canvas objects.
     void boardRevision;
@@ -421,6 +439,14 @@ export function Board() {
   }, [boardRevision]);
   const claimStrengthById = useMemo(
     () => new Map(claimStrengthResults.map((result) => [result.claimId, result])),
+    [claimStrengthResults],
+  );
+  const weakestClaimIds = useMemo(
+    () =>
+      [...claimStrengthResults]
+        .sort((a, b) => a.score - b.score)
+        .slice(0, 3)
+        .map((entry) => entry.claimId),
     [claimStrengthResults],
   );
   const claimStrengthIndicators = useMemo(() => {
@@ -434,6 +460,11 @@ export function Board() {
       color: string;
       levelLabel: string;
       selected: boolean;
+      aiReason: string;
+      score: number;
+      supportCount: number;
+      contradictionCount: number;
+      dependencyGapCount: number;
     }> = [];
 
     objectsRef.current.forEach((entry) => {
@@ -449,6 +480,13 @@ export function Board() {
       const effectiveLevel = entry.manualStrengthOverride || entry.aiStrengthLevel || result.level;
       const colorLevel = effectiveLevel === 'moderate' ? 'medium' : effectiveLevel;
 
+      const reasonParts: string[] = [];
+      if (entry.aiStrengthReason) {
+        reasonParts.push(entry.aiStrengthReason);
+      } else if (result.reasons.length > 0) {
+        reasonParts.push(...result.reasons);
+      }
+
       indicators.push({
         id: entry.id,
         x: entry.x,
@@ -458,6 +496,11 @@ export function Board() {
         color: claimStrengthColor(colorLevel as ClaimStrengthResult['level']),
         levelLabel: effectiveLevel.toUpperCase() + (isOverridden ? '*' : ''),
         selected: selectedSet.has(entry.id),
+        aiReason: reasonParts.join(' '),
+        score: result.score,
+        supportCount: result.supportCount,
+        contradictionCount: result.contradictionCount,
+        dependencyGapCount: result.dependencyGapCount,
       });
     });
 
@@ -547,6 +590,10 @@ export function Board() {
     actorUserId: user?.uid || 'guest',
     getBoardState: serializeBoardObjects,
     commitBoardState: applyAIBoardStateCommit,
+  });
+  const claimRecommendations = useClaimStrengthRecommendations({
+    boardId,
+    user,
   });
   const litigationIntake = useLitigationIntake({
     boardId,
@@ -726,6 +773,267 @@ export function Board() {
     void handleSubmitAI(quickActionPrompt);
   };
 
+  const handleLoadDemoCasePack = async (pack: DemoCasePackKey) => {
+    if (!canEditBoard) {
+      setCanvasNotice('Demo packs are available to editors only.');
+      return;
+    }
+
+    const blueprint = buildDemoCasePack({
+      pack,
+      center: getViewportCenterWorldPosition(),
+      actorUserId: getActorUserId(),
+    });
+
+    const previews: AIActionPreview[] = blueprint.objects.map((object, index) => {
+      if (object.type === 'connector') {
+        return {
+          id: `${object.id}-preview-${index}`,
+          name: 'createConnector',
+          summary: `Connect ${object.fromId || 'source'} -> ${object.toId || 'target'}`,
+          input: {
+            objectId: object.id,
+            fromId: object.fromId,
+            toId: object.toId,
+            relationType: object.relationType,
+            label: object.label,
+            connectorType: object.connectorType || 'curved',
+            strokeStyle: object.strokeStyle || 'solid',
+            color: object.color,
+          },
+        };
+      }
+
+      return {
+        id: `${object.id}-preview-${index}`,
+        name: 'createStickyNote',
+        summary: object.text || object.id,
+        input: {
+          objectId: object.id,
+          x: object.x,
+          y: object.y,
+          width: object.width,
+          height: object.height,
+          text: object.text || '',
+          color: object.color,
+          nodeRole: object.nodeRole,
+        },
+      };
+    });
+
+    const startedAt = performance.now();
+    const applied = await aiExecutor.applyPreviewActions(
+      previews,
+      `Loaded ${blueprint.label} demo case pack.`,
+    );
+    if (!applied) {
+      return;
+    }
+
+    setSelectedIds([blueprint.focusClaimId]);
+    setIsDemoLauncherOpen(false);
+    recordAIApplyLatency(performance.now() - startedAt);
+    setCanvasNotice(`Loaded ${blueprint.label} demo case pack.`);
+  };
+
+  const handleTagSelectedRole = (role: NonNullable<BoardObject['nodeRole']>) => {
+    if (!canEditBoard) {
+      setCanvasNotice('Role tagging is available to editors only.');
+      return;
+    }
+
+    const targets = selectedObjects.filter((entry) => entry.type !== 'connector');
+    if (targets.length === 0) {
+      setCanvasNotice('Select one or more nodes to tag.');
+      return;
+    }
+
+    targets.forEach((entry) => {
+      updateObjectProperties(entry.id, {
+        nodeRole: role,
+        ...(entry.type === 'sticky' ? { color: getAutoColorForRole(role) } : {}),
+      });
+    });
+    setCanvasNotice(`Tagged ${targets.length} node${targets.length === 1 ? '' : 's'} as ${role}.`);
+  };
+
+  const handleLinkSelectedSupportsToClaim = async () => {
+    if (!canEditBoard) {
+      setCanvasNotice('Support-link quick action is available to editors only.');
+      return;
+    }
+    if (!selectedClaimForSupports) {
+      setCanvasNotice('Select one claim and at least one support source.');
+      return;
+    }
+    if (selectedSupportSources.length === 0) {
+      setCanvasNotice('Select at least one evidence, witness, or timeline source.');
+      return;
+    }
+
+    const existingSupports = new Set(
+      Array.from(objectsRef.current.values())
+        .filter(
+          (entry) =>
+            entry.type === 'connector' &&
+            entry.toId === selectedClaimForSupports.id &&
+            entry.relationType === 'supports' &&
+            typeof entry.fromId === 'string',
+        )
+        .map((entry) => String(entry.fromId)),
+    );
+
+    const previews: AIActionPreview[] = selectedSupportSources
+      .filter((source) => !existingSupports.has(source.id))
+      .map((source, index) => ({
+        id: `supports-${source.id}-${selectedClaimForSupports.id}-${index}`,
+        name: 'createConnector',
+        summary: `Link ${source.id} supports ${selectedClaimForSupports.id}`,
+        input: {
+          fromId: source.id,
+          toId: selectedClaimForSupports.id,
+          relationType: 'supports',
+          label: 'supports',
+          connectorType: 'curved',
+        },
+      }));
+
+    if (previews.length === 0) {
+      setCanvasNotice('Selected supports are already linked to the chosen claim.');
+      return;
+    }
+
+    const startedAt = performance.now();
+    const applied = await aiExecutor.applyPreviewActions(
+      previews,
+      'Linked selected supports to selected claim.',
+    );
+    if (!applied) {
+      return;
+    }
+
+    recordAIApplyLatency(performance.now() - startedAt);
+    setCanvasNotice(
+      `Created ${previews.length} support link${previews.length === 1 ? '' : 's'} for selected claim.`,
+    );
+  };
+
+  const handleAutoLayoutByRoleLane = async () => {
+    if (!canEditBoard) {
+      setCanvasNotice('Auto-layout is available to editors only.');
+      return;
+    }
+
+    const roleOrder: Array<NonNullable<BoardObject['nodeRole']>> = [
+      'claim',
+      'evidence',
+      'witness',
+      'timeline_event',
+      'contradiction',
+    ];
+    const laneMap = new Map<NonNullable<BoardObject['nodeRole']>, BoardObject[]>();
+    roleOrder.forEach((role) => laneMap.set(role, []));
+
+    Array.from(objectsRef.current.values()).forEach((entry) => {
+      if (entry.type === 'connector' || !entry.nodeRole) {
+        return;
+      }
+      const lane = laneMap.get(entry.nodeRole);
+      if (lane) {
+        lane.push(entry);
+      }
+    });
+
+    const total = Array.from(laneMap.values()).reduce((count, items) => count + items.length, 0);
+    if (total === 0) {
+      setCanvasNotice('Tag nodes first, then run auto-layout by role lane.');
+      return;
+    }
+
+    const center = getViewportCenterWorldPosition();
+    const startX = Math.round(center.x - 640);
+    const startY = Math.round(center.y - 260);
+    const laneWidth = 320;
+    const laneGap = 36;
+    const rowGap = 182;
+
+    const previews: AIActionPreview[] = [];
+    roleOrder.forEach((role, laneIndex) => {
+      const nodes = laneMap.get(role) || [];
+      nodes
+        .sort((a, b) => (a.y === b.y ? a.x - b.x : a.y - b.y))
+        .forEach((entry, rowIndex) => {
+          previews.push({
+            id: `layout-${entry.id}`,
+            name: 'moveObject',
+            summary: `Move ${entry.id} to ${role} lane`,
+            input: {
+              objectId: entry.id,
+              x: startX + laneIndex * (laneWidth + laneGap),
+              y: startY + rowIndex * rowGap,
+            },
+          });
+        });
+    });
+
+    const startedAt = performance.now();
+    const applied = await aiExecutor.applyPreviewActions(previews, 'Auto-layout by role lane.');
+    if (!applied) {
+      return;
+    }
+
+    recordAIApplyLatency(performance.now() - startedAt);
+    setCanvasNotice('Auto-layout complete: nodes grouped by role lanes.');
+  };
+
+  const handleFocusWeakestClaim = () => {
+    if (weakestClaimIds.length === 0) {
+      setCanvasNotice('No claim nodes are available to focus.');
+      return;
+    }
+    handleFocusClaim(weakestClaimIds[0]);
+  };
+
+  const handleRecommendClaimStrengthFixes = async () => {
+    if (!canApplyAI) {
+      setCanvasNotice('AI recommendations require signed-in editor access.');
+      return;
+    }
+    if (weakestClaimIds.length === 0) {
+      setCanvasNotice('Add claim nodes to get recommendations.');
+      return;
+    }
+    const requested = await claimRecommendations.requestRecommendations(weakestClaimIds, 3);
+    if (requested) {
+      setCanvasNotice('Claim-strength recommendations ready.');
+    }
+  };
+
+  const handleApplyClaimStrengthRecommendations = async () => {
+    if (!canApplyAI) {
+      setCanvasNotice('AI recommendations require signed-in editor access.');
+      return;
+    }
+    const previews = claimRecommendations.buildPreviewActions();
+    if (previews.length === 0) {
+      setCanvasNotice('No recommendation actions are ready to apply.');
+      return;
+    }
+
+    const startedAt = performance.now();
+    const applied = await aiExecutor.applyPreviewActions(
+      previews,
+      claimRecommendations.message || 'Claim-strength recommendations applied.',
+    );
+    if (!applied) {
+      return;
+    }
+
+    recordAIApplyLatency(performance.now() - startedAt);
+    claimRecommendations.clear();
+    setCanvasNotice('Claim-strength recommendations applied.');
+  };
+
   const handleGenerateLitigationDraft = async () => {
     if (!canEditBoard) {
       setCanvasNotice('Only editors can generate intake drafts.');
@@ -835,10 +1143,13 @@ export function Board() {
     setTitleError(null);
     setIsSharePanelOpen(false);
     setIsLitigationIntakeOpen(false);
+    setIsDemoLauncherOpen(false);
+    setIsAdvancedToolsOpen(false);
     setShareState('idle');
     setBoardAccess(null);
     setBoardMissing(false);
     setIsResolvingAccess(Boolean(boardId));
+    claimRecommendations.clear();
     resetBoardHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boardId]);
@@ -6028,6 +6339,49 @@ export function Board() {
           </button>
           <button
             className="chip-btn"
+            onClick={() => setIsDemoLauncherOpen((previous) => !previous)}
+            disabled={!canEditBoard}
+            aria-expanded={isDemoLauncherOpen}
+            aria-controls="start-demo-launcher"
+          >
+            Start Demo
+          </button>
+          {isDemoLauncherOpen ? (
+            <div id="start-demo-launcher" className="demo-launcher-popover" role="menu" aria-label="Start Demo">
+              <button
+                type="button"
+                className="secondary-btn"
+                role="menuitem"
+                onClick={() => {
+                  void handleLoadDemoCasePack('pi');
+                }}
+              >
+                Load PI pack
+              </button>
+              <button
+                type="button"
+                className="secondary-btn"
+                role="menuitem"
+                onClick={() => {
+                  void handleLoadDemoCasePack('employment');
+                }}
+              >
+                Load Employment pack
+              </button>
+              <button
+                type="button"
+                className="secondary-btn"
+                role="menuitem"
+                onClick={() => {
+                  void handleLoadDemoCasePack('criminal');
+                }}
+              >
+                Load Criminal pack
+              </button>
+            </div>
+          ) : null}
+          <button
+            className="chip-btn"
             onClick={createLegalQuickStartTemplate}
             disabled={!canEditBoard}
             title="Drop a starter claim/evidence/witness/timeline/contradiction map."
@@ -6386,14 +6740,6 @@ export function Board() {
           <header className="figma-right-panel-head">
             <p className="figma-right-panel-kicker">Figma for lawyers</p>
             <h2>Design your case theory</h2>
-            <button
-              className="secondary-btn litigation-intake-trigger"
-              type="button"
-              disabled={!canEditBoard}
-              onClick={() => setIsLitigationIntakeOpen(true)}
-            >
-              Open Litigation Intake
-            </button>
           </header>
           <BoardInspectorPanel
             selectedIds={selectedIds}
@@ -6410,32 +6756,35 @@ export function Board() {
             onCopy={handleCopy}
             onPaste={handlePaste}
           />
+          <BoardQuickActionsPanel
+            canEditBoard={canEditBoard}
+            selectedCount={selectedObjects.length}
+            canLinkSupports={canLinkSelectedSupportsToClaim}
+            onTagAsClaim={() => handleTagSelectedRole('claim')}
+            onTagAsEvidence={() => handleTagSelectedRole('evidence')}
+            onTagAsWitness={() => handleTagSelectedRole('witness')}
+            onTagAsTimeline={() => handleTagSelectedRole('timeline_event')}
+            onLinkSupports={() => {
+              void handleLinkSelectedSupportsToClaim();
+            }}
+            onAutoLayout={() => {
+              void handleAutoLayoutByRoleLane();
+            }}
+          />
           <ClaimStrengthPanel
             results={claimStrengthResults}
             onFocusClaim={handleFocusClaim}
-          />
-          <ContradictionRadarPanel
-            candidates={contradictionRadar.candidates}
-            filteredCandidates={contradictionRadar.filteredCandidates}
-            decisions={contradictionRadar.decisions}
-            confidenceThreshold={contradictionRadar.confidenceThreshold}
-            loading={contradictionRadar.loading}
-            error={contradictionRadar.error}
-            onAccept={contradictionRadar.accept}
-            onReject={contradictionRadar.reject}
-            onThresholdChange={contradictionRadar.setConfidenceThreshold}
-            onApply={() => {
-              const execActions = contradictionRadar.applyAccepted();
-              if (execActions.length === 0) return;
-              const previews = execActions.map((a, i) => ({
-                id: `contra-preview-${i}`,
-                name: a.kind === 'create' ? `create${a.object.type.charAt(0).toUpperCase()}${a.object.type.slice(1)}` : a.kind,
-                summary: a.kind === 'create' ? `Create ${a.object.type}: ${(a.object.text || '').slice(0, 60)}` : a.kind,
-                input: a.kind === 'create' ? { ...a.object } : {},
-              }));
-              void aiExecutor.applyPreviewActions(previews, 'Contradiction radar: applied accepted contradictions');
+            onFocusWeakest={handleFocusWeakestClaim}
+            onRecommendFixes={() => {
+              void handleRecommendClaimStrengthFixes();
             }}
-            acceptedCount={contradictionRadar.acceptedCandidates.length}
+            onApplyRecommendedFixes={() => {
+              void handleApplyClaimStrengthRecommendations();
+            }}
+            recommendationLoading={claimRecommendations.loading}
+            recommendationError={claimRecommendations.error}
+            recommendationCount={claimRecommendations.buildPreviewActions().length}
+            canRecommend={canApplyAI}
           />
           <SessionReplayPanel
             checkpoints={sessionReplay.checkpoints}
@@ -6448,6 +6797,57 @@ export function Board() {
             onRestore={handleReplayRestore}
             onExit={handleReplayExit}
           />
+          <details
+            className="advanced-tools-shell"
+            open={isAdvancedToolsOpen}
+            onToggle={(event) =>
+              setIsAdvancedToolsOpen((event.currentTarget as HTMLDetailsElement).open)
+            }
+          >
+            <summary>Advanced tools</summary>
+            <div className="advanced-tools-body">
+              <button
+                className="secondary-btn litigation-intake-trigger"
+                type="button"
+                disabled={!canEditBoard}
+                onClick={() => setIsLitigationIntakeOpen(true)}
+              >
+                Open Litigation Intake
+              </button>
+              <ContradictionRadarPanel
+                candidates={contradictionRadar.candidates}
+                filteredCandidates={contradictionRadar.filteredCandidates}
+                decisions={contradictionRadar.decisions}
+                confidenceThreshold={contradictionRadar.confidenceThreshold}
+                loading={contradictionRadar.loading}
+                error={contradictionRadar.error}
+                onAccept={contradictionRadar.accept}
+                onReject={contradictionRadar.reject}
+                onThresholdChange={contradictionRadar.setConfidenceThreshold}
+                onApply={() => {
+                  const execActions = contradictionRadar.applyAccepted();
+                  if (execActions.length === 0) return;
+                  const previews = execActions.map((a, i) => ({
+                    id: `contra-preview-${i}`,
+                    name:
+                      a.kind === 'create'
+                        ? `create${a.object.type.charAt(0).toUpperCase()}${a.object.type.slice(1)}`
+                        : a.kind,
+                    summary:
+                      a.kind === 'create'
+                        ? `Create ${a.object.type}: ${(a.object.text || '').slice(0, 60)}`
+                        : a.kind,
+                    input: a.kind === 'create' ? { ...a.object } : {},
+                  }));
+                  void aiExecutor.applyPreviewActions(
+                    previews,
+                    'Contradiction radar: applied accepted contradictions',
+                  );
+                }}
+                acceptedCount={contradictionRadar.acceptedCandidates.length}
+              />
+            </div>
+          </details>
         </aside>
       </section>
       <AIAssistantFab

@@ -59,6 +59,8 @@ describe('ClaimStrengthPanel', () => {
             contradictionCount: 1,
             dependencyGapCount: 1,
             reasons: ['No support links found.'],
+            effectiveLevel: 'weak',
+            isOverridden: false,
           },
         ]}
         onFocusClaim={vi.fn()}
