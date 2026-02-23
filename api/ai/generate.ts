@@ -406,28 +406,50 @@ Guidelines:
 - Include stable objectId values for created objects when possible.
 - Output tool calls only unless you cannot perform the request.`;
 
-const COMPLEX_SYSTEM_PROMPT = `You are an AI whiteboard assistant for a collaborative whiteboard app. You help users create and manipulate objects on an infinite canvas.
+const COMPLEX_SYSTEM_PROMPT = `You are an AI whiteboard assistant for a collaborative litigation case board. You help users create and manipulate objects on an infinite canvas.
 
 You have access to tools to create sticky notes, shapes, frames, connectors, and to move, resize, recolor, and update text on existing objects.
 
-Guidelines:
+Core Guidelines:
 - Place objects at reasonable positions (avoid overlapping). Space items ~200px apart.
 - Use pleasant colors. Default sticky note color: #FFEB3B (yellow). Other good colors: #81C784 (green), #64B5F6 (blue), #E57373 (red), #FFB74D (orange), #BA68C8 (purple).
 - Standard sticky note size: 150x100. Standard shape size: 120x80.
 - For line shapes, provide width + height or line endpoints (x2, y2).
 - Always use the getBoardState tool first if you need to reference or modify existing objects.
-- Return a complete multi-step plan in a single response. Do not stop after one creation call for template requests.
+- Return a complete multi-step plan in a single response. Do not stop after one creation call.
 - updateText is only valid for sticky/text objects and frame titles, not rect/circle/line/connector.
 - Include stable objectId values for created objects so downstream updates can reference them.
+- Output tool calls only unless you cannot perform the request.
+
+Multi-Object & Layout Commands:
+- When asked to move, arrange, resize, recolor, or operate on MULTIPLE objects ("all", "these", "them"), call getBoardState first to discover object IDs, then issue individual tool calls for each.
+- When arranging objects in a grid, calculate positions mathematically. For item at row i, column j: x = startX + j * (width + gap), y = startY + i * (height + gap).
+- When asked to "space evenly" or "align", compute equal intervals between the first and last object positions.
+- When asked to "fit contents" or "resize to fit", read board state, find child objects' bounding box, then resize the parent with padding.
+
+Creative Composition:
+- When asked to draw, illustrate, or depict something that is NOT a standard board primitive (e.g. "draw a cat", "make a house", "illustrate a rocket"), compose it from MULTIPLE basic shapes:
+  - Use circles for round features (eyes, wheels, sun).
+  - Use rectangles for bodies, walls, windows, doors.
+  - Use lines for details (whiskers, antennae, rays, outlines).
+  - Use small shapes layered at precise offsets to build the visual.
+  - Use connectors/arrows for directional elements.
+- Be creative and generous with detail. A "cat" should have a body, head, ears, eyes, nose, whiskers, tail — not just a single circle.
+- Position sub-shapes relative to each other to form a recognizable figure.
 
 Template Instructions (follow positions exactly):
 
 SWOT Analysis — create 4 frames in a 2x2 grid, each 400x300, with 50px gap:
-  Strengths frame: x=100, y=100, width=400, height=300
-  Weaknesses frame: x=550, y=100, width=400, height=300
-  Opportunities frame: x=100, y=450, width=400, height=300
-  Threats frame: x=550, y=450, width=400, height=300
+  Strengths frame: x=100, y=100, width=400, height=300, color=#81C784
+  Weaknesses frame: x=550, y=100, width=400, height=300, color=#E57373
+  Opportunities frame: x=100, y=450, width=400, height=300, color=#64B5F6
+  Threats frame: x=550, y=450, width=400, height=300, color=#FFB74D
   Place 2-3 sticky notes inside each frame. Position stickies 50px inside the frame top-left.
+  If the user does not specify content, use litigation-themed placeholders:
+    Strengths: "Strong witness testimony", "Clear documentary evidence", "Favorable precedent"
+    Weaknesses: "Gaps in timeline", "Conflicting depositions", "Weak chain of custody"
+    Opportunities: "Settlement leverage", "New forensic analysis", "Expert witness availability"
+    Threats: "Statute of limitations", "Adverse ruling risk", "Key witness unavailability"
 
 Grid Layout — calculate positions mathematically for an NxM grid:
   For item at row i (0-indexed), column j (0-indexed) with item width W, height H:
@@ -444,11 +466,17 @@ Retrospective Board — create 3 vertical frames (300x500 each, 50px gap):
 Kanban Board — create 3-5 vertical frames (300x600 each, 50px gap):
   Start at x=100, y=100. Each subsequent column at x + 350.
   Columns: "To Do", "In Progress", "Done" (or as requested).
+  Place 1-2 example sticky notes in the first column.
 
 User Journey Map — create N horizontal frames (250x400 each, 30px gap):
   Start at x=100, y=100. Each subsequent stage at x + 280.
   Label each frame: "Stage 1: [name]", "Stage 2: [name]", etc.
-  Place 2-3 sticky notes inside each stage frame.`;
+  Place 2-3 sticky notes inside each stage frame.
+
+Pros and Cons — create 2 frames side by side (350x400 each, 50px gap):
+  "Pros": x=100, y=100, width=350, height=400, color=#81C784
+  "Cons": x=500, y=100, width=350, height=400, color=#E57373
+  Place 3 sticky notes in each frame with placeholder content.`;
 
 const MAX_PROMPT_LENGTH = 500;
 const MAX_BOARD_STATE_OBJECTS = 100;
@@ -682,30 +710,40 @@ function getPlanQualityScore(toolCalls: OutgoingToolCall[], issues: ToolValidati
 }
 
 export function isLikelyComplexPlanPrompt(prompt: string): boolean {
-  const lower = prompt.toLowerCase();
+  const lower = prompt.toLowerCase().trim();
 
-  // ── Definite simple: single-object commands with an explicit target ──
-  // Only classify as simple when the user explicitly names a single board
-  // primitive AND uses a creation/manipulation verb with no elaboration.
-  // Allow optional adjectives (e.g. "a yellow sticky note", "a big rectangle").
-  const singleObjectTarget =
-    /\b(a|one|1)\s+(\w+\s+)?(sticky\s+note|rectangle|rect|circle|shape|frame|connector|line)\b/.test(lower);
-  const simpleVerb = /\b(add|create|make|draw|insert|move|resize|delete|remove|recolor|change\s+color)\b/.test(lower);
+  // ── 1. Explicit complex keywords: any match → complex immediately ──
+  // Templates, layouts, multi-object operations, structural patterns.
+  const complexKeywords =
+    /\b(swot|analysis|retrospective|retro|kanban|journey|template|workflow|diagram|map|flowchart|mindmap|mind\s*map|brainstorm|grid|arrange|organize|align|layout|space\s+(these|them|evenly|out)|column|row|all\b|every|these|them|multiple|batch|fit\s+(its|their|the)\s+contents?|evenly|pros\s+and\s+cons)\b/;
+  if (complexKeywords.test(lower)) return true;
 
-  // If the prompt is short, names exactly one primitive, and uses a simple
-  // verb without additional qualifiers, it's safe to call it simple.
-  if (singleObjectTarget && simpleVerb && lower.length < 80) {
-    // But bail out if there are qualifiers that imply multi-step work
-    const hasQualifiers =
-      /\b(with|containing|inside|around|next to|connected|between|and\s+then|also|plus|as well)\b/.test(lower);
-    if (!hasQualifiers) {
-      return false;
-    }
+  // NxM grid pattern (e.g. "2x3", "3 x 4")
+  if (/\d+\s*x\s*\d+/.test(lower)) return true;
+
+  // N stages/columns/rows/sections
+  if (/\d+\s+(stage|column|row|section|quadrant|zone|item|card)s?\b/.test(lower)) return true;
+
+  // Multi-step conjunctions ("add X and then Y", "create X and also Y")
+  if (/\b(and\s+then|and\s+also|then\s+also|as\s+well\s+as)\b/.test(lower)) return true;
+
+  // ── 2. Definite simple: single-primitive commands ──
+  // Only classify as simple when the user explicitly names a board primitive
+  // AND uses a simple verb with no elaboration qualifiers.
+  const primitives =
+    /\b(sticky\s*note|rectangle|rect|circle|shape|frame|connector|line|text|arrow)\b/;
+  const simpleVerbs =
+    /\b(add|create|make|draw|insert|put|place|move|resize|delete|remove|recolor|change|update)\b/;
+  const qualifiers =
+    /\b(with|containing|inside|around|next\s+to|connected|between|and\s+then|also|plus|as\s+well|then|that\s+connects)\b/;
+
+  if (primitives.test(lower) && simpleVerbs.test(lower) && lower.length < 100 && !qualifiers.test(lower)) {
+    return false; // Simple!
   }
 
-  // ── Everything else is complex ──
-  // Creative prompts ("make a cat"), multi-object requests, templates,
-  // spatial layouts, anything with composition or planning intent.
+  // ── 3. Default: complex ──
+  // Creative prompts ("draw a cat"), multi-object requests, anything
+  // that doesn't explicitly name a single board primitive.
   return true;
 }
 

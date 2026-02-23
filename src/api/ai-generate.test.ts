@@ -1240,7 +1240,33 @@ describe('AI Generate API Endpoint', () => {
       expect(isLikelyComplexPlanPrompt('Create a project plan')).toBe(true);
       expect(isLikelyComplexPlanPrompt('Organize these by priority')).toBe(true);
       expect(isLikelyComplexPlanPrompt('Change the color to green')).toBe(true);
-      expect(isLikelyComplexPlanPrompt('Move the rectangle')).toBe(true);
+    });
+
+    it('treats single-primitive manipulation as simple', async () => {
+      const { isLikelyComplexPlanPrompt } = await import('../../api/ai/generate');
+      expect(isLikelyComplexPlanPrompt('Move the rectangle')).toBe(false);
+      expect(isLikelyComplexPlanPrompt('Delete the connector')).toBe(false);
+      expect(isLikelyComplexPlanPrompt('Resize the frame')).toBe(false);
+    });
+
+    it('routes all evaluation prompts correctly', async () => {
+      const { isLikelyComplexPlanPrompt } = await import('../../api/ai/generate');
+      // Simple evaluation prompts
+      expect(isLikelyComplexPlanPrompt("Add a yellow sticky note that says 'User Research'")).toBe(false);
+      expect(isLikelyComplexPlanPrompt('Create a blue rectangle at position 100, 200')).toBe(false);
+      expect(isLikelyComplexPlanPrompt("Add a frame called 'Sprint Planning'")).toBe(false);
+      expect(isLikelyComplexPlanPrompt('Change the sticky note color to green')).toBe(false);
+
+      // Complex evaluation prompts
+      expect(isLikelyComplexPlanPrompt('Move all the pink sticky notes to the right side')).toBe(true);
+      expect(isLikelyComplexPlanPrompt('Resize the frame to fit its contents')).toBe(true);
+      expect(isLikelyComplexPlanPrompt('Arrange these sticky notes in a grid')).toBe(true);
+      expect(isLikelyComplexPlanPrompt('Create a 2x3 grid of sticky notes for pros and cons')).toBe(true);
+      expect(isLikelyComplexPlanPrompt('Space these elements evenly')).toBe(true);
+      expect(isLikelyComplexPlanPrompt('Create a SWOT analysis template with four quadrants')).toBe(true);
+      expect(isLikelyComplexPlanPrompt('Build a user journey map with 5 stages')).toBe(true);
+      expect(isLikelyComplexPlanPrompt('Set up a retrospective board with What Went Well, What Didn\'t, and Action Items columns')).toBe(true);
+      expect(isLikelyComplexPlanPrompt('Draw a cat')).toBe(true);
     });
 
     it('returns correct minimum tool calls for SWOT', async () => {
