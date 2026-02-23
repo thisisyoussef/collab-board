@@ -483,7 +483,7 @@ export function Board() {
     [],
   );
 
-  const { pendingClaimIds } = useClaimClassification({
+  useClaimClassification({
     boardId,
     user,
     objectsRef,
