@@ -1042,6 +1042,11 @@
   pointer-events: none;
 }
 
+.board-tool-dock-wrap--expanded {
+  width: min(1880px, calc(100vw - 8px));
+  max-width: calc(100vw - 8px);
+}
+
 .board-tool-dock {
   display: inline-flex;
   align-items: flex-start;
