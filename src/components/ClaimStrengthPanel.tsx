@@ -44,7 +44,7 @@ export function ClaimStrengthPanel({
 
       <div className="claim-strength-quick-actions">
         <button
-          className="secondary-btn"
+          className="secondary-btn claim-strength-action-btn"
           type="button"
           onClick={handleFocusWeakest}
           disabled={!weakestClaim}
@@ -53,7 +53,7 @@ export function ClaimStrengthPanel({
           Focus weakest
         </button>
         <button
-          className="secondary-btn"
+          className="secondary-btn claim-strength-action-btn"
           type="button"
           onClick={() => onRecommendFixes?.()}
           disabled={!canRecommend || recommendationLoading || results.length === 0}
@@ -62,7 +62,7 @@ export function ClaimStrengthPanel({
           {recommendationLoading ? 'Recommending...' : 'Recommend fixes (AI)'}
         </button>
         <button
-          className="secondary-btn"
+          className="secondary-btn claim-strength-action-btn"
           type="button"
           onClick={() => onApplyRecommendedFixes?.()}
           disabled={!canRecommend || recommendationLoading || recommendationCount === 0}
@@ -111,12 +111,13 @@ export function ClaimStrengthPanel({
               ) : null}
               {result.aiStrengthReason ? (
                 <div className="claim-strength-ai-reason">{result.aiStrengthReason}</div>
-              ) : null}
-              <ul className="claim-strength-reasons">
-                {result.reasons.map((reason) => (
-                  <li key={reason}>{reason}</li>
-                ))}
-              </ul>
+              ) : (
+                <ul className="claim-strength-reasons">
+                  {result.reasons.map((reason) => (
+                    <li key={reason}>{reason}</li>
+                  ))}
+                </ul>
+              )}
             </li>
           ))}
         </ul>
