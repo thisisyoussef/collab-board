@@ -17,7 +17,7 @@
 // re-renders when dragging/updating 500+ objects on the canvas.
 import { doc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore/lite';
 import Konva from 'konva';
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Circle as KonvaCircleShape,
   Layer,
@@ -32,6 +32,7 @@ import { BoardInspectorPanel } from '../components/BoardInspectorPanel';
 import { BoardToolDock, type BoardTool } from '../components/BoardToolDock';
 import { BoardZoomChip } from '../components/BoardZoomChip';
 import { ClaimStrengthPanel } from '../components/ClaimStrengthPanel';
+import { useClaimClassification } from '../hooks/useClaimClassification';
 import { ContradictionRadarPanel } from '../components/ContradictionRadarPanel';
 import { SessionReplayPanel } from '../components/SessionReplayPanel';
 import { LitigationIntakeDialog } from '../components/LitigationIntakeDialog';
@@ -122,7 +123,7 @@ import {
   createRealtimeDedupeCache,
 } from '../lib/realtime-dedupe';
 import { buildBoardActionsFromLitigationDraft } from '../lib/litigation-intake-layout';
-import { claimStrengthColor, evaluateClaimStrength } from '../lib/litigation-graph';
+import { claimStrengthColor, evaluateClaimStrength, type ClaimStrengthResult } from '../lib/litigation-graph';
 import {
   computeLegalStickyDecorationMetrics,
   computeStickyResizeState,
@@ -131,6 +132,7 @@ import { screenToWorld, worldToScreen } from '../lib/utils';
 import type {
   BoardObject,
   BoardObjectsRecord,
+  ClaimStrengthLevel,
   LitigationConnectorRelation,
 } from '../types/board';
 import type {
@@ -443,20 +445,52 @@ export function Board() {
         return;
       }
 
+      const isOverridden = !!entry.manualStrengthOverride;
+      const effectiveLevel = entry.manualStrengthOverride || entry.aiStrengthLevel || result.level;
+      const colorLevel = effectiveLevel === 'moderate' ? 'medium' : effectiveLevel;
+
       indicators.push({
         id: entry.id,
         x: entry.x,
         y: entry.y,
         width: entry.width,
         height: entry.height,
-        color: claimStrengthColor(result.level),
-        levelLabel: result.level.toUpperCase(),
+        color: claimStrengthColor(colorLevel as ClaimStrengthResult['level']),
+        levelLabel: effectiveLevel.toUpperCase() + (isOverridden ? '*' : ''),
         selected: selectedSet.has(entry.id),
       });
     });
 
     return indicators;
   }, [claimStrengthById, selectedIds]);
+
+  const handleClaimClassified = useCallback(
+    (claimId: string, level: ClaimStrengthLevel, reason: string) => {
+      const obj = objectsRef.current.get(claimId);
+      if (!obj) return;
+
+      const nextObject: BoardObject = {
+        ...obj,
+        aiStrengthLevel: level,
+        aiStrengthReason: reason,
+        updatedAt: new Date().toISOString(),
+      };
+      objectsRef.current.set(claimId, nextObject);
+      emitObjectUpdate(nextObject, true);
+      scheduleBoardSave();
+      setBoardRevision((v) => v + 1);
+    },
+    [],
+  );
+
+  const { pendingClaimIds } = useClaimClassification({
+    boardId,
+    user,
+    objectsRef,
+    boardRevision,
+    onClassified: handleClaimClassified,
+  });
+
   const selectedConnector =
     selectedObject && selectedObject.type === 'connector' ? selectedObject : null;
   const canStartConnectorFromAnchor = canEditBoard && LEGAL_CONNECTOR_TOOLS.has(activeTool);
