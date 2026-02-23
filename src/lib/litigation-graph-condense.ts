@@ -173,7 +173,7 @@ function createAggregateEvidenceNode(
   const id = ensureUniqueId(`aggregate-evidence-${claimId}`, usedNodeIds);
   evidence.push({
     id,
-    label: `+${count} more evidence`,
+    label: `Additional evidence group (${pluralize(count, 'exhibit')})`,
   });
   return id;
 }
@@ -187,7 +187,7 @@ function createAggregateWitnessNode(
   const id = ensureUniqueId(`aggregate-witness-${claimId}`, usedNodeIds);
   witnesses.push({
     id,
-    name: `+${count} more witnesses`,
+    name: `Additional witness statements (${pluralize(count, 'witness')})`,
   });
   return id;
 }
@@ -201,8 +201,8 @@ function createAggregateTimelineNode(
   const id = ensureUniqueId(`aggregate-timeline-${claimId}`, usedNodeIds);
   timeline.push({
     id,
-    dateLabel: `+${count} more timeline events`,
-    event: '',
+    dateLabel: 'Additional timeline events',
+    event: `Grouped ${pluralize(count, 'event')} in summary layout.`,
   });
   return id;
 }
@@ -216,7 +216,7 @@ function createAggregateClaimNode(
   const id = ensureUniqueId(`aggregate-claim-${claimId}`, usedNodeIds);
   claims.push({
     id,
-    title: `+${count} more linked claims`,
+    title: `Additional linked claims (${pluralize(count, 'claim')})`,
   });
   return id;
 }
@@ -255,7 +255,7 @@ function createAggregateReason(
 ): string {
   const bucketLabel =
     bucket === 'timeline' ? 'timeline events' : bucket === 'unknown' ? 'linked items' : `${bucket} items`;
-  return `Summary mode collapsed ${pluralize(count, bucketLabel)} for ${relation} links.`;
+  return `Grouped ${pluralize(count, bucketLabel)} for ${relation} links in summary layout.`;
 }
 
 export function condenseLitigationDraftForLayout(

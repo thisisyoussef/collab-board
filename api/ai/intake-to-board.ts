@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import OpenAI from 'openai';
 import { cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
@@ -86,6 +87,13 @@ const MAX_LIST_ITEMS = 24;
 const MAX_DOCUMENTS = 20;
 const MAX_DOCUMENT_TEXT_LENGTH = 6_000;
 const MAX_INLINE_BINARY_BYTES = 3_000_000;
+const DEFAULT_INTAKE_QUALITY_MODEL = 'gpt-4o-mini';
+const LOW_SIGNAL_STICKY_PATTERNS: RegExp[] = [
+  /^\+\d+\s+more\s+/i,
+  /^summary mode collapsed/i,
+  /^exhibit numbers?(?:\s+and\s+title\/descriptions?)?$/i,
+  /\bdid,\s*commit the\b/i,
+];
 const MONTH_DATE_PATTERN_TEXT =
   '\\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t|tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\\.?\\s+\\d{1,2}(?:,\\s*\\d{4})?';
 const DEFAULT_PREFERENCES: LitigationIntakePreferences = {
@@ -364,6 +372,455 @@ function isLowSignalTimelineSnippet(snippet: string): boolean {
   return false;
 }
 
+let cachedOpenAIClient: OpenAI | null = null;
+let cachedOpenAIKey = '';
+
+function getOpenAIClient(): OpenAI | null {
+  const apiKey = asString(process.env.OPENAI_API_KEY).trim();
+  if (!apiKey) {
+    return null;
+  }
+
+  if (!cachedOpenAIClient || cachedOpenAIKey !== apiKey) {
+    cachedOpenAIClient = new OpenAI({ apiKey });
+    cachedOpenAIKey = apiKey;
+  }
+
+  return cachedOpenAIClient;
+}
+
+function normalizeWhitespace(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function trimToWholeWord(value: string, maxLength: number): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  const sliced = value.slice(0, maxLength).trim();
+  const lastSpace = sliced.lastIndexOf(' ');
+  if (lastSpace >= 12) {
+    return sliced.slice(0, lastSpace).trim();
+  }
+  return sliced;
+}
+
+function cleanStickyCandidate(value: string, maxLength: number): string {
+  const normalized = normalizeWhitespace(value.replace(/^[-*•]\s+/, '').replace(/^"+|"+$/g, ''));
+  if (!normalized) {
+    return '';
+  }
+  return trimToWholeWord(normalized, maxLength).replace(/[,:;\-–]+$/g, '').trim();
+}
+
+function hasSufficientAlphabeticSignal(value: string): boolean {
+  const normalized = normalizeWhitespace(value);
+  if (!normalized) {
+    return false;
+  }
+  const letters = normalized.match(/[A-Za-z]/g)?.length || 0;
+  return letters >= 4 && letters / normalized.length >= 0.35;
+}
+
+function endsWithSuspiciousFragment(value: string): boolean {
+  const normalized = normalizeWhitespace(value).toLowerCase();
+  if (!normalized) {
+    return true;
+  }
+  if (/[.!?]$/.test(normalized)) {
+    return false;
+  }
+  return /\b(?:and|or|the|of|to|for|with|by|did|commit|including|about)\s*$/.test(normalized);
+}
+
+function isReadableStickyText(value: string): boolean {
+  const normalized = normalizeWhitespace(value);
+  if (normalized.length < 5) {
+    return false;
+  }
+  if (!hasSufficientAlphabeticSignal(normalized)) {
+    return false;
+  }
+  if (LOW_SIGNAL_STICKY_PATTERNS.some((pattern) => pattern.test(normalized))) {
+    return false;
+  }
+  if (endsWithSuspiciousFragment(normalized)) {
+    return false;
+  }
+  return true;
+}
+
+function selectReadableText(
+  candidate: string | undefined,
+  original: string | undefined,
+  fallback: string,
+  maxLength: number,
+): string {
+  const cleanedCandidate = cleanStickyCandidate(asString(candidate), maxLength);
+  if (isReadableStickyText(cleanedCandidate)) {
+    return cleanedCandidate;
+  }
+
+  const cleanedOriginal = cleanStickyCandidate(asString(original), maxLength);
+  if (isReadableStickyText(cleanedOriginal)) {
+    return cleanedOriginal;
+  }
+
+  const cleanedFallback = cleanStickyCandidate(fallback, maxLength);
+  return cleanedFallback || fallback;
+}
+
+function selectOptionalReadableText(
+  candidate: string | undefined,
+  original: string | undefined,
+  maxLength: number,
+): string | undefined {
+  const cleanedCandidate = cleanStickyCandidate(asString(candidate), maxLength);
+  if (isReadableStickyText(cleanedCandidate)) {
+    return cleanedCandidate;
+  }
+
+  const cleanedOriginal = cleanStickyCandidate(asString(original), maxLength);
+  if (isReadableStickyText(cleanedOriginal)) {
+    return cleanedOriginal;
+  }
+
+  return undefined;
+}
+
+function parseJsonObjectFromText(raw: string): Record<string, unknown> | null {
+  const direct = raw.trim();
+  if (!direct) {
+    return null;
+  }
+
+  const parseCandidate = (candidate: string): Record<string, unknown> | null => {
+    try {
+      const parsed = JSON.parse(candidate) as unknown;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      // Continue trying fallbacks.
+    }
+    return null;
+  };
+
+  const directParsed = parseCandidate(direct);
+  if (directParsed) {
+    return directParsed;
+  }
+
+  const fencedMatch = direct.match(/```json\s*([\s\S]*?)```/i) || direct.match(/```\s*([\s\S]*?)```/i);
+  if (fencedMatch?.[1]) {
+    const fencedParsed = parseCandidate(fencedMatch[1]);
+    if (fencedParsed) {
+      return fencedParsed;
+    }
+  }
+
+  const firstBrace = direct.indexOf('{');
+  const lastBrace = direct.lastIndexOf('}');
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    return parseCandidate(direct.slice(firstBrace, lastBrace + 1));
+  }
+
+  return null;
+}
+
+function parseRewriteCandidateArray<T extends { id: string }>(
+  value: unknown,
+  mapEntry: (record: Record<string, unknown>) => T,
+): T[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const next: T[] = [];
+  value.forEach((entry) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      return;
+    }
+    const mapped = mapEntry(entry as Record<string, unknown>);
+    if (!mapped.id) {
+      return;
+    }
+    next.push(mapped);
+  });
+
+  return next;
+}
+
+function parseDraftRewriteCandidate(rawContent: string): DraftRewriteCandidate | null {
+  const parsed = parseJsonObjectFromText(rawContent);
+  if (!parsed) {
+    return null;
+  }
+
+  return {
+    claims: parseRewriteCandidateArray(parsed.claims, (record) => ({
+      id: asString(record.id).trim(),
+      title: asString(record.title).trim() || undefined,
+      summary: asString(record.summary).trim() || undefined,
+    })),
+    evidence: parseRewriteCandidateArray(parsed.evidence, (record) => ({
+      id: asString(record.id).trim(),
+      label: asString(record.label).trim() || undefined,
+      citation: asString(record.citation).trim() || undefined,
+    })),
+    witnesses: parseRewriteCandidateArray(parsed.witnesses, (record) => ({
+      id: asString(record.id).trim(),
+      name: asString(record.name).trim() || undefined,
+      quote: asString(record.quote).trim() || undefined,
+      citation: asString(record.citation).trim() || undefined,
+    })),
+    timeline: parseRewriteCandidateArray(parsed.timeline, (record) => ({
+      id: asString(record.id).trim(),
+      dateLabel: asString(record.dateLabel).trim() || undefined,
+      event: asString(record.event).trim() || undefined,
+    })),
+  };
+}
+
+function buildRewriteMap<T extends { id: string }>(entries: T[]): Map<string, T> {
+  const map = new Map<string, T>();
+  entries.forEach((entry) => {
+    if (!entry.id) {
+      return;
+    }
+    map.set(entry.id, entry);
+  });
+  return map;
+}
+
+function normalizeDraftReadability(draft: LitigationIntakeDraft): LitigationIntakeDraft {
+  const claims = draft.claims.map((claim, index) => {
+    const title = selectReadableText(
+      claim.title,
+      claim.title,
+      `Claim ${index + 1} requires review`,
+      140,
+    );
+    const summary = selectOptionalReadableText(claim.summary, claim.summary, 260);
+    return {
+      id: claim.id,
+      title,
+      ...(summary ? { summary } : {}),
+    };
+  });
+
+  const evidence = draft.evidence.map((entry, index) => {
+    const label = selectReadableText(
+      entry.label,
+      entry.label,
+      `Evidence item ${index + 1} requires review`,
+      160,
+    );
+    const citation = selectOptionalReadableText(entry.citation, entry.citation, 140);
+    return {
+      id: entry.id,
+      label,
+      ...(citation ? { citation } : {}),
+    };
+  });
+
+  const witnesses = draft.witnesses.map((entry, index) => {
+    const name = selectReadableText(
+      entry.name,
+      entry.name,
+      `Witness ${index + 1}`,
+      120,
+    );
+    const quote = selectOptionalReadableText(entry.quote, entry.quote, 220);
+    const citation = selectOptionalReadableText(entry.citation, entry.citation, 140);
+    return {
+      id: entry.id,
+      name,
+      ...(quote ? { quote } : {}),
+      ...(citation ? { citation } : {}),
+    };
+  });
+
+  const timeline = draft.timeline.map((entry, index) => {
+    const dateLabel = selectReadableText(
+      entry.dateLabel,
+      entry.dateLabel,
+      `Event ${index + 1}`,
+      80,
+    );
+    const event = selectReadableText(
+      entry.event,
+      entry.event,
+      `Key event details require review`,
+      220,
+    );
+    return {
+      id: entry.id,
+      dateLabel,
+      event,
+    };
+  });
+
+  return {
+    claims,
+    evidence,
+    witnesses,
+    timeline,
+    links: draft.links,
+  };
+}
+
+function applyDraftRewriteCandidate(
+  draft: LitigationIntakeDraft,
+  candidate: DraftRewriteCandidate,
+): LitigationIntakeDraft {
+  const claimMap = buildRewriteMap(candidate.claims);
+  const evidenceMap = buildRewriteMap(candidate.evidence);
+  const witnessMap = buildRewriteMap(candidate.witnesses);
+  const timelineMap = buildRewriteMap(candidate.timeline);
+
+  const rewritten: LitigationIntakeDraft = {
+    claims: draft.claims.map((entry, index) => {
+      const rewrite = claimMap.get(entry.id);
+      const title = selectReadableText(
+        rewrite?.title,
+        entry.title,
+        `Claim ${index + 1} requires review`,
+        140,
+      );
+      const summary = selectOptionalReadableText(rewrite?.summary, entry.summary, 260);
+      return {
+        id: entry.id,
+        title,
+        ...(summary ? { summary } : {}),
+      };
+    }),
+    evidence: draft.evidence.map((entry, index) => {
+      const rewrite = evidenceMap.get(entry.id);
+      const label = selectReadableText(
+        rewrite?.label,
+        entry.label,
+        `Evidence item ${index + 1} requires review`,
+        160,
+      );
+      const citation = selectOptionalReadableText(rewrite?.citation, entry.citation, 140);
+      return {
+        id: entry.id,
+        label,
+        ...(citation ? { citation } : {}),
+      };
+    }),
+    witnesses: draft.witnesses.map((entry, index) => {
+      const rewrite = witnessMap.get(entry.id);
+      const name = selectReadableText(rewrite?.name, entry.name, `Witness ${index + 1}`, 120);
+      const quote = selectOptionalReadableText(rewrite?.quote, entry.quote, 220);
+      const citation = selectOptionalReadableText(rewrite?.citation, entry.citation, 140);
+      return {
+        id: entry.id,
+        name,
+        ...(quote ? { quote } : {}),
+        ...(citation ? { citation } : {}),
+      };
+    }),
+    timeline: draft.timeline.map((entry, index) => {
+      const rewrite = timelineMap.get(entry.id);
+      const dateLabel = selectReadableText(rewrite?.dateLabel, entry.dateLabel, `Event ${index + 1}`, 80);
+      const event = selectReadableText(
+        rewrite?.event,
+        entry.event,
+        'Key event details require review',
+        220,
+      );
+      return {
+        id: entry.id,
+        dateLabel,
+        event,
+      };
+    }),
+    links: draft.links,
+  };
+
+  return normalizeDraftReadability(rewritten);
+}
+
+function buildIntakeRewritePrompt(
+  draft: LitigationIntakeDraft,
+  objective: LitigationIntakeObjective,
+): string {
+  return [
+    'Rewrite litigation board cards so every sticky note reads as a coherent legal work-product sentence.',
+    'Preserve IDs exactly; do not add, remove, or rename ids.',
+    'If unsure, keep the original meaning and make the wording clearer.',
+    'Output strict JSON only with keys: claims, evidence, witnesses, timeline.',
+    '',
+    'Rules:',
+    '- claims[].title: concise legal claim title, max 140 chars.',
+    '- claims[].summary: optional plain-language support sentence, max 260 chars.',
+    '- evidence[].label: concrete exhibit label (not placeholders), max 160 chars.',
+    '- witnesses[].name: witness name only.',
+    '- witnesses[].quote: optional coherent testimony excerpt, max 220 chars.',
+    '- timeline[].dateLabel: short date marker.',
+    '- timeline[].event: coherent event sentence, max 220 chars.',
+    '- Remove low-signal fragments, OCR garbage, and incomplete clauses.',
+    '- Never output strings like "+N more evidence" or "Summary mode collapsed ...".',
+    '',
+    `Objective: ${objective}`,
+    `Draft JSON:\n${JSON.stringify(draft)}`,
+  ].join('\n');
+}
+
+async function runDraftReadabilityAgent(
+  draft: LitigationIntakeDraft,
+  objective: LitigationIntakeObjective,
+): Promise<DraftReadabilityPassResult> {
+  const baseline = normalizeDraftReadability(draft);
+  const openai = getOpenAIClient();
+  if (!openai) {
+    return { draft: baseline, warnings: [] };
+  }
+
+  const model = asString(process.env.INTAKE_QUALITY_MODEL).trim() || DEFAULT_INTAKE_QUALITY_MODEL;
+
+  try {
+    const response = await openai.chat.completions.create({
+      model,
+      temperature: 0.1,
+      response_format: { type: 'json_object' },
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You are a litigation board readability editor. Return only valid JSON and keep all ids unchanged.',
+        },
+        {
+          role: 'user',
+          content: buildIntakeRewritePrompt(baseline, objective),
+        },
+      ],
+    });
+
+    const content = asString(response.choices?.[0]?.message?.content);
+    const candidate = parseDraftRewriteCandidate(content);
+    if (!candidate) {
+      return {
+        draft: baseline,
+        warnings: ['AI readability pass returned invalid JSON. Deterministic cleanup applied.'],
+      };
+    }
+
+    return {
+      draft: applyDraftRewriteCandidate(baseline, candidate),
+      warnings: [],
+    };
+  } catch {
+    return {
+      draft: baseline,
+      warnings: ['AI readability pass unavailable. Deterministic cleanup applied.'],
+    };
+  }
+}
+
 function buildClaims(input: LitigationIntakeInput, usedIds: Set<string>): LitigationDraftClaim[] {
   const claimLines = dedupeNormalizedLines(parseList(input.claims));
   const caseSummary = input.caseSummary.trim();
@@ -603,6 +1060,43 @@ interface ParsedDocumentText {
   text: string;
   source: 'provided' | 'pdf_parse';
   quality: 'high' | 'low';
+}
+
+interface DraftRewriteClaim {
+  id: string;
+  title?: string;
+  summary?: string;
+}
+
+interface DraftRewriteEvidence {
+  id: string;
+  label?: string;
+  citation?: string;
+}
+
+interface DraftRewriteWitness {
+  id: string;
+  name?: string;
+  quote?: string;
+  citation?: string;
+}
+
+interface DraftRewriteTimelineEvent {
+  id: string;
+  dateLabel?: string;
+  event?: string;
+}
+
+interface DraftRewriteCandidate {
+  claims: DraftRewriteClaim[];
+  evidence: DraftRewriteEvidence[];
+  witnesses: DraftRewriteWitness[];
+  timeline: DraftRewriteTimelineEvent[];
+}
+
+interface DraftReadabilityPassResult {
+  draft: LitigationIntakeDraft;
+  warnings: string[];
 }
 
 function isPdfMimeType(mimeType: string, name: string): boolean {
@@ -1256,11 +1750,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const documents = normalizeDocuments(bodyRecord.documents);
   const mergedResult = await mergeIntakeWithDocuments(intake, documents);
   const preferences = normalizePreferences(bodyRecord.preferences);
-  const draft = parseIntakeDraft(mergedResult.input, preferences);
+  const parsedDraft = parseIntakeDraft(mergedResult.input, preferences);
+  const readabilityResult = await runDraftReadabilityAgent(parsedDraft, preferences.objective);
+  const draft = readabilityResult.draft;
+  const warnings = [...mergedResult.warnings, ...readabilityResult.warnings];
 
   const warningSuffix =
-    mergedResult.warnings.length > 0
-      ? ` ${mergedResult.warnings.join(' ')}`
+    warnings.length > 0
+      ? ` ${warnings.join(' ')}`
       : '';
 
   return res.status(200).json({

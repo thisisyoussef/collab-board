@@ -152,9 +152,15 @@ describe('buildBoardActionsFromLitigationDraft', () => {
       .filter((action) => action.name === 'createStickyNote')
       .map((action) => String(action.input.text));
 
-    expect(summaryStickyTexts.some((text) => text.includes('more evidence'))).toBe(true);
-    expect(summaryStickyTexts.some((text) => text.includes('more witnesses'))).toBe(true);
-    expect(summaryStickyTexts.some((text) => text.includes('more timeline'))).toBe(true);
+    expect(summaryStickyTexts.some((text) => text.toLowerCase().includes('additional evidence'))).toBe(
+      true,
+    );
+    expect(summaryStickyTexts.some((text) => text.toLowerCase().includes('additional witness'))).toBe(
+      true,
+    );
+    expect(summaryStickyTexts.some((text) => text.toLowerCase().includes('additional timeline'))).toBe(
+      true,
+    );
   });
 
   it('renders compact card text in summary mode and full detail in expanded mode', () => {

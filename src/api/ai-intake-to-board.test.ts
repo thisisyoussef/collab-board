@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockPdfParse } = vi.hoisted(() => ({
+const { mockPdfParse, mockOpenAIChatCreate } = vi.hoisted(() => ({
   mockPdfParse: vi.fn<(data: Buffer, options?: Record<string, unknown>) => Promise<{ text: string }>>(),
+  mockOpenAIChatCreate: vi.fn(),
 }));
 
 const mockVerifyIdToken = vi.fn();
@@ -26,6 +27,16 @@ vi.mock('firebase-admin/firestore', () => ({
 
 vi.mock('pdf-parse', () => ({
   default: (data: Buffer, options?: Record<string, unknown>) => mockPdfParse(data, options),
+}));
+
+vi.mock('openai', () => ({
+  default: vi.fn().mockImplementation(() => ({
+    chat: {
+      completions: {
+        create: mockOpenAIChatCreate,
+      },
+    },
+  })),
 }));
 
 function createMockReq(overrides: Record<string, unknown> = {}) {
@@ -66,6 +77,8 @@ describe('AI Intake-to-Board API', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockPdfParse.mockResolvedValue({ text: '' });
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.INTAKE_QUALITY_MODEL;
     mockGetApps.mockReturnValue([{}]);
     mockVerifyIdToken.mockResolvedValue({ uid: 'user-123' });
     mockBoardGet.mockResolvedValue({
@@ -485,5 +498,107 @@ describe('AI Intake-to-Board API', () => {
     );
     expect(timelineEvents.some((event: string) => event.includes('did, commit the'))).toBe(false);
     expect(timelineEvents.some((event: string) => event.includes('state of mississippi'))).toBe(false);
+  });
+
+  it('uses LLM readability agent to rewrite sticky-note text when OPENAI_API_KEY is available', async () => {
+    process.env.OPENAI_API_KEY = 'test-openai-key';
+    mockOpenAIChatCreate.mockResolvedValueOnce({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              claims: [
+                {
+                  id: 'claim-design-defect',
+                  title: 'Design defect liability theory',
+                  summary: 'Defendant shipped a known-defective device after internal alarms escalated.',
+                },
+                {
+                  id: 'claim-failure-to-warn',
+                  title: 'Failure-to-warn claim',
+                  summary: 'Safety warning updates were delayed despite known risk signals.',
+                },
+              ],
+              evidence: [
+                {
+                  id: 'evidence-ex-12-internal-memo-at-p-3',
+                  label: 'Internal memo documenting escalating alarm failures',
+                  citation: 'Ex. 12 at p.3',
+                },
+              ],
+              witnesses: [
+                {
+                  id: 'witness-dr-lee',
+                  name: 'Dr. Lee',
+                  quote: 'Observed alarm frequency increase before the adverse event.',
+                  citation: 'Dep. 44:12-45:3',
+                },
+              ],
+              timeline: [
+                {
+                  id: 'timeline-mar-2024-1',
+                  dateLabel: 'March 2024',
+                  event: 'Repeated alarm events were recorded before recall activity.',
+                },
+              ],
+            }),
+          },
+        },
+      ],
+    });
+
+    const handler = (await import('../../api/ai/intake-to-board')).default;
+    const req = createMockReq();
+    const res = createMockRes();
+
+    await handler(req as never, res as never);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(mockOpenAIChatCreate).toHaveBeenCalledTimes(1);
+    const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(payload.draft.claims[0].title).toContain('Design defect liability theory');
+    expect(payload.draft.evidence[0].label).toContain('escalating alarm failures');
+    expect(payload.draft.timeline[0].event).toContain('before recall activity');
+  });
+
+  it('rejects nonsensical LLM rewrites and falls back to readable deterministic text', async () => {
+    process.env.OPENAI_API_KEY = 'test-openai-key';
+    mockOpenAIChatCreate.mockResolvedValueOnce({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              evidence: [
+                {
+                  id: 'evidence-ex-12-internal-memo-at-p-3',
+                  label: '+14 more evidence',
+                },
+              ],
+              timeline: [
+                {
+                  id: 'timeline-mar-2024-1',
+                  dateLabel: 'March 2024',
+                  event: 'did, commit the',
+                },
+              ],
+            }),
+          },
+        },
+      ],
+    });
+
+    const handler = (await import('../../api/ai/intake-to-board')).default;
+    const req = createMockReq();
+    const res = createMockRes();
+
+    await handler(req as never, res as never);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const evidenceLabels = payload.draft.evidence.map((entry: { label: string }) => entry.label.toLowerCase());
+    expect(evidenceLabels.some((label: string) => label.includes('+14 more evidence'))).toBe(false);
+
+    const timelineEvents = payload.draft.timeline.map((entry: { event: string }) => entry.event.toLowerCase());
+    expect(timelineEvents.some((event: string) => event.includes('did, commit the'))).toBe(false);
   });
 });
