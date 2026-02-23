@@ -453,7 +453,7 @@ User Journey Map — create N horizontal frames (250x400 each, 30px gap):
 const MAX_PROMPT_LENGTH = 500;
 const MAX_BOARD_STATE_OBJECTS = 100;
 const MAX_PLANNING_ATTEMPTS = 2;
-const SIMPLE_MAX_TOKENS_FALLBACK = 700;
+const SIMPLE_MAX_TOKENS_FALLBACK = 2048;
 const COMPLEX_MAX_TOKENS_FALLBACK = 4096;
 const TOOL_BY_NAME = new Map(toolDefinitions.map((tool) => [tool.name, tool] as const));
 
@@ -683,19 +683,30 @@ function getPlanQualityScore(toolCalls: OutgoingToolCall[], issues: ToolValidati
 
 export function isLikelyComplexPlanPrompt(prompt: string): boolean {
   const lower = prompt.toLowerCase();
-  if (
-    /\b(templates?|frameworks?|analysis|matrix|quadrants?|kanban|retro|retrospective|diagrams?|workflows?|roadmaps?|mind map|journey|user journey|sprint|brainstorm|planning board|swot|grids?|columns?|lanes?|stages?)\b/i.test(
-      lower,
-    )
-  ) {
-    return true;
+
+  // ── Definite simple: single-object commands with an explicit target ──
+  // Only classify as simple when the user explicitly names a single board
+  // primitive AND uses a creation/manipulation verb with no elaboration.
+  // Allow optional adjectives (e.g. "a yellow sticky note", "a big rectangle").
+  const singleObjectTarget =
+    /\b(a|one|1)\s+(\w+\s+)?(sticky\s+note|rectangle|rect|circle|shape|frame|connector|line)\b/.test(lower);
+  const simpleVerb = /\b(add|create|make|draw|insert|move|resize|delete|remove|recolor|change\s+color)\b/.test(lower);
+
+  // If the prompt is short, names exactly one primitive, and uses a simple
+  // verb without additional qualifiers, it's safe to call it simple.
+  if (singleObjectTarget && simpleVerb && lower.length < 80) {
+    // But bail out if there are qualifiers that imply multi-step work
+    const hasQualifiers =
+      /\b(with|containing|inside|around|next to|connected|between|and\s+then|also|plus|as well)\b/.test(lower);
+    if (!hasQualifiers) {
+      return false;
+    }
   }
 
-  if (/\b(with|containing|include|includes)\b/.test(lower) && /\b(2|3|4|5|6|7|8|9|10)\b/.test(lower)) {
-    return true;
-  }
-
-  return false;
+  // ── Everything else is complex ──
+  // Creative prompts ("make a cat"), multi-object requests, templates,
+  // spatial layouts, anything with composition or planning intent.
+  return true;
 }
 
 export function getMinimumToolCallsForPrompt(prompt: string): number {
@@ -748,61 +759,19 @@ function getSystemPromptForPrompt(prompt: string): string {
   return isLikelyComplexPlanPrompt(prompt) ? COMPLEX_SYSTEM_PROMPT : SIMPLE_SYSTEM_PROMPT;
 }
 
-function shouldIncludeBoardStateInPrompt(prompt: string): boolean {
-  if (isLikelyComplexPlanPrompt(prompt)) {
-    return true;
-  }
-
-  const lower = prompt.toLowerCase();
-  const referencesExistingObjects =
-    /\b(move|resize|change|update|delete|remove|recolor|color|edit|rename|connect|link|arrange|align|distribute|group|ungroup|duplicate|copy|paste|selected|existing|current|this|that|these|those|all|them)\b/.test(
-      lower,
-    );
-  if (referencesExistingObjects) {
-    return true;
-  }
-
-  const createOnlyCommand = /\b(add|create|make|draw|insert)\b/.test(lower);
-  const createTarget =
-    /\b(sticky\s+note|rectangle|rect|circle|line|shape|frame|connector)\b/.test(lower);
-  if (createOnlyCommand && createTarget) {
-    return false;
-  }
-
+function shouldIncludeBoardStateInPrompt(_prompt: string): boolean {
+  // Always include board state — the model needs it to avoid overlaps and
+  // to reference existing objects. The token cost is small relative to the
+  // quality improvement.
   return true;
 }
 
 function getPreferredOpenAIToolChoiceForPrompt(
-  prompt: string,
+  _prompt: string,
 ): OpenAI.Chat.Completions.ChatCompletionToolChoiceOption {
-  if (isLikelyComplexPlanPrompt(prompt)) {
-    return 'auto';
-  }
-
-  const lower = prompt.toLowerCase();
-  const createIntent = /\b(add|create|make|draw|insert)\b/.test(lower);
-  const referencesExistingObjects =
-    /\b(move|resize|change|update|delete|remove|recolor|color|edit|rename|connect|link|arrange|align|distribute|selected|existing|current|this|that|these|those|all|them)\b/.test(
-      lower,
-    );
-  if (!createIntent || referencesExistingObjects) {
-    return 'auto';
-  }
-
-  if (/\bsticky\b/.test(lower) && /\bnote\b/.test(lower)) {
-    return {
-      type: 'function',
-      function: { name: 'createStickyNote' },
-    };
-  }
-
-  if (/\b(rectangle|rect|circle|line|shape)\b/.test(lower)) {
-    return {
-      type: 'function',
-      function: { name: 'createShape' },
-    };
-  }
-
+  // Always let the model decide which tools to use. Pre-pinning to a
+  // specific tool prevents the model from composing multi-tool responses
+  // for creative or nuanced requests.
   return 'auto';
 }
 

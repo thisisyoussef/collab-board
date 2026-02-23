@@ -755,17 +755,12 @@ describe('AI Generate API Endpoint', () => {
         messages: Array<{ role: string; content: string }>;
         tool_choice: unknown;
       };
-      expect(payload.max_tokens).toBe(700);
+      expect(payload.max_tokens).toBe(2048);
       expect(payload.messages[0].content).not.toContain('Template Instructions');
-      expect(payload.tool_choice).toEqual({
-        type: 'function',
-        function: {
-          name: 'createShape',
-        },
-      });
+      expect(payload.tool_choice).toBe('auto');
     });
 
-    it('omits board-state context for create-only simple prompts to reduce token usage', async () => {
+    it('always includes board-state context even for simple create prompts', async () => {
       vi.resetModules();
       process.env.ANTHROPIC_API_KEY = 'test-key';
       process.env.OPENAI_API_KEY = 'test-openai-key';
@@ -811,14 +806,9 @@ describe('AI Generate API Endpoint', () => {
         messages: Array<{ role: string; content: string }>;
         tool_choice: unknown;
       };
-      expect(payload.messages[1].content).toBe('Add one sticky note saying hello');
-      expect(payload.messages[1].content).not.toContain('Current board objects:');
-      expect(payload.tool_choice).toEqual({
-        type: 'function',
-        function: {
-          name: 'createStickyNote',
-        },
-      });
+      // Board state is now always included so the model can avoid overlaps
+      expect(payload.messages[1].content).toContain('Current board objects:');
+      expect(payload.tool_choice).toBe('auto');
     });
 
     it('keeps board-state context for simple prompts that target existing objects', async () => {
@@ -1236,11 +1226,21 @@ describe('AI Generate API Endpoint', () => {
       expect(isLikelyComplexPlanPrompt('Include 3 sticky notes')).toBe(true);
     });
 
-    it('does not flag simple prompts as complex', async () => {
+    it('does not flag explicit single-object commands as complex', async () => {
       const { isLikelyComplexPlanPrompt } = await import('../../api/ai/generate');
-      expect(isLikelyComplexPlanPrompt('Add a yellow sticky note')).toBe(false);
-      expect(isLikelyComplexPlanPrompt('Change the color to green')).toBe(false);
-      expect(isLikelyComplexPlanPrompt('Move the rectangle')).toBe(false);
+      expect(isLikelyComplexPlanPrompt('Add a sticky note')).toBe(false);
+      expect(isLikelyComplexPlanPrompt('Create a rectangle')).toBe(false);
+      expect(isLikelyComplexPlanPrompt('Add a circle')).toBe(false);
+    });
+
+    it('flags creative and open-ended prompts as complex', async () => {
+      const { isLikelyComplexPlanPrompt } = await import('../../api/ai/generate');
+      expect(isLikelyComplexPlanPrompt('Make a cat')).toBe(true);
+      expect(isLikelyComplexPlanPrompt('Draw a house with a garden')).toBe(true);
+      expect(isLikelyComplexPlanPrompt('Create a project plan')).toBe(true);
+      expect(isLikelyComplexPlanPrompt('Organize these by priority')).toBe(true);
+      expect(isLikelyComplexPlanPrompt('Change the color to green')).toBe(true);
+      expect(isLikelyComplexPlanPrompt('Move the rectangle')).toBe(true);
     });
 
     it('returns correct minimum tool calls for SWOT', async () => {
