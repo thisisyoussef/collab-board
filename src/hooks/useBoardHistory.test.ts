@@ -139,5 +139,29 @@ describe('useBoardHistory', () => {
     expect(undoTransition?.to).toEqual(stateWith());
     expect(redoTransition?.to.a.text).toBe('Original');
   });
+
+  it('getEntries returns a copy of the undo stack', () => {
+    const { result } = renderHook(() => useBoardHistory());
+    const s0 = stateWith();
+    const s1 = stateWith(sticky('a', 'A'));
+    const s2 = stateWith(sticky('a', 'A'), sticky('b', 'B'));
+
+    act(() => {
+      result.current.commit({ source: 'manual', before: s0, after: s1 });
+      result.current.commit({ source: 'ai', before: s1, after: s2 });
+    });
+
+    const entries = result.current.getEntries();
+    expect(entries).toHaveLength(2);
+    expect(entries[0].source).toBe('manual');
+    expect(entries[0].after).toEqual(s1);
+    expect(entries[1].source).toBe('ai');
+    expect(entries[1].after).toEqual(s2);
+
+    // Verify it's a copy — mutating returned array doesn't affect hook
+    entries.length = 0;
+    const entries2 = result.current.getEntries();
+    expect(entries2).toHaveLength(2);
+  });
 });
 

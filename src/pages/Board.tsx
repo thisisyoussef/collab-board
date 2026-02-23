@@ -33,6 +33,7 @@ import { BoardToolDock, type BoardTool } from '../components/BoardToolDock';
 import { BoardZoomChip } from '../components/BoardZoomChip';
 import { ClaimStrengthPanel } from '../components/ClaimStrengthPanel';
 import { ContradictionRadarPanel } from '../components/ContradictionRadarPanel';
+import { SessionReplayPanel } from '../components/SessionReplayPanel';
 import { LitigationIntakeDialog } from '../components/LitigationIntakeDialog';
 import { MetricsOverlay } from '../components/MetricsOverlay';
 import { PresenceAvatars } from '../components/PresenceAvatars';
@@ -44,6 +45,7 @@ import { useAICommandCenter } from '../hooks/useAICommandCenter';
 import { useAIExecutor, type AICommitMeta } from '../hooks/useAIExecutor';
 import { useBoardRecents } from '../hooks/useBoardRecents';
 import { useBoardHistory } from '../hooks/useBoardHistory';
+import { useSessionReplay } from '../hooks/useSessionReplay';
 import { useContradictionRadar } from '../hooks/useContradictionRadar';
 import { useLitigationIntake } from '../hooks/useLitigationIntake';
 import { useBoardSharing } from '../hooks/useBoardSharing';
@@ -299,7 +301,9 @@ export function Board() {
   const [boardMissing, setBoardMissing] = useState(false);
   const [isResolvingAccess, setIsResolvingAccess] = useState(Boolean(boardId));
   const canReadBoard = Boolean(boardAccess?.canRead);
-  const canEditBoard = Boolean(boardAccess?.canEdit);
+  const canEditBoardRaw = Boolean(boardAccess?.canEdit);
+  // canEditBoard is finalized after sessionReplay hook below (line ~547)
+  let canEditBoard = canEditBoardRaw;
   const canApplyAI = Boolean(boardAccess?.canApplyAI);
   const activeBoardId = canReadBoard ? boardId : undefined;
   const {
@@ -539,6 +543,9 @@ export function Board() {
     enabled: Boolean(canReadBoard && user?.uid),
   });
   const boardHistory = useBoardHistory({ maxEntries: BOARD_HISTORY_MAX_ENTRIES });
+  const sessionReplay = useSessionReplay({ getEntries: boardHistory.getEntries });
+  canEditBoard = canEditBoardRaw && !sessionReplay.active;
+  const liveStateBeforeReplayRef = useRef<BoardObjectsRecord | null>(null);
 
   const getActorUserId = () => user?.uid || 'guest';
 
@@ -1827,6 +1834,42 @@ export function Board() {
     const transition = boardHistory.redo();
     applyHistoryTransition(transition, 'Redid last change.');
   };
+
+  /* ── Session Time Machine handlers ── */
+
+  function handleReplayEnter() {
+    liveStateBeforeReplayRef.current = serializeBoardObjects();
+    sessionReplay.enter();
+  }
+
+  function handleReplayExit() {
+    sessionReplay.exit();
+    if (liveStateBeforeReplayRef.current) {
+      hydrateBoardObjects(liveStateBeforeReplayRef.current, user?.uid || 'guest');
+      liveStateBeforeReplayRef.current = null;
+    }
+  }
+
+  function handleReplayRestore() {
+    if (!canEditBoardRaw) return;
+    const restoredState = sessionReplay.restore();
+    if (!restoredState) return;
+
+    const beforeState = liveStateBeforeReplayRef.current || serializeBoardObjects();
+    liveStateBeforeReplayRef.current = null;
+
+    hydrateBoardObjects(restoredState, user?.uid || 'guest');
+    boardHistory.commit({ source: 'manual', before: beforeState, after: restoredState });
+    scheduleBoardSave();
+    flushBoardSave();
+    setCanvasNotice('Board restored from time machine checkpoint.');
+  }
+
+  /* ── Replay scrub effect ── */
+  useEffect(() => {
+    if (!sessionReplay.active || !sessionReplay.currentBoardState) return;
+    hydrateBoardObjects(sessionReplay.currentBoardState, user?.uid || 'guest');
+  }, [sessionReplay.active, sessionReplay.currentIndex]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function applyAIBoardStateCommit(nextBoardState: BoardObjectsRecord, meta: AICommitMeta) {
     const beforeState = serializeBoardObjects();
@@ -5931,6 +5974,14 @@ export function Board() {
           >
             Legal quick start
           </button>
+          <button
+            className="chip-btn"
+            onClick={handleReplayEnter}
+            disabled={!boardHistory.canUndo}
+            title="Open Session Time Machine"
+          >
+            Time Machine
+          </button>
         </div>
 
         <div className="topbar-cluster right">
@@ -6362,6 +6413,17 @@ export function Board() {
               void aiExecutor.applyPreviewActions(previews, 'Contradiction radar: applied accepted contradictions');
             }}
             acceptedCount={contradictionRadar.acceptedCandidates.length}
+          />
+          <SessionReplayPanel
+            checkpoints={sessionReplay.checkpoints}
+            currentIndex={sessionReplay.currentIndex}
+            playing={sessionReplay.playing}
+            active={sessionReplay.active}
+            onGoTo={sessionReplay.goTo}
+            onPlay={sessionReplay.play}
+            onPause={sessionReplay.pause}
+            onRestore={handleReplayRestore}
+            onExit={handleReplayExit}
           />
         </aside>
       </section>

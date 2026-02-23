@@ -37,6 +37,7 @@ interface UseBoardHistoryResult {
   undo: () => BoardHistoryTransition | null;
   redo: () => BoardHistoryTransition | null;
   reset: () => void;
+  getEntries: () => BoardHistoryEntry[];
 }
 
 function fallbackClone<T>(value: T): T {
@@ -175,6 +176,10 @@ export function useBoardHistory(options: BoardHistoryOptions = {}): UseBoardHist
     syncStackDepths();
   }, [syncStackDepths]);
 
+  const getEntries = useCallback((): BoardHistoryEntry[] => {
+    return [...undoStackRef.current];
+  }, []);
+
   return useMemo(
     () => ({
       canUndo: stackDepths.undoDepth > 0,
@@ -185,7 +190,8 @@ export function useBoardHistory(options: BoardHistoryOptions = {}): UseBoardHist
       undo,
       redo,
       reset,
+      getEntries,
     }),
-    [commit, redo, reset, stackDepths.redoDepth, stackDepths.undoDepth, undo],
+    [commit, getEntries, redo, reset, stackDepths.redoDepth, stackDepths.undoDepth, undo],
   );
 }

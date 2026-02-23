@@ -519,4 +519,12 @@ describe('Board', () => {
       screen.getByText('AI-detected contradictions between selected sources.'),
     ).toBeInTheDocument();
   });
+
+  it('renders Time Machine button that is disabled when history is empty', async () => {
+    await renderBoardReady();
+
+    const btn = screen.getByRole('button', { name: /time machine/i });
+    expect(btn).toBeInTheDocument();
+    expect(btn).toBeDisabled();
+  });
 });

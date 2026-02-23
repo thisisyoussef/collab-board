@@ -1027,7 +1027,7 @@
   border-color: #d6d1c8;
 }
 
-.board-tool-dock-wrap {
+.figma-board-root .board-tool-dock-wrap {
   position: fixed;
   left: 50%;
   bottom: 16px;
@@ -1042,7 +1042,7 @@
   pointer-events: none;
 }
 
-.board-tool-dock-wrap--expanded {
+.figma-board-root .board-tool-dock-wrap--expanded {
   left: 4px;
   right: 4px;
   transform: none;
@@ -1050,7 +1050,7 @@
   max-width: none;
 }
 
-.board-tool-dock {
+.figma-board-root .board-tool-dock {
   display: inline-flex;
   align-items: flex-start;
   gap: 0.44rem;
@@ -1070,50 +1070,50 @@
   pointer-events: auto;
 }
 
-.board-tool-dock--wide {
+.figma-board-root .board-tool-dock--wide {
   justify-content: flex-start;
 }
 
-.board-tool-dock--edge-to-edge {
+.figma-board-root .board-tool-dock--edge-to-edge {
   gap: 0.34rem;
   padding: 0.4rem 0.44rem;
 }
 
-.board-tool-dock--edge-to-edge .dock-group-tools {
+.figma-board-root .board-tool-dock--edge-to-edge .dock-group-tools {
   gap: 0.24rem;
 }
 
-.board-tool-dock--edge-to-edge .dock-group + .dock-group {
+.figma-board-root .board-tool-dock--edge-to-edge .dock-group + .dock-group {
   padding-left: 0.44rem;
 }
 
-.board-tool-dock--edge-to-edge .dock-btn {
+.figma-board-root .board-tool-dock--edge-to-edge .dock-btn {
   width: 54px;
   height: 46px;
   padding: 0.2rem 0.16rem;
 }
 
-.board-tool-dock::-webkit-scrollbar {
+.figma-board-root .board-tool-dock::-webkit-scrollbar {
   height: 6px;
 }
 
-.board-tool-dock::-webkit-scrollbar-thumb {
+.figma-board-root .board-tool-dock::-webkit-scrollbar-thumb {
   background: rgba(245, 208, 142, 0.55);
   border-radius: 999px;
 }
 
-.dock-group {
+.figma-board-root .dock-group {
   display: inline-flex;
   flex-direction: column;
   gap: 0.24rem;
 }
 
-.dock-group + .dock-group {
+.figma-board-root .dock-group + .dock-group {
   border-left: 1px solid rgba(214, 209, 200, 0.23);
   padding-left: 0.56rem;
 }
 
-.dock-group-label {
+.figma-board-root .dock-group-label {
   font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
   font-size: 0.55rem;
   font-weight: 600;
@@ -1124,13 +1124,13 @@
   padding-left: 0.06rem;
 }
 
-.dock-group-tools {
+.figma-board-root .dock-group-tools {
   display: inline-flex;
   align-items: center;
   gap: 0.32rem;
 }
 
-.dock-btn {
+.figma-board-root .dock-btn {
   width: 60px;
   height: 48px;
   border-radius: 10px;
@@ -1146,13 +1146,13 @@
   padding: 0.24rem 0.2rem;
 }
 
-.dock-btn.active,
-.dock-btn:hover {
+.figma-board-root .dock-btn.active,
+.figma-board-root .dock-btn:hover {
   background: rgba(212, 149, 43, 0.25);
   border-color: rgba(245, 208, 142, 0.55);
 }
 
-.dock-btn-icon {
+.figma-board-root .dock-btn-icon {
   width: 18px;
   height: 18px;
   display: inline-flex;
@@ -1160,7 +1160,7 @@
   justify-content: center;
 }
 
-.dock-icon {
+.figma-board-root .dock-icon {
   width: 18px;
   height: 18px;
   fill: none;
@@ -1170,7 +1170,7 @@
   stroke-linejoin: round;
 }
 
-.dock-btn-label {
+.figma-board-root .dock-btn-label {
   font-family: 'Outfit', 'Avenir Next', 'Helvetica Neue', sans-serif;
   font-size: 0.56rem;
   font-weight: 600;
@@ -1179,12 +1179,12 @@
   text-transform: uppercase;
 }
 
-.dock-btn:disabled {
+.figma-board-root .dock-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.board-tool-hint {
+.figma-board-root .board-tool-hint {
   margin: 0;
   padding: 0.34rem 0.68rem;
   border-radius: 999px;
@@ -1202,23 +1202,23 @@
 }
 
 @media (max-width: 1024px) {
-  .dock-group-label {
+  .figma-board-root .dock-group-label {
     display: none;
   }
 
-  .dock-group {
+  .figma-board-root .dock-group {
     gap: 0;
   }
 }
 
 @media (max-width: 1200px) {
-  .board-tool-dock--edge-to-edge .dock-btn {
+  .figma-board-root .board-tool-dock--edge-to-edge .dock-btn {
     width: 50px;
     height: 44px;
     padding: 0.18rem 0.14rem;
   }
 
-  .board-tool-dock--edge-to-edge .dock-btn-label {
+  .figma-board-root .board-tool-dock--edge-to-edge .dock-btn-label {
     font-size: 0.52rem;
     letter-spacing: 0.02em;
   }
@@ -1321,4 +1321,150 @@
   .litigation-intake-layout-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* ── Session Time Machine (Replay Panel) ── */
+
+.session-replay-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.session-replay-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.session-replay-header h3 {
+  font-family: 'DM Serif Display', Georgia, serif;
+  font-size: 1.02rem;
+  line-height: 1.1;
+  margin: 0;
+}
+
+.session-replay-close-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1.2rem;
+  color: #695f51;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.session-replay-close-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.session-replay-empty {
+  color: #695f51;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  font-style: italic;
+}
+
+.session-replay-scrubber {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.session-replay-slider {
+  flex: 1;
+  accent-color: #8b7355;
+}
+
+.session-replay-position {
+  font-size: 0.72rem;
+  color: #695f51;
+  white-space: nowrap;
+}
+
+.session-replay-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
+.session-replay-step-btn,
+.session-replay-play-btn {
+  background: #f5f0e8;
+  border: 1px solid #d9cfc0;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  color: #4a3f35;
+}
+
+.session-replay-step-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.session-replay-step-btn:not(:disabled):hover,
+.session-replay-play-btn:hover {
+  background: #ede6da;
+}
+
+.session-replay-checkpoint-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 200px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.session-replay-checkpoint-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.76rem;
+}
+
+.session-replay-checkpoint-item:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.session-replay-checkpoint-active {
+  background: #e8dfd3;
+  font-weight: 600;
+}
+
+.session-replay-cp-time {
+  color: #695f51;
+}
+
+.session-replay-cp-source {
+  font-size: 0.68rem;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: #f0ebe3;
+  color: #8b7355;
+}
+
+.session-replay-restore-btn {
+  background: #8b7355;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 500;
+  text-align: center;
+}
+
+.session-replay-restore-btn:hover {
+  background: #7a6548;
 }

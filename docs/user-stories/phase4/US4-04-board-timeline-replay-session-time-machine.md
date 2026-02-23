@@ -2,7 +2,7 @@
 
 ## Status
 
-- State: Pending
+- State: Ready for User Checkpoint
 - Owner: Codex
 - Depends on: US4-03 approved
 
