@@ -327,7 +327,7 @@ export function BoardToolDock({ activeTool, canEditBoard, onSelectTool }: BoardT
   const activeConfig = TOOLS.find((tool) => tool.tool === activeTool);
   return (
     <div className="board-tool-dock-wrap">
-      <section className="board-tool-dock" role="toolbar" aria-label="Board tools">
+      <section className="board-tool-dock board-tool-dock--wide" role="toolbar" aria-label="Board tools">
         {TOOL_GROUP_ORDER.map((group) => (
           <div key={group} className="dock-group" role="group" aria-label={TOOL_GROUP_LABELS[group]}>
             <span className="dock-group-label" aria-hidden="true">

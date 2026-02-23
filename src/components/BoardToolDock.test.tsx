@@ -6,7 +6,9 @@ describe('BoardToolDock', () => {
   it('renders all board tools and highlights the active tool', () => {
     render(<BoardToolDock activeTool="rect" canEditBoard onSelectTool={vi.fn()} />);
 
-    expect(screen.getByRole('toolbar', { name: 'Board tools' })).toBeInTheDocument();
+    const toolbar = screen.getByRole('toolbar', { name: 'Board tools' });
+    expect(toolbar).toBeInTheDocument();
+    expect(toolbar).toHaveClass('board-tool-dock--wide');
     expect(screen.getByRole('group', { name: 'Core tools' })).toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Legal nodes' })).toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Legal links' })).toBeInTheDocument();

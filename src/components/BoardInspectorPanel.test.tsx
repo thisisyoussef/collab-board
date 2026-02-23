@@ -153,9 +153,9 @@ describe('BoardInspectorPanel', () => {
   it('shows node role control and emits object role updates', () => {
     const claim = baseObject({
       id: 'claim-1',
-      type: 'text',
+      type: 'sticky',
       text: 'Breach claim',
-      fontSize: 16,
+      color: '#F5D08E',
     });
     const { onUpdateObject } = renderPanel(claim, [claim.id]);
 
@@ -165,6 +165,7 @@ describe('BoardInspectorPanel', () => {
 
     expect(onUpdateObject).toHaveBeenCalledWith('claim-1', {
       nodeRole: 'claim',
+      color: '#DCE8FF',
     });
 
     fireEvent.change(screen.getByLabelText('Node role'), {
@@ -173,6 +174,7 @@ describe('BoardInspectorPanel', () => {
 
     expect(onUpdateObject).toHaveBeenCalledWith('claim-1', {
       nodeRole: 'contradiction',
+      color: '#FCE4EC',
     });
   });
 

@@ -2214,35 +2214,12 @@ export function Board() {
         fontSize: normalized.fontSize || 14,
       });
 
-      // Update role badge and stripe
-      updateRoleBadge(targetNode, normalized.nodeRole, normalized.width);
-
-      const existingStripe = targetNode.findOne('.role-stripe') as Konva.Rect | null;
-      if (normalized.nodeRole && NODE_ROLE_COLORS[normalized.nodeRole]) {
-        if (existingStripe) {
-          existingStripe.setAttrs({
-            height: normalized.height,
-            fill: NODE_ROLE_COLORS[normalized.nodeRole].badge,
-          });
-        } else {
-          const stripe = new Konva.Rect({
-            name: 'role-stripe',
-            x: 0,
-            y: 0,
-            width: 4,
-            height: normalized.height,
-            fill: NODE_ROLE_COLORS[normalized.nodeRole].badge,
-            cornerRadius: [4, 0, 0, 4],
-            listening: false,
-          });
-          targetNode.add(stripe);
-          // Move stripe behind label but in front of body
-          stripe.moveToBottom();
-          stripe.moveUp();
-        }
-      } else if (existingStripe) {
-        existingStripe.destroy();
-      }
+      syncStickyRoleDecorations(
+        targetNode,
+        normalized.nodeRole,
+        normalized.width,
+        normalized.height,
+      );
     }
 
     if ((normalized.type === 'rect' || normalized.type === 'circle') && targetNode instanceof Konva.Rect) {
@@ -3285,6 +3262,44 @@ export function Board() {
     if (existing) existing.destroy();
     const badge = createRoleBadge(role, parentWidth);
     if (badge) group.add(badge);
+  }
+
+  function syncStickyRoleDecorations(
+    group: Konva.Group,
+    role: BoardObject['nodeRole'],
+    width: number,
+    height: number,
+  ) {
+    updateRoleBadge(group, role, width);
+
+    const existingStripe = group.findOne('.role-stripe') as Konva.Rect | null;
+    if (role && NODE_ROLE_COLORS[role]) {
+      if (existingStripe) {
+        existingStripe.setAttrs({
+          height,
+          fill: NODE_ROLE_COLORS[role].badge,
+        });
+        return;
+      }
+      const stripe = new Konva.Rect({
+        name: 'role-stripe',
+        x: 0,
+        y: 0,
+        width: 4,
+        height,
+        fill: NODE_ROLE_COLORS[role].badge,
+        cornerRadius: [4, 0, 0, 4],
+        listening: false,
+      });
+      group.add(stripe);
+      stripe.moveToBottom();
+      stripe.moveUp();
+      return;
+    }
+
+    if (existingStripe) {
+      existingStripe.destroy();
+    }
   }
 
   function createStickyNode(object: BoardObject): Konva.Group {
@@ -5427,16 +5442,29 @@ export function Board() {
     }
 
     const beforeState = captureManualHistoryBaseline();
+    const patchWithRoleStyling: Partial<BoardObject> = { ...patch };
+    const nextRole =
+      patch.nodeRole !== undefined
+        ? patch.nodeRole
+        : current.nodeRole;
+    const roleColor =
+      current.type === 'sticky'
+        ? getAutoColorForRole(nextRole)
+        : undefined;
+    if (roleColor) {
+      patchWithRoleStyling.color = roleColor;
+    }
+
     const nextCandidate = sanitizeBoardObjectForFirestore({
       ...current,
-      ...patch,
+      ...patchWithRoleStyling,
       updatedAt: new Date().toISOString(),
     });
     const nextObject =
       normalizeLoadedObject(nextCandidate, current.createdBy) ||
       ({
         ...current,
-        ...patch,
+        ...patchWithRoleStyling,
         updatedAt: new Date().toISOString(),
       } as BoardObject);
 
@@ -5455,6 +5483,12 @@ export function Board() {
           text: getStickyRenderText(nextObject.text),
           fontSize: nextObject.fontSize || 14,
         });
+        syncStickyRoleDecorations(
+          node,
+          nextObject.nodeRole,
+          nextObject.width,
+          nextObject.height,
+        );
       } else if (
         (nextObject.type === 'rect' || nextObject.type === 'circle') &&
         node instanceof Konva.Rect

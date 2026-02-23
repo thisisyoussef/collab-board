@@ -1,4 +1,5 @@
 import type { BoardObject } from '../types/board';
+import { getAutoColorForRole } from '../lib/board-object';
 import { StylePanel } from './StylePanel';
 
 interface BoardInspectorPanelProps {
@@ -180,8 +181,16 @@ export function BoardInspectorPanel({
                 disabled={!canEditBoard}
                 onChange={(event) => {
                   const nextRole = event.target.value;
+                  const resolvedRole = nextRole
+                    ? (nextRole as NonNullable<BoardObject['nodeRole']>)
+                    : undefined;
+                  const roleColor =
+                    selectedObject.type === 'sticky'
+                      ? getAutoColorForRole(resolvedRole)
+                      : undefined;
                   onUpdateObject(selectedObject.id, {
-                    nodeRole: nextRole ? (nextRole as NonNullable<BoardObject['nodeRole']>) : undefined,
+                    nodeRole: resolvedRole,
+                    ...(roleColor ? { color: roleColor } : {}),
                   });
                 }}
               >
