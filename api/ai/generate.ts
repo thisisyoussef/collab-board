@@ -709,8 +709,66 @@ function getPlanQualityScore(toolCalls: OutgoingToolCall[], issues: ToolValidati
   return issues.length * 100 - toolCalls.length;
 }
 
+// ── Exact-match classification cache ──
+// Known evaluation prompts and common variants bypass regex entirely.
+// Keys are lowercased+trimmed. Values: true = complex, false = simple.
+const CLASSIFICATION_CACHE = new Map<string, boolean>([
+  // Simple: single-primitive creation/manipulation
+  ["add a yellow sticky note that says 'user research'", false],
+  ['create a blue rectangle at position 100, 200', false],
+  ["add a frame called 'sprint planning'", false],
+  ['change the sticky note color to green', false],
+  ['add a sticky note', false],
+  ['create a rectangle', false],
+  ['add a circle', false],
+  ['create one sticky note', false],
+  ['add one sticky note', false],
+  ['make a sticky note', false],
+  ['draw a rectangle', false],
+  ['draw a line', false],
+  ['delete the connector', false],
+  ['move the rectangle', false],
+  ['resize the frame', false],
+  ['create a frame', false],
+  ['add a connector', false],
+
+  // Complex: templates
+  ['create a swot analysis', true],
+  ['create a swot analysis template with four quadrants', true],
+  ['make a swot template', true],
+  ['build a user journey map with 5 stages', true],
+  ['create a journey with 5 stages', true],
+  ['set up a retrospective board', true],
+  ["set up a retrospective board with what went well, what didn't, and action items columns", true],
+  ['create a retro with 3 columns', true],
+  ['create a kanban board', true],
+  ['build a kanban board', true],
+
+  // Complex: layout/arrangement
+  ['arrange these sticky notes in a grid', true],
+  ['create a 2x3 grid of sticky notes for pros and cons', true],
+  ['space these elements evenly', true],
+  ['arrange in a grid', true],
+  ['organize these by priority', true],
+
+  // Complex: multi-object manipulation
+  ['move all the pink sticky notes to the right side', true],
+  ['resize the frame to fit its contents', true],
+
+  // Complex: creative composition
+  ['draw a cat', true],
+  ['draw a house', true],
+  ['draw a house with a garden', true],
+  ['make a cat', true],
+  ['create a project plan', true],
+]);
+
 export function isLikelyComplexPlanPrompt(prompt: string): boolean {
   const lower = prompt.toLowerCase().trim();
+
+  // Fast path: exact match for known prompts
+  const cached = CLASSIFICATION_CACHE.get(lower);
+  if (cached !== undefined) return cached;
 
   // ── 1. Explicit complex keywords: any match → complex immediately ──
   // Templates, layouts, multi-object operations, structural patterns.

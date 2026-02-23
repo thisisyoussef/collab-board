@@ -1269,6 +1269,17 @@ describe('AI Generate API Endpoint', () => {
       expect(isLikelyComplexPlanPrompt('Draw a cat')).toBe(true);
     });
 
+    it('uses exact-match cache for known prompts (case-insensitive)', async () => {
+      const { isLikelyComplexPlanPrompt } = await import('../../api/ai/generate');
+      // Cache should match regardless of case
+      expect(isLikelyComplexPlanPrompt('CREATE A SWOT ANALYSIS')).toBe(true);
+      expect(isLikelyComplexPlanPrompt('Add A Yellow Sticky Note That Says \'User Research\'')).toBe(false);
+      expect(isLikelyComplexPlanPrompt('DRAW A CAT')).toBe(true);
+      expect(isLikelyComplexPlanPrompt('  Create a SWOT analysis  ')).toBe(true);
+      expect(isLikelyComplexPlanPrompt('ARRANGE THESE STICKY NOTES IN A GRID')).toBe(true);
+      expect(isLikelyComplexPlanPrompt('ADD A STICKY NOTE')).toBe(false);
+    });
+
     it('returns correct minimum tool calls for SWOT', async () => {
       const { getMinimumToolCallsForPrompt } = await import('../../api/ai/generate');
       expect(getMinimumToolCallsForPrompt('Create a SWOT analysis')).toBe(5);
