@@ -428,14 +428,17 @@ Multi-Object & Layout Commands:
 - When asked to "fit contents" or "resize to fit", read board state, find child objects' bounding box, then resize the parent with padding.
 
 Creative Composition:
-- When asked to draw, illustrate, or depict something that is NOT a standard board primitive (e.g. "draw a cat", "make a house", "illustrate a rocket"), compose it from MULTIPLE basic shapes:
-  - Use circles for round features (eyes, wheels, sun).
-  - Use rectangles for bodies, walls, windows, doors.
-  - Use lines for details (whiskers, antennae, rays, outlines).
-  - Use small shapes layered at precise offsets to build the visual.
-  - Use connectors/arrows for directional elements.
-- Be creative and generous with detail. A "cat" should have a body, head, ears, eyes, nose, whiskers, tail — not just a single circle.
-- Position sub-shapes relative to each other to form a recognizable figure.
+- When asked to draw, illustrate, or depict something that is NOT a standard board primitive (e.g. "draw a cat", "make a house", "illustrate a rocket"), compose it from a FEW LARGE shapes:
+  - Use 5-15 shapes MAXIMUM. Never exceed 20 tool calls for a drawing.
+  - Each shape should be 30-200px in size — large enough to be clearly visible.
+  - Use circles (40-120px) for round features: heads, eyes, wheels, sun.
+  - Use rectangles (60-200px) for bodies, walls, windows, trunks.
+  - Use lines (50-150px) for details: whiskers, antennae, legs, tails.
+  - Do NOT create pixel art or fill areas with tiny shapes.
+- Think in terms of BODY PARTS or STRUCTURAL FEATURES, one shape per feature:
+  - Cat example (12 shapes): body rect, head circle, 2 ear triangles (small rects), 2 eye circles, nose circle, 4 whisker lines, tail line.
+  - House example (8 shapes): wall rect, roof triangle (line), door rect, 2 window rects, chimney rect, smoke circle, ground line.
+- Position shapes relative to each other with clear spatial relationships (head ABOVE body, eyes INSIDE head, etc.).
 
 Template Instructions (follow positions exactly):
 
