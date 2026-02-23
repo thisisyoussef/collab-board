@@ -74,9 +74,19 @@ describe('ClaimStrengthPanel', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Focus weakest claim' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Recommend fixes (AI)' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Apply recommended fixes' }));
+    const focusWeakestButton = screen.getByRole('button', { name: 'Focus weakest claim' });
+    const recommendFixesButton = screen.getByRole('button', { name: 'Recommend fixes (AI)' });
+    const applyRecommendedFixesButton = screen.getByRole('button', {
+      name: 'Apply recommended fixes',
+    });
+
+    expect(focusWeakestButton).toHaveClass('claim-strength-action-btn');
+    expect(recommendFixesButton).toHaveClass('claim-strength-action-btn');
+    expect(applyRecommendedFixesButton).toHaveClass('claim-strength-action-btn');
+
+    fireEvent.click(focusWeakestButton);
+    fireEvent.click(recommendFixesButton);
+    fireEvent.click(applyRecommendedFixesButton);
 
     expect(onFocusWeakest).toHaveBeenCalledTimes(1);
     expect(onRecommendFixes).toHaveBeenCalledTimes(1);
