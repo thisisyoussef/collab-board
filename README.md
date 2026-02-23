@@ -22,7 +22,7 @@ Real-time collaborative whiteboard with AI-powered board manipulation and litiga
 | Canvas FPS | 60 FPS with 500+ objects (Konva ref-based rendering) |
 | Concurrent users | 5+ without degradation |
 | AI tool types | 9 via Claude function calling with multi-model routing |
-| Infrastructure cost | $0 (Vercel + Render + Firebase free tiers) |
+| Infrastructure cost | $7 (Vercel + Firebase free tiers, Render paid tier for always-on Socket.IO) |
 
 ## Tech Stack
 
