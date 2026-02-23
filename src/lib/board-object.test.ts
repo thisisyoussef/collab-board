@@ -257,6 +257,23 @@ describe('board-object normalize/sanitize', () => {
     expect((normalizedConnector as Record<string, unknown> | null)?.relationType).toBe('supports');
   });
 
+  it('keeps contradiction node role on sticky objects', () => {
+    const contradiction = createDefaultObject('sticky', {
+      id: 'contradiction-1',
+      createdBy: 'u1',
+      zIndex: 1,
+      nodeRole: 'contradiction' as BoardObject['nodeRole'],
+    });
+
+    expect(contradiction.nodeRole).toBe('contradiction');
+
+    const sanitized = sanitizeBoardObjectForFirestore(contradiction) as Record<string, unknown>;
+    expect(sanitized.nodeRole).toBe('contradiction');
+
+    const normalized = normalizeLoadedObject(sanitized, 'guest');
+    expect((normalized as Record<string, unknown> | null)?.nodeRole).toBe('contradiction');
+  });
+
   it('applies brand-aligned default colors across object types', () => {
     const sticky = createDefaultObject('sticky', { id: 'sticky-brand' });
     const rect = createDefaultObject('rect', { id: 'rect-brand' });

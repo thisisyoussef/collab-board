@@ -85,6 +85,7 @@ import {
   TEXT_DEFAULT_FONT_SIZE,
   TEXT_MIN_HEIGHT,
   TEXT_MIN_WIDTH,
+  NODE_ROLE_COLORS,
 } from '../lib/board-object';
 import {
   applyFrameResizeToChildren,
@@ -120,7 +121,11 @@ import {
 import { buildBoardActionsFromLitigationDraft } from '../lib/litigation-intake-layout';
 import { claimStrengthColor, evaluateClaimStrength } from '../lib/litigation-graph';
 import { screenToWorld, worldToScreen } from '../lib/utils';
-import type { BoardObject, BoardObjectsRecord } from '../types/board';
+import type {
+  BoardObject,
+  BoardObjectsRecord,
+  LitigationConnectorRelation,
+} from '../types/board';
 import type {
   BoardCanvasNode,
   BoardDocData,
@@ -202,6 +207,81 @@ import {
 import './Board.css';
 
 type ActiveTool = BoardTool;
+
+type LegalNodeTemplateKey =
+  | 'legal_claim'
+  | 'legal_evidence'
+  | 'legal_witness'
+  | 'legal_timeline'
+  | 'legal_contradiction';
+
+const LEGAL_CONNECTOR_TOOLS = new Set<ActiveTool>([
+  'connector',
+  'legal_link_supports',
+  'legal_link_contradicts',
+  'legal_link_depends_on',
+]);
+
+const LEGAL_NODE_TEMPLATES: Record<
+  LegalNodeTemplateKey,
+  {
+    text: string;
+    color: string;
+    nodeRole: NonNullable<BoardObject['nodeRole']>;
+  }
+> = {
+  legal_claim: {
+    text: 'Claim:\nState the legal theory and required elements.',
+    color: '#DCE8FF',
+    nodeRole: 'claim',
+  },
+  legal_evidence: {
+    text: 'Evidence:\nAdd exhibit citation + why it supports your case.',
+    color: '#E1F4E5',
+    nodeRole: 'evidence',
+  },
+  legal_witness: {
+    text: 'Witness:\nAdd key testimony and page/line citation.',
+    color: '#F4E6FF',
+    nodeRole: 'witness',
+  },
+  legal_timeline: {
+    text: 'Date + Event:\nCapture event and source reference.',
+    color: '#FFF1D6',
+    nodeRole: 'timeline_event',
+  },
+  legal_contradiction: {
+    text: 'Contradiction:\nWitness A vs Witness B\nInclude citation references.',
+    color: '#FCE4EC',
+    nodeRole: 'contradiction',
+  },
+};
+
+function connectorRelationPresetForTool(tool: ActiveTool): LitigationConnectorRelation | undefined {
+  if (tool === 'legal_link_supports') {
+    return 'supports';
+  }
+  if (tool === 'legal_link_contradicts') {
+    return 'contradicts';
+  }
+  if (tool === 'legal_link_depends_on') {
+    return 'depends_on';
+  }
+  return undefined;
+}
+
+function connectorColorForRelation(relation: LitigationConnectorRelation | undefined): string {
+  if (relation === 'supports') {
+    return '#1f8f5b';
+  }
+  if (relation === 'contradicts') {
+    return '#c4453e';
+  }
+  if (relation === 'depends_on') {
+    return '#b9811b';
+  }
+  return CONNECTOR_DEFAULT_STROKE;
+}
 
 function normalizeLoadedObject(raw: unknown, fallbackUserId: string): BoardObject | null {
   return normalizeBoardObject(raw, fallbackUserId);
@@ -370,10 +450,10 @@ export function Board() {
   }, [claimStrengthById, selectedIds]);
   const selectedConnector =
     selectedObject && selectedObject.type === 'connector' ? selectedObject : null;
-  const canStartConnectorFromAnchor = canEditBoard && activeTool === 'connector';
+  const canStartConnectorFromAnchor = canEditBoard && LEGAL_CONNECTOR_TOOLS.has(activeTool);
   const showConnectorAnchors =
     canEditBoard &&
-    (activeTool === 'connector' ||
+    (LEGAL_CONNECTOR_TOOLS.has(activeTool) ||
       Boolean(selectedConnector) ||
       isDrawingConnector ||
       isDraggingConnectorHandle);
@@ -2133,6 +2213,36 @@ export function Board() {
         height: normalized.height,
         fontSize: normalized.fontSize || 14,
       });
+
+      // Update role badge and stripe
+      updateRoleBadge(targetNode, normalized.nodeRole, normalized.width);
+
+      const existingStripe = targetNode.findOne('.role-stripe') as Konva.Rect | null;
+      if (normalized.nodeRole && NODE_ROLE_COLORS[normalized.nodeRole]) {
+        if (existingStripe) {
+          existingStripe.setAttrs({
+            height: normalized.height,
+            fill: NODE_ROLE_COLORS[normalized.nodeRole].badge,
+          });
+        } else {
+          const stripe = new Konva.Rect({
+            name: 'role-stripe',
+            x: 0,
+            y: 0,
+            width: 4,
+            height: normalized.height,
+            fill: NODE_ROLE_COLORS[normalized.nodeRole].badge,
+            cornerRadius: [4, 0, 0, 4],
+            listening: false,
+          });
+          targetNode.add(stripe);
+          // Move stripe behind label but in front of body
+          stripe.moveToBottom();
+          stripe.moveUp();
+        }
+      } else if (existingStripe) {
+        existingStripe.destroy();
+      }
     }
 
     if ((normalized.type === 'rect' || normalized.type === 'circle') && targetNode instanceof Konva.Rect) {
@@ -2925,7 +3035,7 @@ export function Board() {
 
   function handleObjectSelection(event: Konva.KonvaEventObject<MouseEvent | TouchEvent>, objectId: string) {
     event.cancelBubble = true;
-    if (activeTool === 'connector') {
+    if (LEGAL_CONNECTOR_TOOLS.has(activeTool)) {
       return;
     }
 
@@ -3129,6 +3239,54 @@ export function Board() {
     return false;
   }
 
+  function createRoleBadge(role: BoardObject['nodeRole'], parentWidth: number): Konva.Group | null {
+    if (!role) return null;
+    const meta = NODE_ROLE_COLORS[role];
+    if (!meta) return null;
+
+    const badgeText = new Konva.Text({
+      name: 'role-badge-text',
+      text: meta.label,
+      fontSize: 9,
+      fontFamily: BOARD_FONT_FAMILY,
+      fontStyle: 'bold',
+      fill: '#FFFFFF',
+      padding: 0,
+      listening: false,
+    });
+    const textWidth = badgeText.width();
+    const pillW = textWidth + 10;
+    const pillH = 16;
+
+    const badgeGroup = new Konva.Group({
+      name: 'role-badge',
+      x: parentWidth - pillW - 6,
+      y: 6,
+      listening: false,
+    });
+
+    const pill = new Konva.Rect({
+      name: 'role-badge-bg',
+      width: pillW,
+      height: pillH,
+      fill: meta.badge,
+      cornerRadius: 8,
+      listening: false,
+    });
+
+    badgeText.setAttrs({ x: 5, y: 3 });
+    badgeGroup.add(pill);
+    badgeGroup.add(badgeText);
+    return badgeGroup;
+  }
+
+  function updateRoleBadge(group: Konva.Group, role: BoardObject['nodeRole'], parentWidth: number) {
+    const existing = group.findOne('.role-badge') as Konva.Group | null;
+    if (existing) existing.destroy();
+    const badge = createRoleBadge(role, parentWidth);
+    if (badge) group.add(badge);
+  }
+
   function createStickyNode(object: BoardObject): Konva.Group {
     const group = new Konva.Group({
       id: object.id,
@@ -3166,7 +3324,27 @@ export function Board() {
     });
 
     group.add(body);
+
+    // Left edge accent stripe for role-typed nodes
+    if (object.nodeRole && NODE_ROLE_COLORS[object.nodeRole]) {
+      const stripe = new Konva.Rect({
+        name: 'role-stripe',
+        x: 0,
+        y: 0,
+        width: 4,
+        height: object.height,
+        fill: NODE_ROLE_COLORS[object.nodeRole].badge,
+        cornerRadius: [4, 0, 0, 4],
+        listening: false,
+      });
+      group.add(stripe);
+    }
+
     group.add(label);
+
+    // Add role badge pill (top-right corner)
+    const badge = createRoleBadge(object.nodeRole, object.width);
+    if (badge) group.add(badge);
 
     group.on('click tap', (event) => {
       handleObjectSelection(event, object.id);
@@ -4050,6 +4228,33 @@ export function Board() {
     setActiveTool('select');
   }
 
+  function createLegalTemplateStickyAt(
+    worldPosition: { x: number; y: number },
+    templateKey: LegalNodeTemplateKey,
+  ) {
+    if (!canEditBoard) {
+      return;
+    }
+
+    const template = LEGAL_NODE_TEMPLATES[templateKey];
+    const object = createDefaultObject('sticky', {
+      x: worldPosition.x,
+      y: worldPosition.y,
+      zIndex: getNextZIndex(),
+      createdBy: user?.uid || 'guest',
+      text: template.text,
+      color: template.color,
+      width: 220,
+      height: 130,
+      nodeRole: template.nodeRole,
+    });
+
+    insertObject(object, true);
+    setSelectedIds([object.id]);
+    setCanvasNotice(`Created ${template.nodeRole.replace('_', ' ')} node.`);
+    setActiveTool('select');
+  }
+
   function createTextAt(worldPosition: { x: number; y: number }) {
     if (!canEditBoard) {
       return;
@@ -4087,10 +4292,174 @@ export function Board() {
     setActiveTool('select');
   }
 
+  function getViewportCenterWorldPosition(): { x: number; y: number } {
+    const stage = stageRef.current;
+    if (!stage) {
+      return {
+        x: canvasSize.width / 2,
+        y: canvasSize.height / 2,
+      };
+    }
+
+    const scale = stage.scaleX() || 1;
+    return {
+      x: (stage.width() / 2 - stage.x()) / scale,
+      y: (stage.height() / 2 - stage.y()) / scale,
+    };
+  }
+
+  function createLegalQuickStartTemplate() {
+    if (!canEditBoard) {
+      setCanvasNotice('Legal quick start is available to editors only.');
+      return;
+    }
+
+    const beforeState = captureManualHistoryBaseline();
+    const createdObjects: BoardObject[] = [];
+    const center = getViewportCenterWorldPosition();
+    const baseX = Math.round(center.x - 430);
+    const baseY = Math.round(center.y - 240);
+    const nodeWidth = 260;
+    const nodeHeight = 142;
+
+    const createStarterSticky = (
+      templateKey: LegalNodeTemplateKey,
+      x: number,
+      y: number,
+      text: string,
+    ): BoardObject => {
+      const template = LEGAL_NODE_TEMPLATES[templateKey];
+      const object = createDefaultObject('sticky', {
+        x,
+        y,
+        width: nodeWidth,
+        height: nodeHeight,
+        zIndex: getNextZIndex(),
+        createdBy: user?.uid || 'guest',
+        color: template.color,
+        nodeRole: template.nodeRole,
+        text,
+      });
+      insertObject(object, false);
+      createdObjects.push(object);
+      return object;
+    };
+
+    const createStarterConnector = (
+      fromObject: BoardObject,
+      toObject: BoardObject,
+      relationType: LitigationConnectorRelation,
+      label: string,
+    ): BoardObject => {
+      const startX = fromObject.x + fromObject.width / 2;
+      const startY = fromObject.y + fromObject.height / 2;
+      const endX = toObject.x + toObject.width / 2;
+      const endY = toObject.y + toObject.height / 2;
+      const object = createDefaultObject('connector', {
+        x: 0,
+        y: 0,
+        points: [startX, startY, endX, endY],
+        fromId: fromObject.id,
+        toId: toObject.id,
+        relationType,
+        color: connectorColorForRelation(relationType),
+        strokeStyle:
+          relationType === 'contradicts' ? 'dashed' : CONNECTOR_DEFAULT_STROKE_STYLE,
+        connectorType: 'curved',
+        endArrow: 'solid',
+        label,
+        labelBackground: true,
+        zIndex: getNextZIndex(),
+        createdBy: user?.uid || 'guest',
+      });
+      insertObject(object, false);
+      createdObjects.push(object);
+      return object;
+    };
+
+    const claim = createStarterSticky(
+      'legal_claim',
+      baseX + 290,
+      baseY + 190,
+      'Claim: Deliberate design supports first-degree murder charge.\nElements: intent, act, and causation.',
+    );
+    const evidence = createStarterSticky(
+      'legal_evidence',
+      baseX + 620,
+      baseY + 52,
+      'Evidence: Exhibit 4 padlock receipt (03/10/23)\nSupports planning before the confrontation.',
+    );
+    const witnessA = createStarterSticky(
+      'legal_witness',
+      baseX,
+      baseY + 48,
+      'Witness: Lou Christoff\nSaw knife confrontation before the murder.\nDep. p. 42-45.',
+    );
+    const witnessB = createStarterSticky(
+      'legal_witness',
+      baseX,
+      baseY + 330,
+      'Witness: Lane King\nDenies knife confrontation occurred.\nDep. p. 77-80.',
+    );
+    const timeline = createStarterSticky(
+      'legal_timeline',
+      baseX + 620,
+      baseY + 336,
+      'March 25, 2023\nConfrontation and homicide sequence.\nCross-check with call logs + Exhibit 9.',
+    );
+    const contradiction = createStarterSticky(
+      'legal_contradiction',
+      baseX + 620,
+      baseY + 620,
+      'Contradiction: Christoff vs King on knife incident.\nResolve via physical evidence and cross examination.',
+    );
+
+    createStarterConnector(evidence, claim, 'supports', 'supports: premeditation evidence');
+    createStarterConnector(witnessA, claim, 'supports', 'supports: direct testimony');
+    createStarterConnector(timeline, claim, 'depends_on', 'depends_on: event chronology');
+    createStarterConnector(witnessA, witnessB, 'contradicts', 'contradicts: knife incident');
+    createStarterConnector(contradiction, claim, 'contradicts', 'contradicts: witness conflict');
+
+    const actorUserId = getActorUserId();
+    createdObjects.forEach((object) => {
+      logDetailedCanvasAction({
+        source: 'local',
+        action: 'create',
+        object,
+        actorUserId,
+      });
+      emitObjectCreate(object);
+    });
+
+    const createdObjectIds = createdObjects.map((object) => object.id);
+    logBoardPositionsAfterAction({
+      source: 'local',
+      action: 'create',
+      objectIds: createdObjectIds,
+      reason: 'legal-quick-start',
+      actorUserId,
+      eventActions: createdObjects.map((object) => ({
+        objectId: object.id,
+        objectType: object.type,
+        action: 'create' as const,
+      })),
+    });
+
+    aiExecutor.invalidateUndo();
+    scheduleBoardSave();
+    commitBoardHistory('manual', beforeState);
+    setSelectedIds([claim.id]);
+    setActiveTool('select');
+    setCanvasNotice(
+      'Legal quick start added: claim, evidence, witnesses, contradiction, timeline, and starter links.',
+    );
+  }
+
   function beginConnectorDraft(
     worldPosition: { x: number; y: number },
     startAttachment?: ConnectorAttachmentResult,
     attachmentMode: 'side-center' | 'arbitrary' = 'side-center',
+    relationPreset?: LitigationConnectorRelation,
   ) {
     if (!canEditBoard) {
       return;
@@ -4121,11 +4490,15 @@ export function Board() {
       toAnchorY: undefined,
       toAttachmentMode: 'free',
       connectorType: CONNECTOR_DEFAULT_PATH_TYPE,
-      strokeStyle: CONNECTOR_DEFAULT_STROKE_STYLE,
       startArrow: CONNECTOR_DEFAULT_START_ARROW,
       endArrow: CONNECTOR_DEFAULT_END_ARROW,
       labelPosition: CONNECTOR_DEFAULT_LABEL_POSITION,
       labelBackground: CONNECTOR_DEFAULT_LABEL_BACKGROUND,
+      relationType: relationPreset,
+      strokeStyle: relationPreset === 'contradicts' ? 'dashed' : CONNECTOR_DEFAULT_STROKE_STYLE,
+      color: connectorColorForRelation(relationPreset),
+      ...(relationPreset ? { label: relationPreset.replace(/_/g, ' ') } : {}),
+      ...(relationPreset ? { labelBackground: true } : {}),
       zIndex: getNextZIndex(),
       createdBy: user?.uid || 'guest',
     });
@@ -4545,9 +4918,14 @@ export function Board() {
       return;
     }
 
-    if (activeTool === 'connector') {
+    if (LEGAL_CONNECTOR_TOOLS.has(activeTool)) {
       const usePerimeterMode = isPerimeterAttachmentModifierPressed(event.evt);
-      beginConnectorDraft(worldPosition, undefined, usePerimeterMode ? 'arbitrary' : 'side-center');
+      beginConnectorDraft(
+        worldPosition,
+        undefined,
+        usePerimeterMode ? 'arbitrary' : 'side-center',
+        connectorRelationPresetForTool(activeTool),
+      );
       return;
     }
 
@@ -4558,6 +4936,17 @@ export function Board() {
 
     if (activeTool === 'sticky') {
       createStickyAt(worldPosition);
+      return;
+    }
+
+    if (
+      activeTool === 'legal_claim' ||
+      activeTool === 'legal_evidence' ||
+      activeTool === 'legal_witness' ||
+      activeTool === 'legal_timeline' ||
+      activeTool === 'legal_contradiction'
+    ) {
+      createLegalTemplateStickyAt(worldPosition, activeTool);
       return;
     }
 
@@ -5500,6 +5889,14 @@ export function Board() {
           >
             Redo
           </button>
+          <button
+            className="chip-btn"
+            onClick={createLegalQuickStartTemplate}
+            disabled={!canEditBoard}
+            title="Drop a starter claim/evidence/witness/timeline/contradiction map."
+          >
+            Legal quick start
+          </button>
         </div>
 
         <div className="topbar-cluster right">
@@ -5686,6 +6083,8 @@ export function Board() {
                             anchorY: anchor.anchorY,
                             attachmentMode: 'side-center',
                           },
+                          'side-center',
+                          connectorRelationPresetForTool(activeTool),
                         );
                       }}
                       onTouchStart={(event) => {
@@ -5703,6 +6102,8 @@ export function Board() {
                             anchorY: anchor.anchorY,
                             attachmentMode: 'side-center',
                           },
+                          'side-center',
+                          connectorRelationPresetForTool(activeTool),
                         );
                       }}
                     />

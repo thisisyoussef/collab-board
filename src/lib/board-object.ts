@@ -47,6 +47,26 @@ export const CONNECTOR_DEFAULT_LABEL_BACKGROUND = false;
 const LINE_MIN_LENGTH = 8;
 const EPSILON = 0.0001;
 
+// ── Visual indicators for node roles ──────────────────────────────────
+export const NODE_ROLE_COLORS: Record<LitigationNodeRole, { fill: string; badge: string; label: string }> = {
+  claim:          { fill: '#DCE8FF', badge: '#4A7BD4', label: 'CLAIM' },
+  evidence:       { fill: '#E1F4E5', badge: '#2E8B57', label: 'EVIDENCE' },
+  witness:        { fill: '#F4E6FF', badge: '#8B5CF6', label: 'WITNESS' },
+  timeline_event: { fill: '#FFF1D6', badge: '#B9811B', label: 'EVENT' },
+  contradiction:  { fill: '#FCE4EC', badge: '#C4453E', label: 'CONFLICT' },
+};
+
+export const CONNECTOR_RELATION_COLORS: Record<LitigationConnectorRelation, { color: string; label: string }> = {
+  supports:    { color: '#1f8f5b', label: 'supports' },
+  contradicts: { color: '#c4453e', label: 'contradicts' },
+  depends_on:  { color: '#b9811b', label: 'depends on' },
+};
+
+/** Return the auto-fill color for a node role, or undefined if no role. */
+export function getAutoColorForRole(role: LitigationNodeRole | undefined): string | undefined {
+  return role ? NODE_ROLE_COLORS[role]?.fill : undefined;
+}
+
 export interface DefaultBoardObjectFactory {
   createdBy: string;
   nowIso: string;
@@ -134,7 +154,8 @@ function parseLitigationNodeRole(value: unknown): LitigationNodeRole | undefined
     value === 'claim' ||
     value === 'evidence' ||
     value === 'witness' ||
-    value === 'timeline_event'
+    value === 'timeline_event' ||
+    value === 'contradiction'
   ) {
     return value;
   }
@@ -247,12 +268,17 @@ export function createDefaultObject(
   };
 
   if (type === 'sticky') {
+    // Auto-color: if nodeRole is set and no explicit color override, use role fill color
+    const roleColor = getAutoColorForRole(base.nodeRole);
+    const stickyColor = overrides.color
+      ? stringOr(overrides.color, STICKY_DEFAULT_COLOR)
+      : (roleColor || STICKY_DEFAULT_COLOR);
     return {
       ...base,
       type,
       width: Math.max(STICKY_MIN_WIDTH, numberOr(overrides.width, STICKY_DEFAULT_WIDTH)),
       height: Math.max(STICKY_MIN_HEIGHT, numberOr(overrides.height, STICKY_DEFAULT_HEIGHT)),
-      color: stringOr(overrides.color, STICKY_DEFAULT_COLOR),
+      color: stickyColor,
       text: typeof overrides.text === 'string' ? overrides.text : '',
       fontSize: Math.max(10, numberOr(overrides.fontSize, 14)),
     };
@@ -352,7 +378,12 @@ export function createDefaultObject(
       type: 'connector',
     width: Math.max(LINE_MIN_LENGTH, numberOr(overrides.width, bounds.width)),
     height: Math.max(LINE_MIN_LENGTH, numberOr(overrides.height, bounds.height)),
-    color: stringOr(overrides.color, CONNECTOR_DEFAULT_COLOR),
+    color: overrides.color
+      ? stringOr(overrides.color, CONNECTOR_DEFAULT_COLOR)
+      : (() => {
+        const rt = parseLitigationRelation(overrides.relationType);
+        return rt ? (CONNECTOR_RELATION_COLORS[rt]?.color || CONNECTOR_DEFAULT_COLOR) : CONNECTOR_DEFAULT_COLOR;
+      })(),
     strokeWidth: Math.max(1, numberOr(overrides.strokeWidth, 2)),
     points: parsePoints(overrides.points, [endpoints.startX, endpoints.startY, endpoints.endX, endpoints.endY]),
     fromId,

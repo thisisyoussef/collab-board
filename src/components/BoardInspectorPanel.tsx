@@ -44,6 +44,7 @@ const NODE_ROLE_OPTIONS: Array<{ value: NonNullable<BoardObject['nodeRole']>; la
   { value: 'evidence', label: 'Evidence' },
   { value: 'witness', label: 'Witness' },
   { value: 'timeline_event', label: 'Timeline event' },
+  { value: 'contradiction', label: 'Contradiction' },
 ];
 
 const RELATION_OPTIONS: Array<{ value: NonNullable<BoardObject['relationType']>; label: string }> = [

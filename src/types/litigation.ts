@@ -17,7 +17,6 @@ export interface LitigationIntakeInput {
 
 export interface LitigationIntakePreferences {
   objective: LitigationIntakeObjective;
-  layoutMode: LitigationLayoutMode;
   includeClaims: boolean;
   includeEvidence: boolean;
   includeWitnesses: boolean;

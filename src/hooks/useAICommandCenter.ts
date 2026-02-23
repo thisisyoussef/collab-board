@@ -5,6 +5,7 @@ import type { BoardObjectsRecord } from '../types/board';
 import type {
   AIActionPreview,
   AIApplyMode,
+  AIConversationMessage,
   AIGenerateResponse,
   AIGenerateToolCall,
 } from '../types/ai';
@@ -25,6 +26,7 @@ interface UseAICommandCenterResult {
   error: string | null;
   message: string | null;
   actions: AIActionPreview[];
+  conversation: AIConversationMessage[];
   lastRequestLatencyMs: number | null;
   averageRequestLatencyMs: number;
   setPrompt: (value: string) => void;
@@ -71,7 +73,7 @@ function parseApiError(status: number, payloadError: string | undefined): string
     return 'AI is rate-limited. Please retry in a moment.';
   }
 
-  return 'Unable to generate an AI plan right now.';
+  return 'Unable to generate right now.';
 }
 
 function summarizeToolInput(input: Record<string, unknown>): string {
@@ -122,6 +124,35 @@ function normalizeToolCalls(toolCalls: AIGenerateToolCall[] | undefined): AIActi
     .filter((entry) => entry.name !== 'unknown_action' || Object.keys(entry.input).length > 0);
 }
 
+function createConversationId(prefix: string): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function buildConversationSeed(): AIConversationMessage[] {
+  return [
+    {
+      id: 'assistant-welcome',
+      role: 'assistant',
+      text: 'I can help you generate a litigation board, map contradictions, and organize evidence chains.',
+      createdAt: Date.now(),
+    },
+  ];
+}
+
+function normalizeConversationPayload(conversation: AIConversationMessage[]): Array<{
+  role: 'user' | 'assistant';
+  text: string;
+}> {
+  return conversation
+    .filter((entry) => entry.role === 'user' || entry.role === 'assistant')
+    .map((entry) => ({
+      role: entry.role,
+      text: entry.text,
+    }))
+    .filter((entry) => entry.text.trim().length > 0)
+    .slice(-12);
+}
+
 async function parseJsonPayload(response: Response): Promise<AIGenerateResponse> {
   try {
     const payload = (await response.json()) as AIGenerateResponse;
@@ -147,10 +178,20 @@ export function useAICommandCenter({
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [actions, setActions] = useState<AIActionPreview[]>([]);
+  const [conversation, setConversation] = useState<AIConversationMessage[]>(() => buildConversationSeed());
   const loadingRef = useRef(false);
   const lastPromptRef = useRef('');
+  const conversationRef = useRef<AIConversationMessage[]>(buildConversationSeed());
   const [lastRequestLatencyMs, setLastRequestLatencyMs] = useState<number | null>(null);
   const latencyHistoryRef = useRef<number[]>([]);
+
+  const appendConversation = useCallback((entry: AIConversationMessage) => {
+    setConversation((previous) => {
+      const next = [...previous, entry].slice(-20);
+      conversationRef.current = next;
+      return next;
+    });
+  }, []);
 
   const setMode = useCallback((nextMode: AIApplyMode) => {
     const normalizedMode = nextMode === 'auto' ? 'auto' : 'auto';
@@ -166,7 +207,7 @@ export function useAICommandCenter({
 
       const trimmedPrompt = nextPrompt.trim();
       if (!trimmedPrompt) {
-        setError('Enter a prompt before generating a plan.');
+        setError('Enter a message before generating.');
         return null;
       }
 
@@ -178,6 +219,12 @@ export function useAICommandCenter({
       loadingRef.current = true;
       setLoading(true);
       setError(null);
+      appendConversation({
+        id: createConversationId('user'),
+        role: 'user',
+        text: trimmedPrompt,
+        createdAt: Date.now(),
+      });
 
       logger.info('AI', `Sending AI prompt: '${trimmedPrompt.slice(0, 60)}${trimmedPrompt.length > 60 ? '...' : ''}' (${trimmedPrompt.length} chars)`, {
         boardId,
@@ -206,10 +253,12 @@ export function useAICommandCenter({
         const requestBody: {
           prompt: string;
           boardId: string;
+          conversation?: Array<{ role: 'user' | 'assistant'; text: string }>;
           boardState?: BoardObjectsRecord;
         } = {
           prompt: trimmedPrompt,
           boardId,
+          conversation: normalizeConversationPayload(conversationRef.current),
         };
 
         if (getBoardState) {
@@ -258,7 +307,7 @@ export function useAICommandCenter({
         if (nextActions.length === 0) {
           logger.warn('AI', 'AI returned no actionable changes', { message: nextMessage });
         } else {
-          logger.info('AI', `AI plan received: ${nextActions.length} action(s)`, {
+          logger.info('AI', `AI response received: ${nextActions.length} action(s)`, {
             actionCount: nextActions.length,
             actionNames: nextActions.map((a) => a.name),
             message: nextMessage,
@@ -268,13 +317,27 @@ export function useAICommandCenter({
         setActions(nextActions);
         setMessage(nextMessage);
         lastPromptRef.current = trimmedPrompt;
+        appendConversation({
+          id: createConversationId('assistant'),
+          role: 'assistant',
+          text: nextMessage,
+          actionCount: nextActions.length,
+          createdAt: Date.now(),
+        });
         return {
           message: nextMessage,
           actions: nextActions,
         };
       } catch {
         logger.error('AI', 'AI request failed: network error', { boardId });
-        setError('Unable to generate an AI plan right now.');
+        const failureMessage = 'Unable to generate right now. Please retry.';
+        setError(failureMessage);
+        appendConversation({
+          id: createConversationId('assistant'),
+          role: 'assistant',
+          text: failureMessage,
+          createdAt: Date.now(),
+        });
         setMessage(null);
         setActions([]);
         return null;
@@ -283,7 +346,7 @@ export function useAICommandCenter({
         setLoading(false);
       }
     },
-    [boardId, endpoint, getBoardState, user],
+    [appendConversation, boardId, endpoint, getBoardState, user],
   );
 
   const submitPrompt = useCallback(async () => {
@@ -293,7 +356,7 @@ export function useAICommandCenter({
   const retryLast = useCallback(async () => {
     const fallbackPrompt = prompt.trim() || lastPromptRef.current;
     if (!fallbackPrompt) {
-      setError('Enter a prompt before retrying.');
+      setError('Enter a message before retrying.');
       return null;
     }
 
@@ -305,6 +368,9 @@ export function useAICommandCenter({
     setError(null);
     setMessage(null);
     setActions([]);
+    const seed = buildConversationSeed();
+    setConversation(seed);
+    conversationRef.current = seed;
   }, []);
 
   const averageRequestLatencyMs = useMemo(() => {
@@ -321,6 +387,7 @@ export function useAICommandCenter({
     error,
     message,
     actions,
+    conversation,
     lastRequestLatencyMs,
     averageRequestLatencyMs,
     setPrompt,

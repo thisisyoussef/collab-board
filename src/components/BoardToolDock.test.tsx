@@ -7,6 +7,10 @@ describe('BoardToolDock', () => {
     render(<BoardToolDock activeTool="rect" canEditBoard onSelectTool={vi.fn()} />);
 
     expect(screen.getByRole('toolbar', { name: 'Board tools' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Core tools' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Legal nodes' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Legal links' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Canvas tools' })).toBeInTheDocument();
     const selectButton = screen.getByLabelText('Select tool');
     expect(within(selectButton).getByText('Sel')).toBeInTheDocument();
     expect(within(selectButton).getByTestId('dock-icon-select')).toBeInTheDocument();
@@ -26,6 +30,9 @@ describe('BoardToolDock', () => {
     expect(screen.getByLabelText('Supports link tool')).toBeInTheDocument();
     expect(screen.getByLabelText('Contradicts link tool')).toBeInTheDocument();
     expect(screen.getByLabelText('Dependency link tool')).toBeInTheDocument();
+    expect(
+      screen.getByText('Draw a rectangular region to group related evidence or argument clusters.'),
+    ).toBeInTheDocument();
   });
 
   it('emits tool selection when a dock button is clicked', () => {
@@ -37,6 +44,10 @@ describe('BoardToolDock', () => {
 
     fireEvent.click(screen.getByLabelText('Evidence node tool'));
     expect(onSelectTool).toHaveBeenCalledWith('legal_evidence');
+    expect(screen.getByLabelText('Evidence node tool')).toHaveAttribute(
+      'title',
+      expect.stringContaining('Add an exhibit or document card'),
+    );
 
     fireEvent.click(screen.getByLabelText('Contradicts link tool'));
     expect(onSelectTool).toHaveBeenCalledWith('legal_link_contradicts');

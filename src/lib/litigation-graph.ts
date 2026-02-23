@@ -7,7 +7,13 @@ import type {
 const SUPPORT_SOURCE_ROLES = new Set<LitigationNodeRole>(['evidence', 'witness', 'timeline_event']);
 
 function isLitigationNodeRole(value: unknown): value is LitigationNodeRole {
-  return value === 'claim' || value === 'evidence' || value === 'witness' || value === 'timeline_event';
+  return (
+    value === 'claim' ||
+    value === 'evidence' ||
+    value === 'witness' ||
+    value === 'timeline_event' ||
+    value === 'contradiction'
+  );
 }
 
 function isLitigationRelation(value: unknown): value is LitigationConnectorRelation {

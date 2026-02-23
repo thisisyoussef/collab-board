@@ -70,6 +70,12 @@ describe('useAICommandCenter', () => {
     });
 
     expect(result.current.message).toBe('Created a plan.');
+    expect(result.current.conversation.some((entry) => entry.role === 'user')).toBe(true);
+    expect(
+      result.current.conversation.some(
+        (entry) => entry.role === 'assistant' && entry.text === 'Created a plan.',
+      ),
+    ).toBe(true);
     expect(result.current.actions).toHaveLength(1);
     expect(result.current.actions[0]?.name).toBe('createStickyNote');
     expect(result.current.actions[0]?.summary).toContain('text=Research');
@@ -83,6 +89,9 @@ describe('useAICommandCenter', () => {
         Authorization: 'Bearer firebase-token-123',
       }),
     );
+    const parsedBody = JSON.parse(String(request.body));
+    expect(parsedBody.conversation).toBeTruthy();
+    expect(Array.isArray(parsedBody.conversation)).toBe(true);
   });
 
   it('persists selected mode in localStorage', async () => {

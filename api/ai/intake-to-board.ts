@@ -92,7 +92,7 @@ const LOW_SIGNAL_STICKY_PATTERNS: RegExp[] = [
   /^\+\d+\s+more\s+/i,
   /^summary mode collapsed/i,
   /^exhibit numbers?(?:\s+and\s+title\/descriptions?)?$/i,
-  /\bdid,\s*commit the\b/i,
+  /\bdid\s*,?\s*commit(?:\s+the)?\b/i,
 ];
 const MONTH_DATE_PATTERN_TEXT =
   '\\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t|tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\\.?\\s+\\d{1,2}(?:,\\s*\\d{4})?';
@@ -357,7 +357,7 @@ function isLowSignalTimelineSnippet(snippet: string): boolean {
     return true;
   }
 
-  if (/\bdid,\s*commit\b/.test(normalized)) {
+  if (/\bdid\s*,?\s*commit(?:\s+the)?\b/.test(normalized)) {
     return true;
   }
 
@@ -748,13 +748,25 @@ function buildIntakeRewritePrompt(
   draft: LitigationIntakeDraft,
   objective: LitigationIntakeObjective,
 ): string {
+  const objectiveInstructions: Record<LitigationIntakeObjective, string> = {
+    board_overview:
+      'Prioritize balanced case-theory clarity across claims, exhibits, witnesses, and timeline milestones.',
+    chronology:
+      'Prioritize sequencing, causality, and date-anchored event clarity. Timeline cards must read as complete chronological facts.',
+    contradictions:
+      'Prioritize conflict clarity. Witness and evidence cards should make factual tension easy to spot at a glance.',
+    witness_prep:
+      'Prioritize witness-ready language. Witness cards should read like prep notes and tie cleanly to supporting exhibits.',
+  };
+
   return [
-    'Rewrite litigation board cards so every sticky note reads as a coherent legal work-product sentence.',
+    'Rewrite litigation board cards so every sticky note reads as coherent legal work product.',
     'Preserve IDs exactly; do not add, remove, or rename ids.',
     'If unsure, keep the original meaning and make the wording clearer.',
     'Output strict JSON only with keys: claims, evidence, witnesses, timeline.',
     '',
     'Rules:',
+    '- Every field must be standalone readable; no sentence fragments or dangling clauses.',
     '- claims[].title: concise legal claim title, max 140 chars.',
     '- claims[].summary: optional plain-language support sentence, max 260 chars.',
     '- evidence[].label: concrete exhibit label (not placeholders), max 160 chars.',
@@ -762,10 +774,13 @@ function buildIntakeRewritePrompt(
     '- witnesses[].quote: optional coherent testimony excerpt, max 220 chars.',
     '- timeline[].dateLabel: short date marker.',
     '- timeline[].event: coherent event sentence, max 220 chars.',
-    '- Remove low-signal fragments, OCR garbage, and incomplete clauses.',
+    '- Remove low-signal fragments, OCR garbage, charging-document boilerplate, and incomplete clauses.',
     '- Never output strings like "+N more evidence" or "Summary mode collapsed ...".',
+    '- Prefer one factual proposition per card over long multi-clause text.',
+    '- If text looks unreliable, rewrite conservatively using plain legal English.',
     '',
     `Objective: ${objective}`,
+    `Objective guidance: ${objectiveInstructions[objective]}`,
     `Draft JSON:\n${JSON.stringify(draft)}`,
   ].join('\n');
 }

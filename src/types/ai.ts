@@ -9,6 +9,14 @@ export interface AIActionPreview {
   input: Record<string, unknown>;
 }
 
+export interface AIConversationMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  text: string;
+  createdAt: number;
+  actionCount?: number;
+}
+
 export interface AIPanelState {
   prompt: string;
   mode: AIApplyMode;
@@ -16,6 +24,7 @@ export interface AIPanelState {
   error: string | null;
   message: string | null;
   actions: AIActionPreview[];
+  conversation?: AIConversationMessage[];
   applying?: boolean;
   applyDisabled?: boolean;
   canUndo?: boolean;

@@ -331,9 +331,9 @@ export function buildBoardActionsFromLitigationDraft(
   options: BuildBoardActionsFromDraftOptions = {},
 ): BuildBoardActionsFromDraftResult {
   const objective = options.objective || 'board_overview';
-  const layoutMode = options.layoutMode || 'summary';
+  const layoutMode: LitigationLayoutMode = 'expanded';
   const cardContentOptions: CardContentOptions = {
-    compact: layoutMode === 'summary',
+    compact: false,
   };
   const layoutDraft = condenseLitigationDraftForLayout(draft, {
     mode: layoutMode,

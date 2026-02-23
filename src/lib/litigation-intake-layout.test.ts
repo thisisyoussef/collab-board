@@ -102,7 +102,7 @@ describe('buildBoardActionsFromLitigationDraft', () => {
     expect(connectors.every((connector) => connector.input.connectorType === 'curved')).toBe(true);
   });
 
-  it('condenses dense drafts in summary mode with aggregate overflow cards', () => {
+  it('keeps full-detail layout even when summary mode is requested', () => {
     const denseDraft = {
       claims: [{ id: 'claim-main', title: 'Main claim' }],
       evidence: Array.from({ length: 9 }, (_, index) => ({
@@ -146,24 +146,18 @@ describe('buildBoardActionsFromLitigationDraft', () => {
 
     const expandedConnectors = expanded.actions.filter((action) => action.name === 'createConnector');
     const summaryConnectors = summary.actions.filter((action) => action.name === 'createConnector');
-    expect(summaryConnectors.length).toBeLessThan(expandedConnectors.length);
+    expect(summaryConnectors.length).toBe(expandedConnectors.length);
 
     const summaryStickyTexts = summary.actions
       .filter((action) => action.name === 'createStickyNote')
       .map((action) => String(action.input.text));
 
-    expect(summaryStickyTexts.some((text) => text.toLowerCase().includes('additional evidence'))).toBe(
-      true,
-    );
-    expect(summaryStickyTexts.some((text) => text.toLowerCase().includes('additional witness'))).toBe(
-      true,
-    );
-    expect(summaryStickyTexts.some((text) => text.toLowerCase().includes('additional timeline'))).toBe(
-      true,
-    );
+    expect(summaryStickyTexts.some((text) => text.toLowerCase().includes('additional evidence'))).toBe(false);
+    expect(summaryStickyTexts.some((text) => text.toLowerCase().includes('additional witness'))).toBe(false);
+    expect(summaryStickyTexts.some((text) => text.toLowerCase().includes('additional timeline'))).toBe(false);
   });
 
-  it('renders compact card text in summary mode and full detail in expanded mode', () => {
+  it('renders full-detail card text regardless of requested density mode', () => {
     const draft = {
       claims: [
         {
@@ -209,7 +203,7 @@ describe('buildBoardActionsFromLitigationDraft', () => {
     const expandedEvidence = expanded.actions.find(
       (action) => action.name === 'createStickyNote' && action.input.objectId === 'evidence-1',
     );
-    expect(String(summaryEvidence?.input.text)).not.toContain('Exhibit 4');
+    expect(String(summaryEvidence?.input.text)).toContain('Exhibit 4');
     expect(String(expandedEvidence?.input.text)).toContain('Exhibit 4');
 
     const summaryWitness = summary.actions.find(
@@ -218,7 +212,7 @@ describe('buildBoardActionsFromLitigationDraft', () => {
     const expandedWitness = expanded.actions.find(
       (action) => action.name === 'createStickyNote' && action.input.objectId === 'witness-1',
     );
-    expect(String(summaryWitness?.input.text)).toBe('Lou Christoff');
+    expect(String(summaryWitness?.input.text)).toContain('I saw Lane with a knife');
     expect(String(expandedWitness?.input.text)).toContain('I saw Lane with a knife');
   });
 

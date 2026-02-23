@@ -77,4 +77,19 @@ describe('condenseLitigationDraftForLayout', () => {
     expect(expanded.witnesses.length).toBe(denseDraft.witnesses.length);
     expect(expanded.timeline.length).toBe(denseDraft.timeline.length);
   });
+
+  it('defaults to expanded mode when no layout mode is provided', () => {
+    const denseDraft = buildDenseDraft();
+    const expanded = condenseLitigationDraftForLayout(denseDraft, { mode: 'expanded' });
+    const defaultMode = condenseLitigationDraftForLayout(denseDraft);
+
+    expect(defaultMode.claims.length).toBe(expanded.claims.length);
+    expect(defaultMode.evidence.length).toBe(expanded.evidence.length);
+    expect(defaultMode.witnesses.length).toBe(expanded.witnesses.length);
+    expect(defaultMode.timeline.length).toBe(expanded.timeline.length);
+    expect(defaultMode.links.length).toBe(expanded.links.length);
+    expect(defaultMode.evidence.some((entry) => entry.id.startsWith('aggregate-evidence-'))).toBe(false);
+    expect(defaultMode.witnesses.some((entry) => entry.id.startsWith('aggregate-witness-'))).toBe(false);
+    expect(defaultMode.timeline.some((entry) => entry.id.startsWith('aggregate-timeline-'))).toBe(false);
+  });
 });

@@ -12,7 +12,12 @@ export type ConnectorStrokeStyle = 'solid' | 'dashed';
 export type ConnectorPathType = 'straight' | 'bent' | 'curved';
 export type ConnectorAttachmentMode = 'side-center' | 'arbitrary' | 'free';
 export type ConnectorArrowHead = 'none' | 'solid' | 'line' | 'triangle' | 'diamond';
-export type LitigationNodeRole = 'claim' | 'evidence' | 'witness' | 'timeline_event';
+export type LitigationNodeRole =
+  | 'claim'
+  | 'evidence'
+  | 'witness'
+  | 'timeline_event'
+  | 'contradiction';
 export type LitigationConnectorRelation = 'supports' | 'contradicts' | 'depends_on';
 
 export interface BoardObject {

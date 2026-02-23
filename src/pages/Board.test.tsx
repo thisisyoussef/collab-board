@@ -217,6 +217,7 @@ describe('Board', () => {
 
     expect(screen.getByRole('button', { name: 'Undo' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Redo' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Legal quick start' })).toBeEnabled();
   });
 
   it('renders the bottom tool dock buttons', async () => {
@@ -473,6 +474,7 @@ describe('Board', () => {
     expect(screen.getByLabelText('Evidence node tool')).toBeDisabled();
     expect(screen.getByLabelText('Contradicts link tool')).toBeDisabled();
     expect(screen.getByLabelText('Case AI prompt')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Legal quick start' })).toBeDisabled();
     expect(screen.getByText(/Read-only mode/i)).toBeInTheDocument();
   });
 

@@ -471,6 +471,7 @@ describe('AI Intake-to-Board API', () => {
               'Exhibit Numbers: and Title/Descriptions\n' +
               'Exhibit 12: Cash Register Tape\n' +
               'March 25, 2023, in Fondren County, State of Mississippi, LANE KING did, commit the crime of murder by stabbing.\n' +
+              'March 26, 2023, in Fondren County, State of Mississippi, LANE KING did commit the offense of murder.\n' +
               'March 11, 2023: Saul and Errol argue in the parking lot at 6pm.',
           },
         ],
@@ -497,6 +498,7 @@ describe('AI Intake-to-Board API', () => {
       (entry: { dateLabel: string; event: string }) => `${entry.dateLabel} ${entry.event}`.toLowerCase(),
     );
     expect(timelineEvents.some((event: string) => event.includes('did, commit the'))).toBe(false);
+    expect(timelineEvents.some((event: string) => event.includes('did commit the'))).toBe(false);
     expect(timelineEvents.some((event: string) => event.includes('state of mississippi'))).toBe(false);
   });
 

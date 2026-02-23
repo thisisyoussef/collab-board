@@ -29,7 +29,7 @@ interface LinkSelectionResult {
 }
 
 const DEFAULT_OBJECTIVE: LitigationIntakeObjective = 'board_overview';
-const DEFAULT_LAYOUT_MODE: LitigationLayoutMode = 'summary';
+const DEFAULT_LAYOUT_MODE: LitigationLayoutMode = 'expanded';
 const INCOMING_BUCKET_ORDER: NodeBucket[] = ['evidence', 'witness', 'timeline', 'claim', 'unknown'];
 const OUTGOING_BUCKET_ORDER: NodeBucket[] = ['timeline', 'evidence', 'witness', 'claim', 'unknown'];
 

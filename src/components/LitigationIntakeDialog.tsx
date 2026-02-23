@@ -1,7 +1,6 @@
 import type {
   LitigationIntakeDraft,
   LitigationIntakeInput,
-  LitigationLayoutMode,
   LitigationIntakeObjective,
   LitigationSectionKey,
   LitigationUploadedDocument,
@@ -18,13 +17,11 @@ interface LitigationIntakeDialogProps {
   draft: LitigationIntakeDraft | null;
   canGenerate: boolean;
   objective: LitigationIntakeObjective;
-  layoutMode: LitigationLayoutMode;
   includedSections: Record<LitigationSectionKey, boolean>;
   uploadedDocuments: LitigationUploadedDocument[];
   onClose: () => void;
   onInputChange: (field: InputField, value: string) => void;
   onObjectiveChange: (objective: LitigationIntakeObjective) => void;
-  onLayoutModeChange: (layoutMode: LitigationLayoutMode) => void;
   onSectionToggle: (section: LitigationSectionKey) => void;
   onDocumentsSelected: (files: File[]) => void;
   onRemoveDocument: (documentId: string) => void;
@@ -86,22 +83,22 @@ const OBJECTIVE_OPTIONS: Array<{
   {
     value: 'board_overview',
     label: 'Case strategy overview',
-    description: 'Build a balanced claims/evidence/witness/timeline board.',
+    description: 'Balanced map of claims, exhibits, witnesses, and chronology.',
   },
   {
     value: 'chronology',
     label: 'Chronology and event flow',
-    description: 'Prioritize timeline events and dependencies.',
+    description: 'Lead with a date-ordered event chain and dependency links.',
   },
   {
     value: 'contradictions',
     label: 'Witness contradiction review',
-    description: 'Emphasize conflicting witness/evidence statements.',
+    description: 'Surface conflicting testimony and connect conflicts to source exhibits.',
   },
   {
     value: 'witness_prep',
     label: 'Witness prep pack',
-    description: 'Focus on witness statements tied to supporting exhibits.',
+    description: 'Prioritize witness cards, quoted statements, and supporting exhibits.',
   },
 ];
 
@@ -110,23 +107,6 @@ const SECTION_OPTIONS: Array<{ key: LitigationSectionKey; label: string }> = [
   { key: 'evidence', label: 'Evidence' },
   { key: 'witnesses', label: 'Witnesses' },
   { key: 'timeline', label: 'Timeline' },
-];
-
-const LAYOUT_MODE_OPTIONS: Array<{
-  value: LitigationLayoutMode;
-  label: string;
-  description: string;
-}> = [
-  {
-    value: 'summary',
-    label: 'Summary layout (recommended)',
-    description: 'Curates key links and collapses overflow into aggregate cards.',
-  },
-  {
-    value: 'expanded',
-    label: 'Expanded layout',
-    description: 'Places every extracted card and connector for full-fidelity review.',
-  },
 ];
 
 function hasAnyInputValue(input: LitigationIntakeInput): boolean {
@@ -142,13 +122,11 @@ export function LitigationIntakeDialog({
   draft,
   canGenerate,
   objective,
-  layoutMode,
   includedSections,
   uploadedDocuments,
   onClose,
   onInputChange,
   onObjectiveChange,
-  onLayoutModeChange,
   onSectionToggle,
   onDocumentsSelected,
   onRemoveDocument,
@@ -168,15 +146,15 @@ export function LitigationIntakeDialog({
         className="litigation-intake-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label="Build board from case input"
+        aria-label="Litigation board intake"
         onClick={(event) => event.stopPropagation()}
       >
         <header className="litigation-intake-header">
           <div>
             <p className="litigation-intake-kicker">Litigation intake</p>
-            <h3>Build board from case input</h3>
+            <h3>Litigation Board Builder</h3>
             <p className="litigation-intake-muted">
-              Provide case notes and supporting excerpts. Review before applying to the board.
+              Upload your case packet, choose one objective, and generate a full-detail strategy board.
             </p>
           </div>
           <button className="secondary-btn" type="button" onClick={onClose}>
@@ -185,17 +163,18 @@ export function LitigationIntakeDialog({
         </header>
 
         <div className="litigation-intake-example">
-          <strong>Need an example input?</strong>
+          <strong>How this works</strong>
           <p>
-            Include claims, witness excerpts, evidence, and timeline bullets. The parser will scaffold
-            claims/evidence/witness/timeline lanes with connectors.
+            1) Upload deposition/exhibit files. 2) Pick one objective. 3) Generate and review.
+            4) Apply directly to the canvas. All generated boards stay full-detail; the objective changes
+            lane priority and link emphasis.
           </p>
         </div>
 
         <section className="litigation-intake-options" aria-label="Intake options">
           <div className="litigation-intake-option-group">
             <h4>What should this board focus on?</h4>
-            <p>Pick one objective so the generator prioritizes the right structure.</p>
+            <p>Pick one objective so the generator prioritizes the right structure and connector logic.</p>
             <div className="litigation-intake-objective-grid">
               {OBJECTIVE_OPTIONS.map((option) => {
                 const inputId = `litigation-objective-${option.value}`;
@@ -207,30 +186,6 @@ export function LitigationIntakeDialog({
                       name="litigation-intake-objective"
                       checked={objective === option.value}
                       onChange={() => onObjectiveChange(option.value)}
-                      disabled={loading}
-                    />
-                    <span className="litigation-intake-choice-label">{option.label}</span>
-                    <span className="litigation-intake-choice-detail">{option.description}</span>
-                  </label>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="litigation-intake-option-group">
-            <h4>How detailed should this first board be?</h4>
-            <p>Start concise for readability, or expanded for full source fidelity.</p>
-            <div className="litigation-intake-layout-grid">
-              {LAYOUT_MODE_OPTIONS.map((option) => {
-                const inputId = `litigation-layout-mode-${option.value}`;
-                return (
-                  <label key={option.value} htmlFor={inputId} className="litigation-intake-choice-card">
-                    <input
-                      id={inputId}
-                      type="radio"
-                      name="litigation-intake-layout-mode"
-                      checked={layoutMode === option.value}
-                      onChange={() => onLayoutModeChange(option.value)}
                       disabled={loading}
                     />
                     <span className="litigation-intake-choice-label">{option.label}</span>

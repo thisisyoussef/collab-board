@@ -63,7 +63,7 @@ The CLAUDE.md file (~800 lines) was the most critical prompting artifact. It fun
 
 **Strengths:**
 - CLAUDE.md as persistent project memory eliminated re-explanation across agent sessions
-- TDD-first workflow caught integration issues early (529 tests across 52 files)
+- TDD-first workflow caught integration issues early (575 tests across 58 files)
 - Multi-agent parallelism compressed a week of work into days
 - Explicit anti-patterns in CLAUDE.md prevented the most common performance and architecture mistakes
 
@@ -82,7 +82,7 @@ The CLAUDE.md file (~800 lines) was the most critical prompting artifact. It fun
 
 ## 8) Repository Evidence
 
-- 529 tests across 52 test files (vitest), all passing
+- 575 tests across 58 test files (vitest), all passing
 - GitHub commit history shows AI-first workflow with story-driven commits (`feat:`, `fix:`, `perf:`, `docs:` prefixes)
 - LangSmith traces for AI endpoint calls (multi-provider comparison: Claude Sonnet vs Haiku vs GPT-4.1)
 - Performance metrics validated via MetricsOverlay with PRD threshold indicators (✅/⚠️/🔴)
