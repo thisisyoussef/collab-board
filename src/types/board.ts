@@ -19,6 +19,7 @@ export type LitigationNodeRole =
   | 'timeline_event'
   | 'contradiction';
 export type LitigationConnectorRelation = 'supports' | 'contradicts' | 'depends_on';
+export type ClaimStrengthLevel = 'weak' | 'moderate' | 'strong';
 
 export interface BoardObject {
   id: string;
@@ -57,6 +58,9 @@ export interface BoardObject {
   curveOffset?: number;
   nodeRole?: LitigationNodeRole;
   relationType?: LitigationConnectorRelation;
+  aiStrengthLevel?: ClaimStrengthLevel;
+  aiStrengthReason?: string;
+  manualStrengthOverride?: ClaimStrengthLevel;
   zIndex: number;
   createdBy: string;
   updatedAt: string;
