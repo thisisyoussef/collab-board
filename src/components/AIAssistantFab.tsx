@@ -68,6 +68,7 @@ export function AIAssistantFab({
     state.actions.length === 0
       ? 'No executable case actions generated yet.'
       : 'Generated actions are ready to apply.';
+  const visibleQuickActions = quickActions.slice(0, 4);
 
   const handleOpen = () => {
     setOpen(true);
@@ -156,7 +157,7 @@ export function AIAssistantFab({
               <p className="ai-fab-quick-error">{quickActionsError}</p>
             ) : null}
             <div className="ai-fab-chip-list">
-              {quickActions.map((action) => (
+              {visibleQuickActions.map((action) => (
                 <button
                   key={action}
                   className="ai-fab-chip"
@@ -170,6 +171,22 @@ export function AIAssistantFab({
               ))}
             </div>
           </div>
+
+          {feedbackMessage || state.actions.length > 0 ? (
+            <div className="ai-feedback success">
+              {feedbackMessage ? <p>{feedbackMessage}</p> : null}
+              {state.actions.length > 0 ? (
+                <ol className="ai-action-list">
+                  {state.actions.map((action) => (
+                    <li key={action.id} className="ai-action-item">
+                      <strong>{action.name}</strong>
+                      <span>{action.summary}</span>
+                    </li>
+                  ))}
+                </ol>
+              ) : null}
+            </div>
+          ) : null}
 
           <ol className="ai-chat-thread" aria-label="Conversation">
             {conversation.map((entry) => (
@@ -222,22 +239,6 @@ export function AIAssistantFab({
               <button className="secondary-btn" type="button" onClick={onRetry} disabled={state.loading}>
                 Retry
               </button>
-            </div>
-          ) : null}
-
-          {feedbackMessage || state.actions.length > 0 ? (
-            <div className="ai-feedback success">
-              {feedbackMessage ? <p>{feedbackMessage}</p> : null}
-              {state.actions.length > 0 ? (
-                <ol className="ai-action-list">
-                  {state.actions.map((action) => (
-                    <li key={action.id} className="ai-action-item">
-                      <strong>{action.name}</strong>
-                      <span>{action.summary}</span>
-                    </li>
-                  ))}
-                </ol>
-              ) : null}
             </div>
           ) : null}
 

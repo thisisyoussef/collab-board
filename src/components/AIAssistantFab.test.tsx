@@ -60,7 +60,7 @@ describe('AIAssistantFab', () => {
     expect(handlers.onRefreshQuickActions).toHaveBeenCalledTimes(1);
   });
 
-  it('renders quick action chips and handles chip selection', () => {
+  it('renders quick actions and handles chip selection', () => {
     render(
       <AIAssistantFab
         state={baseState}
@@ -80,7 +80,6 @@ describe('AIAssistantFab', () => {
         name: 'Quick action: Map witness contradictions with source citations',
       }),
     );
-
     expect(handlers.onQuickActionSelect).toHaveBeenCalledWith(
       'Map witness contradictions with source citations',
     );
@@ -131,5 +130,31 @@ describe('AIAssistantFab', () => {
       writable: true,
       value: originalInnerHeight,
     });
+  });
+
+  it('shows AI feedback directly below quick actions', () => {
+    render(
+      <AIAssistantFab
+        state={{
+          ...baseState,
+          message: 'Generated a litigation strategy plan with evidence links.',
+        }}
+        quickActions={['Map witness contradictions with source citations']}
+        quickActionsLoading={false}
+        quickActionsError={null}
+        {...handlers}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open AI assistant' }));
+    const feedbackMessage = screen.getByText('Generated a litigation strategy plan with evidence links.');
+    const feedbackContainer = feedbackMessage.closest('.ai-feedback');
+    const conversationList = screen.getByRole('list', { name: 'Conversation' });
+
+    expect(feedbackContainer).toBeTruthy();
+    expect(
+      (feedbackContainer as HTMLElement).compareDocumentPosition(conversationList) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 });

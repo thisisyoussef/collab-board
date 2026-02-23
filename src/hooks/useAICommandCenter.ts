@@ -147,7 +147,7 @@ function normalizeQuickActions(quickActions: string[] | undefined): string[] {
     deduped.add(normalized);
   });
 
-  return Array.from(deduped).slice(0, 8);
+  return Array.from(deduped).slice(0, 4);
 }
 
 function createConversationId(prefix: string): string {

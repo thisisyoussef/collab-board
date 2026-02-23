@@ -390,9 +390,16 @@ describe('Board', () => {
       ok: true,
       status: 200,
       json: vi.fn().mockResolvedValue({
-        quickActions: ['Map witness contradictions with citations'],
+        quickActions: [
+          'Map contradictions between key witness statements',
+          'Build a claim-evidence chain with weak-link flags',
+          'Generate a chronology from exhibits and testimony',
+          'Draft witness prep questions with citation anchors',
+          'Prepare opposing counsel counter-argument map',
+        ],
       }),
     } as Response);
+
     mockFetch.mockResolvedValueOnce({
       ok: true,
       status: 200,
@@ -415,6 +422,10 @@ describe('Board', () => {
 
     await renderBoardReady('board-ai-test');
     fireEvent.click(screen.getByRole('button', { name: 'Open AI assistant' }));
+    expect(await screen.findByText('Quick actions')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Refresh|Generating\.\.\./ })).toBeInTheDocument();
+    expect(screen.getByText('Map contradictions between key witness statements')).toBeInTheDocument();
+    expect(screen.queryByText('Prepare opposing counsel counter-argument map')).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('Case AI prompt'), {
       target: { value: 'Create a kickoff sticky note' },

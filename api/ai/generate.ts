@@ -488,7 +488,7 @@ const QUICK_ACTION_SYSTEM_PROMPT = `You generate quick action chips for a litiga
 Return concise, actionable prompts that a litigator would click.
 
 Rules:
-- Return 4 to 8 suggestions.
+- Return exactly 4 suggestions.
 - Each suggestion must be imperative and specific.
 - Keep each under 90 characters.
 - Focus on litigation strategy tasks (claims, evidence, witnesses, chronology, contradictions).
@@ -1001,7 +1001,7 @@ function normalizeQuickActionCandidates(value: unknown): string[] {
     deduped.add(normalized);
   });
 
-  return Array.from(deduped).slice(0, 8);
+  return Array.from(deduped).slice(0, 4);
 }
 
 function extractQuickActionsFromText(text: string | null): string[] {

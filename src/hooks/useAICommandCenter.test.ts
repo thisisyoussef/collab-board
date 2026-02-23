@@ -250,7 +250,7 @@ describe('useAICommandCenter', () => {
     expect(result.current.lastRequestLatencyMs).toBeGreaterThanOrEqual(0);
   });
 
-  it('requests AI-generated quick action chips and stores them', async () => {
+  it('requests AI-generated quick action chips and stores only the top four', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       status: 200,
@@ -258,6 +258,10 @@ describe('useAICommandCenter', () => {
         quickActions: [
           'Map contradictions between witness statements',
           'Build a claim-evidence graph with strength flags',
+          'Generate a chronology from exhibits and testimony',
+          'Draft witness prep questions with citation anchors',
+          'Highlight weak links across claim dependency chains',
+          'Prepare opposing counsel counter-argument map',
         ],
       }),
     } as Response);
@@ -274,12 +278,16 @@ describe('useAICommandCenter', () => {
       expect(quickActions).toEqual([
         'Map contradictions between witness statements',
         'Build a claim-evidence graph with strength flags',
+        'Generate a chronology from exhibits and testimony',
+        'Draft witness prep questions with citation anchors',
       ]);
     });
 
     expect(result.current.quickActions).toEqual([
       'Map contradictions between witness statements',
       'Build a claim-evidence graph with strength flags',
+      'Generate a chronology from exhibits and testimony',
+      'Draft witness prep questions with citation anchors',
     ]);
     const request = mockFetch.mock.calls[0]?.[1] as RequestInit;
     const parsedBody = JSON.parse(String(request.body));
