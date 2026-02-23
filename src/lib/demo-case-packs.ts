@@ -447,7 +447,7 @@ export function buildDemoCasePack({
   if (pack === 'johnson') {
     const strongClaim = createSticky(packText.strongClaim, claimX, topY, 'claim');
     const mediumClaim = createSticky(packText.mediumClaim, claimX, midY, 'claim');
-    const weakClaim = createSticky(packText.weakClaim, claimX, lowY, 'claim');
+    createSticky(packText.weakClaim, claimX, lowY, 'claim');
 
     const evidencePrimary = createSticky(packText.evidencePrimary, evidenceX, topY, 'evidence');
     const evidenceSecondary = createSticky(packText.evidenceSecondary, evidenceX, midY, 'evidence');
