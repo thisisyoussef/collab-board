@@ -206,9 +206,18 @@ const toolDefinitions: Anthropic.Tool[] = [
     input_schema: {
       type: 'object' as const,
       properties: {
+        objectId: { type: 'string', description: 'Stable ID for the created object when known' },
+        id: { type: 'string', description: 'Alias of objectId for compatibility' },
         text: { type: 'string', description: 'The text content of the sticky note' },
         x: { type: 'number', description: 'X position in world coordinates' },
         y: { type: 'number', description: 'Y position in world coordinates' },
+        width: { type: 'number', description: 'Optional sticky width override' },
+        height: { type: 'number', description: 'Optional sticky height override' },
+        nodeRole: {
+          type: 'string',
+          enum: ['claim', 'evidence', 'witness', 'timeline_event', 'contradiction'],
+          description: 'Optional litigation node role used for legal board analysis',
+        },
         color: {
           type: 'string',
           description: 'Hex color for the sticky note background (e.g. #FFEB3B)',
@@ -266,6 +275,8 @@ const toolDefinitions: Anthropic.Tool[] = [
     input_schema: {
       type: 'object' as const,
       properties: {
+        objectId: { type: 'string', description: 'Stable ID for the created connector when known' },
+        id: { type: 'string', description: 'Alias of objectId for compatibility' },
         fromId: { type: 'string', description: 'ID of the source object' },
         toId: { type: 'string', description: 'ID of the target object' },
         connectorType: {
@@ -300,6 +311,16 @@ const toolDefinitions: Anthropic.Tool[] = [
         labelPosition: {
           type: 'number',
           description: 'Label position from 0 to 100 along connector path',
+        },
+        relationType: {
+          type: 'string',
+          enum: ['supports', 'contradicts', 'depends_on'],
+          description: 'Optional litigation relation for legal reasoning graph edges',
+        },
+        relation: {
+          type: 'string',
+          enum: ['supports', 'contradicts', 'depends_on'],
+          description: 'Alias of relationType for compatibility',
         },
       },
       required: ['fromId', 'toId'],
@@ -419,6 +440,8 @@ Core Guidelines:
 - Return a complete multi-step plan in a single response. Do not stop after one creation call.
 - updateText is only valid for sticky/text objects and frame titles, not rect/circle/line/connector.
 - Include stable objectId values for created objects so downstream updates can reference them.
+- For litigation maps, set createStickyNote.nodeRole when creating legal nodes (claim, evidence, witness, timeline_event, contradiction).
+- For litigation links, set createConnector.relationType (supports, contradicts, depends_on) when known.
 - Output tool calls only unless you cannot perform the request.
 
 Multi-Object & Layout Commands:

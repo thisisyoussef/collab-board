@@ -88,6 +88,66 @@ function isValidLevel(value: unknown): value is ClaimLevel {
   return value === 'weak' || value === 'moderate' || value === 'strong';
 }
 
+function normalizeReason(value: string): string {
+  const collapsed = value.replace(/\s+/g, ' ').trim();
+  if (!collapsed) {
+    return 'No explanation provided.';
+  }
+  return collapsed.slice(0, 500);
+}
+
+function inferLevelFromText(value: string): ClaimLevel | null {
+  const match = value.toLowerCase().match(/\b(weak|moderate|strong)\b/);
+  if (!match) {
+    return null;
+  }
+  return isValidLevel(match[1]) ? match[1] : null;
+}
+
+function tryParseJsonObject(value: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(value);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function extractJsonCandidate(value: string): string | null {
+  const start = value.indexOf('{');
+  const end = value.lastIndexOf('}');
+  if (start === -1 || end === -1 || end <= start) {
+    return null;
+  }
+  return value.slice(start, end + 1).trim();
+}
+
+function parseClassificationResponse(raw: string): { level: ClaimLevel; reason: string; usedTextFallback: boolean } {
+  const direct = tryParseJsonObject(raw);
+  const bySlice = direct ? null : extractJsonCandidate(raw);
+  const parsed = direct ?? (bySlice ? tryParseJsonObject(bySlice) : null);
+
+  if (parsed) {
+    const levelFromJson = isValidLevel(parsed.level) ? parsed.level : null;
+    const reasonFromJson = typeof parsed.reason === 'string' ? normalizeReason(parsed.reason) : null;
+    const inferred = inferLevelFromText(reasonFromJson ?? raw);
+    return {
+      level: levelFromJson ?? inferred ?? 'moderate',
+      reason: reasonFromJson ?? normalizeReason(raw),
+      usedTextFallback: false,
+    };
+  }
+
+  return {
+    level: inferLevelFromText(raw) ?? 'moderate',
+    reason: normalizeReason(raw),
+    usedTextFallback: true,
+  };
+}
+
 function buildPrompt(claimText: string, nodes: ConnectedNode[]): string {
   let prompt = `You are an expert litigation analyst. Classify the strength of the following legal claim as "weak", "moderate", or "strong".\n\n`;
   prompt += `## Claim\n"${claimText}"\n\n`;
@@ -181,14 +241,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           jsonText = codeBlockMatch[1].trim();
         }
 
-        const parsed = JSON.parse(jsonText);
-        const level = isValidLevel(parsed.level) ? parsed.level : 'moderate';
-        const reason =
-          typeof parsed.reason === 'string'
-            ? parsed.reason.slice(0, 500)
-            : 'No explanation provided.';
+        const parsed = parseClassificationResponse(jsonText);
+        if (parsed.usedTextFallback) {
+          console.warn(
+            JSON.stringify({
+              level: 'warn',
+              category: 'AI',
+              message: 'Claim classification response was non-JSON; used text fallback parsing',
+              claimId: body.claimId,
+            }),
+          );
+        }
 
-        res.status(200).json({ level, reason });
+        res.status(200).json({ level: parsed.level, reason: parsed.reason });
         return;
       } catch (err) {
         lastError = err;

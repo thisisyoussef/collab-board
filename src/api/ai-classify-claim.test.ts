@@ -122,4 +122,22 @@ describe('classify-claim endpoint', () => {
       expect.objectContaining({ level: 'strong', reason: expect.any(String) }),
     );
   });
+
+  it('falls back to parsing plain-text responses when AI does not return JSON', async () => {
+    mockCreate.mockResolvedValue({
+      content: [{ type: 'text', text: 'I notice this claim looks strong because CCTV footage directly supports it.' }],
+    });
+
+    const req = makeReq();
+    const res = makeRes();
+    await handler(req, res);
+
+    expect(res._status).toBe(200);
+    expect(res._json).toEqual(
+      expect.objectContaining({
+        level: 'strong',
+        reason: expect.any(String),
+      }),
+    );
+  });
 });

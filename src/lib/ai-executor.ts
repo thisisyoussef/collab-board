@@ -105,7 +105,13 @@ function optionalNumberFromInput(input: Record<string, unknown>, key: string): n
 }
 
 function parseLitigationNodeRole(value: string | undefined): LitigationNodeRole | undefined {
-  if (value === 'claim' || value === 'evidence' || value === 'witness' || value === 'timeline_event') {
+  if (
+    value === 'claim' ||
+    value === 'evidence' ||
+    value === 'witness' ||
+    value === 'timeline_event' ||
+    value === 'contradiction'
+  ) {
     return value;
   }
   return undefined;

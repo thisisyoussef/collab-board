@@ -119,6 +119,44 @@ describe('ai-executor', () => {
     expect(connector?.relationType).toBe('supports');
   });
 
+  it('preserves contradiction node roles from AI createStickyNote actions', () => {
+    const previews: AIActionPreview[] = [
+      {
+        id: 'create-contradiction',
+        name: 'createStickyNote',
+        summary: '',
+        input: {
+          objectId: 'contradiction-1',
+          text: 'Witness statement conflicts with timestamp',
+          x: 300,
+          y: 180,
+          nodeRole: 'contradiction',
+        },
+      },
+    ];
+
+    const plan = buildAIActionPlanFromPreviews({
+      previews,
+      context: {
+        currentObjects: {},
+        actorUserId: 'user-contradiction',
+      },
+    });
+
+    const result = executeAIActionPlan({
+      plan,
+      currentObjects: {},
+      actorUserId: 'user-contradiction',
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.nextObjects['contradiction-1']?.nodeRole).toBe('contradiction');
+  });
+
   it('accepts createShape plans with missing dimensions by applying defaults', () => {
     const previews: AIActionPreview[] = [
       {

@@ -1216,6 +1216,42 @@ describe('AI Generate API Endpoint', () => {
       expect(toolNames).toContain('deleteObject');
       expect(toolNames).toContain('getBoardState');
     });
+
+    it('exposes litigation node and relation fields for AI tool planning', async () => {
+      mockCreate.mockResolvedValue({
+        content: [],
+        stop_reason: 'end_turn',
+      });
+
+      const handler = (await import('../../api/ai/generate')).default;
+      const req = createMockReq({
+        body: {
+          prompt: 'Add evidence and link it to the claim',
+          boardId: 'board-1',
+          boardState: {},
+        },
+      });
+      const res = createMockRes();
+
+      await handler(req as never, res as never);
+
+      const createCall = mockCreate.mock.calls[0][0];
+      const stickyTool = createCall.tools.find((tool: { name: string }) => tool.name === 'createStickyNote');
+      const connectorTool = createCall.tools.find((tool: { name: string }) => tool.name === 'createConnector');
+
+      expect(stickyTool?.input_schema?.properties?.nodeRole?.enum).toEqual([
+        'claim',
+        'evidence',
+        'witness',
+        'timeline_event',
+        'contradiction',
+      ]);
+      expect(connectorTool?.input_schema?.properties?.relationType?.enum).toEqual([
+        'supports',
+        'contradicts',
+        'depends_on',
+      ]);
+    });
   });
 
   describe('LangSmith Tracing Wiring', () => {
