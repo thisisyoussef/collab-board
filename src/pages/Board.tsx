@@ -5674,10 +5674,12 @@ export function Board() {
     setZoomPercent(Math.round(newScale * 100));
     scheduleViewportSave();
     setBoardRevision((value) => value + 1);
+    setHoveredClaimIndicator(null);
   }
 
   function handleStageDragEnd() {
     scheduleViewportSave();
+    setHoveredClaimIndicator(null);
   }
 
   function applyZoomFromCenter(nextScale: number) {
@@ -6488,32 +6490,56 @@ export function Board() {
                         opacity={0.82}
                         listening={false}
                       />
-                      <KonvaRectShape
+                      <KonvaGroup
                         x={badgeX}
                         y={badgeY}
-                        width={badgeWidth}
-                        height={badgeHeight}
-                        cornerRadius={badgeHeight / 2}
-                        fill="#ffffff"
-                        stroke={indicator.color}
-                        strokeWidth={1.5}
-                        shadowBlur={4}
-                        shadowOpacity={0.08}
-                        listening={false}
-                      />
-                      <KonvaTextShape
-                        x={badgeX}
-                        y={badgeY}
-                        width={badgeWidth}
-                        height={badgeHeight}
-                        text={indicator.levelLabel}
-                        fontSize={11}
-                        fontFamily={CONNECTOR_LABEL_FONT_FAMILY}
-                        fill={indicator.color}
-                        align="center"
-                        verticalAlign="middle"
-                        listening={false}
-                      />
+                        onMouseEnter={(e) => {
+                          const stage = e.target.getStage();
+                          if (!stage) return;
+                          const scale = stage.scaleX();
+                          const stagePos = stage.position();
+                          setHoveredClaimIndicator({
+                            id: indicator.id,
+                            screenX: badgeX * scale + stagePos.x,
+                            screenY: badgeY * scale + stagePos.y - 8,
+                            aiReason: indicator.aiReason,
+                            levelLabel: indicator.levelLabel,
+                            score: indicator.score,
+                            color: indicator.color,
+                            supportCount: indicator.supportCount,
+                            contradictionCount: indicator.contradictionCount,
+                            dependencyGapCount: indicator.dependencyGapCount,
+                          });
+                          stage.container().style.cursor = 'help';
+                        }}
+                        onMouseLeave={(e) => {
+                          setHoveredClaimIndicator(null);
+                          const stage = e.target.getStage();
+                          if (stage) stage.container().style.cursor = '';
+                        }}
+                      >
+                        <KonvaRectShape
+                          width={badgeWidth}
+                          height={badgeHeight}
+                          cornerRadius={badgeHeight / 2}
+                          fill="#ffffff"
+                          stroke={indicator.color}
+                          strokeWidth={1.5}
+                          shadowBlur={4}
+                          shadowOpacity={0.08}
+                        />
+                        <KonvaTextShape
+                          width={badgeWidth}
+                          height={badgeHeight}
+                          text={indicator.levelLabel}
+                          fontSize={11}
+                          fontFamily={CONNECTOR_LABEL_FONT_FAMILY}
+                          fill={indicator.color}
+                          align="center"
+                          verticalAlign="middle"
+                          listening={false}
+                        />
+                      </KonvaGroup>
                     </Fragment>
                   );
                 })}
@@ -6679,6 +6705,26 @@ export function Board() {
 
               <RemoteCursors cursors={remoteCursors} />
             </Stage>
+
+            {hoveredClaimIndicator && hoveredClaimIndicator.aiReason ? (
+              <div
+                className="claim-tooltip"
+                style={{
+                  left: hoveredClaimIndicator.screenX,
+                  top: hoveredClaimIndicator.screenY,
+                }}
+              >
+                <div className="claim-tooltip-header" style={{ color: hoveredClaimIndicator.color }}>
+                  {hoveredClaimIndicator.levelLabel} · Score {hoveredClaimIndicator.score}/100
+                </div>
+                <div className="claim-tooltip-stats">
+                  <span>S:{hoveredClaimIndicator.supportCount}</span>
+                  <span>C:{hoveredClaimIndicator.contradictionCount}</span>
+                  <span>D:{hoveredClaimIndicator.dependencyGapCount}</span>
+                </div>
+                <div className="claim-tooltip-reason">{hoveredClaimIndicator.aiReason}</div>
+              </div>
+            ) : null}
 
             {editingText && textEditorLayout ? (
               <textarea
