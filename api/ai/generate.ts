@@ -687,8 +687,9 @@ export function isLikelyComplexPlanPrompt(prompt: string): boolean {
   // ── Definite simple: single-object commands with an explicit target ──
   // Only classify as simple when the user explicitly names a single board
   // primitive AND uses a creation/manipulation verb with no elaboration.
+  // Allow optional adjectives (e.g. "a yellow sticky note", "a big rectangle").
   const singleObjectTarget =
-    /\b(a|one|1)\s+(sticky\s+note|rectangle|rect|circle|shape|frame|connector|line)\b/.test(lower);
+    /\b(a|one|1)\s+(\w+\s+)?(sticky\s+note|rectangle|rect|circle|shape|frame|connector|line)\b/.test(lower);
   const simpleVerb = /\b(add|create|make|draw|insert|move|resize|delete|remove|recolor|change\s+color)\b/.test(lower);
 
   // If the prompt is short, names exactly one primitive, and uses a simple
