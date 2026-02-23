@@ -191,6 +191,80 @@ describe('AI Intake-to-Board API', () => {
     expect(payload.draft.timeline.length).toBeGreaterThan(0);
   });
 
+  it('builds distinct link topology for each intake objective', async () => {
+    const handler = (await import('../../api/ai/intake-to-board')).default;
+    const baseBody = {
+      boardId: 'board-1',
+      intake: {
+        caseSummary: 'Complex homicide matter.',
+        claims: '- First-degree murder\n- Deliberate design',
+        witnesses:
+          '- Lou Christoff: I saw Lane with a knife\n- Lane King: I never had a knife\n- Jamie Kennedy: Jailhouse confession',
+        evidence:
+          '- Exhibit 1: Buy-sell agreement\n- Exhibit 2: Autopsy report\n- Exhibit 3: Restaurant diagram',
+        timeline:
+          '- Feb 27, 2023: Audit conflict escalates\n- Mar 11, 2023: Parking lot confrontation\n- Mar 25, 2023: Murder date',
+      },
+      preferences: {
+        includeClaims: true,
+        includeEvidence: true,
+        includeWitnesses: true,
+        includeTimeline: true,
+      },
+    };
+
+    const runForObjective = async (objective: 'board_overview' | 'chronology' | 'contradictions' | 'witness_prep') => {
+      const req = createMockReq({
+        body: {
+          ...baseBody,
+          preferences: {
+            ...baseBody.preferences,
+            objective,
+          },
+        },
+      });
+      const res = createMockRes();
+      await handler(req as never, res as never);
+      expect(res.status).toHaveBeenCalledWith(200);
+      return (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0].draft;
+    };
+
+    const chronologyDraft = await runForObjective('chronology');
+    const contradictionsDraft = await runForObjective('contradictions');
+    const witnessPrepDraft = await runForObjective('witness_prep');
+
+    const chronologyTimelineIds = new Set(chronologyDraft.timeline.map((entry: { id: string }) => entry.id));
+    expect(
+      chronologyDraft.links.some(
+        (link: { toId: string; relation: string }) =>
+          chronologyTimelineIds.has(link.toId) && link.relation === 'supports',
+      ),
+    ).toBe(true);
+
+    const contradictionsWitnessIds = new Set(
+      contradictionsDraft.witnesses.map((entry: { id: string }) => entry.id),
+    );
+    expect(
+      contradictionsDraft.links.some(
+        (link: { fromId: string; toId: string; relation: string }) =>
+          contradictionsWitnessIds.has(link.fromId) &&
+          contradictionsWitnessIds.has(link.toId) &&
+          link.fromId !== link.toId &&
+          link.relation === 'contradicts',
+      ),
+    ).toBe(true);
+
+    const witnessPrepWitnessIds = new Set(
+      witnessPrepDraft.witnesses.map((entry: { id: string }) => entry.id),
+    );
+    expect(
+      witnessPrepDraft.links.some(
+        (link: { toId: string; relation: string }) =>
+          witnessPrepWitnessIds.has(link.toId) && link.relation === 'supports',
+      ),
+    ).toBe(true);
+  });
+
   it('avoids synthetic upload-only claim fallback and de-duplicates repeated evidence lines', async () => {
     const handler = (await import('../../api/ai/intake-to-board')).default;
     const req = createMockReq({

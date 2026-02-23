@@ -884,39 +884,210 @@ function buildLinks(
     return [];
   }
 
+  const dedupeLinks = (links: LitigationDraftLink[]): LitigationDraftLink[] => {
+    const seen = new Set<string>();
+    const deduped: LitigationDraftLink[] = [];
+    links.forEach((link) => {
+      const key = `${link.fromId}::${link.toId}::${link.relation}`;
+      if (seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      deduped.push(link);
+    });
+    return deduped;
+  };
+
+  const buildOverviewLinks = (): LitigationDraftLink[] => {
+    const links: LitigationDraftLink[] = [];
+
+    draft.evidence.forEach((entry) => {
+      links.push({
+        fromId: entry.id,
+        toId: firstClaim.id,
+        relation: 'supports',
+        reason: 'Imported from evidence list',
+      });
+    });
+
+    draft.witnesses.forEach((entry) => {
+      links.push({
+        fromId: entry.id,
+        toId: firstClaim.id,
+        relation: objective === 'contradictions' ? 'contradicts' : 'supports',
+        reason:
+          objective === 'contradictions'
+            ? 'Witness contradiction review objective selected'
+            : 'Witness statement linked during intake parsing',
+      });
+    });
+
+    draft.timeline.forEach((entry) => {
+      links.push({
+        fromId: firstClaim.id,
+        toId: entry.id,
+        relation: 'depends_on',
+        reason: 'Timeline event dependency',
+      });
+    });
+
+    return links;
+  };
+
+  if (objective === 'chronology' && draft.timeline.length > 0) {
+    const links: LitigationDraftLink[] = [];
+
+    draft.timeline.forEach((entry, index) => {
+      links.push({
+        fromId: entry.id,
+        toId: firstClaim.id,
+        relation: 'supports',
+        reason: 'Chronology objective: timeline event supports case theory',
+      });
+
+      if (index > 0) {
+        const previous = draft.timeline[index - 1];
+        if (previous) {
+          links.push({
+            fromId: previous.id,
+            toId: entry.id,
+            relation: 'depends_on',
+            reason: 'Chronology objective: event sequence dependency',
+          });
+        }
+      }
+    });
+
+    draft.evidence.forEach((entry, index) => {
+      const timelineTarget = draft.timeline[index % draft.timeline.length];
+      if (!timelineTarget) {
+        return;
+      }
+      links.push({
+        fromId: entry.id,
+        toId: timelineTarget.id,
+        relation: 'supports',
+        reason: 'Chronology objective: exhibit tied to timeline event',
+      });
+    });
+
+    draft.witnesses.forEach((entry, index) => {
+      const timelineTarget = draft.timeline[index % draft.timeline.length];
+      if (!timelineTarget) {
+        return;
+      }
+      links.push({
+        fromId: entry.id,
+        toId: timelineTarget.id,
+        relation: 'supports',
+        reason: 'Chronology objective: testimony anchors event timing',
+      });
+    });
+
+    return dedupeLinks(links);
+  }
+
+  if (objective === 'contradictions') {
+    const links: LitigationDraftLink[] = [];
+
+    draft.evidence.forEach((entry) => {
+      links.push({
+        fromId: entry.id,
+        toId: firstClaim.id,
+        relation: 'supports',
+        reason: 'Contradiction objective: exhibit baseline for comparison',
+      });
+    });
+
+    draft.witnesses.forEach((entry) => {
+      links.push({
+        fromId: entry.id,
+        toId: firstClaim.id,
+        relation: 'contradicts',
+        reason: 'Contradiction objective: witness statement marked for conflict review',
+      });
+    });
+
+    for (let index = 0; index < draft.witnesses.length - 1 && index < 8; index += 1) {
+      const fromWitness = draft.witnesses[index];
+      const toWitness = draft.witnesses[index + 1];
+      if (!fromWitness || !toWitness) {
+        continue;
+      }
+      links.push({
+        fromId: fromWitness.id,
+        toId: toWitness.id,
+        relation: 'contradicts',
+        reason: 'Contradiction objective: potential witness-to-witness conflict',
+      });
+    }
+
+    draft.timeline.slice(0, 4).forEach((entry) => {
+      links.push({
+        fromId: firstClaim.id,
+        toId: entry.id,
+        relation: 'depends_on',
+        reason: 'Contradiction objective: event needed to test conflicting testimony',
+      });
+    });
+
+    return dedupeLinks(links);
+  }
+
+  if (objective === 'witness_prep' && draft.witnesses.length > 0) {
+    const links: LitigationDraftLink[] = [];
+    const witnesses = draft.witnesses;
+
+    witnesses.forEach((entry) => {
+      links.push({
+        fromId: entry.id,
+        toId: firstClaim.id,
+        relation: 'supports',
+        reason: 'Witness prep objective: testimony supporting core claim',
+      });
+    });
+
+    draft.evidence.forEach((entry, index) => {
+      const witnessTarget = witnesses[index % witnesses.length];
+      if (!witnessTarget) {
+        return;
+      }
+      links.push({
+        fromId: entry.id,
+        toId: witnessTarget.id,
+        relation: 'supports',
+        reason: 'Witness prep objective: exhibit assigned to witness packet',
+      });
+    });
+
+    draft.timeline.forEach((entry, index) => {
+      const witnessTarget = witnesses[index % witnesses.length];
+      if (!witnessTarget) {
+        return;
+      }
+      links.push({
+        fromId: entry.id,
+        toId: witnessTarget.id,
+        relation: 'depends_on',
+        reason: 'Witness prep objective: timeline checkpoint for examination',
+      });
+    });
+
+    return dedupeLinks(links);
+  }
+
+  if (objective === 'witness_prep') {
+    return dedupeLinks(buildOverviewLinks());
+  }
+
+  if (objective === 'chronology') {
+    return dedupeLinks(buildOverviewLinks());
+  }
+
   const links: LitigationDraftLink[] = [];
 
-  draft.evidence.forEach((entry) => {
-    links.push({
-      fromId: entry.id,
-      toId: firstClaim.id,
-      relation: 'supports',
-      reason: 'Imported from evidence list',
-    });
-  });
-
-  draft.witnesses.forEach((entry) => {
-    links.push({
-      fromId: entry.id,
-      toId: firstClaim.id,
-      relation: objective === 'contradictions' ? 'contradicts' : 'supports',
-      reason:
-        objective === 'contradictions'
-          ? 'Witness contradiction review objective selected'
-          : 'Witness statement linked during intake parsing',
-    });
-  });
-
-  draft.timeline.forEach((entry) => {
-    links.push({
-      fromId: firstClaim.id,
-      toId: entry.id,
-      relation: 'depends_on',
-      reason: 'Timeline event dependency',
-    });
-  });
-
-  return links;
+  links.push(...buildOverviewLinks());
+  return dedupeLinks(links);
 }
 
 function parseIntakeDraft(
