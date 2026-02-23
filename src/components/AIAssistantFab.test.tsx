@@ -104,4 +104,32 @@ describe('AIAssistantFab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Generate' }));
     expect(handlers.onSubmit).toHaveBeenCalledTimes(1);
   });
+
+  it('constrains panel height to stay within viewport bounds', () => {
+    const originalInnerHeight = window.innerHeight;
+    Object.defineProperty(window, 'innerHeight', {
+      configurable: true,
+      writable: true,
+      value: 740,
+    });
+
+    render(
+      <AIAssistantFab
+        state={baseState}
+        quickActions={[]}
+        quickActionsLoading={false}
+        quickActionsError={null}
+        {...handlers}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open AI assistant' }));
+    expect(screen.getByLabelText('AI assistant panel')).toHaveStyle({ maxHeight: '626px' });
+
+    Object.defineProperty(window, 'innerHeight', {
+      configurable: true,
+      writable: true,
+      value: originalInnerHeight,
+    });
+  });
 });

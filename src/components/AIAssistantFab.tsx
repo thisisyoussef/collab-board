@@ -1,5 +1,5 @@
 import type { FormEvent, KeyboardEvent } from 'react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { AIPanelState } from '../types/ai';
 
 interface AIAssistantFabProps {
@@ -19,6 +19,27 @@ interface AIAssistantFabProps {
   onQuickActionSelect: (prompt: string) => void;
 }
 
+const PANEL_TOP_GUTTER_PX = 24;
+const FAB_BOTTOM_OFFSET_DESKTOP_PX = 90;
+const FAB_BOTTOM_OFFSET_MOBILE_PX = 84;
+const PANEL_MIN_HEIGHT_PX = 360;
+
+function calculateViewportSafePanelHeight(): number {
+  if (typeof window === 'undefined') {
+    return 640;
+  }
+
+  const viewportHeight = window.innerHeight || 800;
+  const isCompactLayout =
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(max-width: 860px)').matches;
+  const reservedBottom = isCompactLayout
+    ? FAB_BOTTOM_OFFSET_MOBILE_PX
+    : FAB_BOTTOM_OFFSET_DESKTOP_PX;
+
+  return Math.max(PANEL_MIN_HEIGHT_PX, Math.floor(viewportHeight - reservedBottom - PANEL_TOP_GUTTER_PX));
+}
+
 export function AIAssistantFab({
   state,
   quickActions,
@@ -36,6 +57,7 @@ export function AIAssistantFab({
   onQuickActionSelect,
 }: AIAssistantFabProps) {
   const [open, setOpen] = useState(false);
+  const [panelMaxHeight, setPanelMaxHeight] = useState(() => calculateViewportSafePanelHeight());
   const conversation = state.conversation || [];
   const latestAssistantMessage = [...conversation]
     .reverse()
@@ -55,6 +77,22 @@ export function AIAssistantFab({
   const handleClose = () => {
     setOpen(false);
   };
+
+  useEffect(() => {
+    if (!open) {
+      return undefined;
+    }
+
+    const updatePanelMaxHeight = () => {
+      setPanelMaxHeight(calculateViewportSafePanelHeight());
+    };
+
+    updatePanelMaxHeight();
+    window.addEventListener('resize', updatePanelMaxHeight);
+    return () => {
+      window.removeEventListener('resize', updatePanelMaxHeight);
+    };
+  }, [open]);
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -82,7 +120,11 @@ export function AIAssistantFab({
           AI
         </button>
       ) : (
-        <section className="ai-fab-panel" aria-label="AI assistant panel">
+        <section
+          className="ai-fab-panel"
+          aria-label="AI assistant panel"
+          style={{ maxHeight: `${panelMaxHeight}px` }}
+        >
           <header className="ai-fab-header">
             <div>
               <h3>AI Case Assistant</h3>
