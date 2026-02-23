@@ -156,4 +156,104 @@ describe('buildBoardActionsFromLitigationDraft', () => {
     expect(summaryStickyTexts.some((text) => text.includes('more witnesses'))).toBe(true);
     expect(summaryStickyTexts.some((text) => text.includes('more timeline'))).toBe(true);
   });
+
+  it('renders compact card text in summary mode and full detail in expanded mode', () => {
+    const draft = {
+      claims: [
+        {
+          id: 'claim-1',
+          title: 'First-degree murder',
+          summary: 'Deliberate design with premeditation indicators',
+        },
+      ],
+      evidence: [
+        {
+          id: 'evidence-1',
+          label: 'Autopsy report',
+          citation: 'Exhibit 4',
+        },
+      ],
+      witnesses: [
+        {
+          id: 'witness-1',
+          name: 'Lou Christoff',
+          quote: 'I saw Lane with a knife',
+          citation: 'Dep. 44:12-45:3',
+        },
+      ],
+      timeline: [
+        {
+          id: 'timeline-1',
+          dateLabel: 'March 25, 2023',
+          event: 'Incident date at restaurant parking lot',
+        },
+      ],
+      links: [
+        { fromId: 'evidence-1', toId: 'claim-1', relation: 'supports' as const },
+        { fromId: 'witness-1', toId: 'claim-1', relation: 'supports' as const },
+      ],
+    };
+
+    const summary = buildBoardActionsFromLitigationDraft(draft, { layoutMode: 'summary' });
+    const expanded = buildBoardActionsFromLitigationDraft(draft, { layoutMode: 'expanded' });
+
+    const summaryEvidence = summary.actions.find(
+      (action) => action.name === 'createStickyNote' && action.input.objectId === 'evidence-1',
+    );
+    const expandedEvidence = expanded.actions.find(
+      (action) => action.name === 'createStickyNote' && action.input.objectId === 'evidence-1',
+    );
+    expect(String(summaryEvidence?.input.text)).not.toContain('Exhibit 4');
+    expect(String(expandedEvidence?.input.text)).toContain('Exhibit 4');
+
+    const summaryWitness = summary.actions.find(
+      (action) => action.name === 'createStickyNote' && action.input.objectId === 'witness-1',
+    );
+    const expandedWitness = expanded.actions.find(
+      (action) => action.name === 'createStickyNote' && action.input.objectId === 'witness-1',
+    );
+    expect(String(summaryWitness?.input.text)).toBe('Lou Christoff');
+    expect(String(expandedWitness?.input.text)).toContain('I saw Lane with a knife');
+  });
+
+  it('reorders lane positions by objective so focus changes are visually obvious', () => {
+    const chronology = buildBoardActionsFromLitigationDraft(sampleDraft, {
+      objective: 'chronology',
+      layoutMode: 'summary',
+    });
+    const witnessPrep = buildBoardActionsFromLitigationDraft(sampleDraft, {
+      objective: 'witness_prep',
+      layoutMode: 'summary',
+    });
+    const contradictions = buildBoardActionsFromLitigationDraft(sampleDraft, {
+      objective: 'contradictions',
+      layoutMode: 'summary',
+    });
+
+    const chronologyTimelineFrame = chronology.actions.find(
+      (action) => action.name === 'createFrame' && action.input.objectId === 'intake-frame-timeline',
+    );
+    const witnessPrepWitnessFrame = witnessPrep.actions.find(
+      (action) => action.name === 'createFrame' && action.input.objectId === 'intake-frame-witnesses',
+    );
+    const contradictionsWitnessFrame = contradictions.actions.find(
+      (action) => action.name === 'createFrame' && action.input.objectId === 'intake-frame-witnesses',
+    );
+    const contradictionsClaimsFrame = contradictions.actions.find(
+      (action) => action.name === 'createFrame' && action.input.objectId === 'intake-frame-claims',
+    );
+
+    expect(chronologyTimelineFrame?.input.x).toBe(80);
+    expect(chronologyTimelineFrame?.input.y).toBe(80);
+
+    expect(witnessPrepWitnessFrame?.input.x).toBe(80);
+    expect(witnessPrepWitnessFrame?.input.y).toBe(80);
+
+    expect(contradictionsWitnessFrame?.input.x).toBe(80);
+    expect(contradictionsWitnessFrame?.input.y).toBe(80);
+    expect(contradictionsClaimsFrame?.input.x).toBeGreaterThan(
+      Number(contradictionsWitnessFrame?.input.x ?? 0),
+    );
+    expect(contradictionsClaimsFrame?.input.y).toBe(80);
+  });
 });

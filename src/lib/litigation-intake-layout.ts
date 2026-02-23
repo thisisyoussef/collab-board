@@ -17,6 +17,10 @@ interface BuildBoardActionsFromDraftOptions {
   layoutMode?: LitigationLayoutMode;
 }
 
+interface CardContentOptions {
+  compact: boolean;
+}
+
 type LaneKey = 'claims' | 'evidence' | 'witnesses' | 'timeline';
 
 interface LanePlacement {
@@ -32,6 +36,8 @@ interface LaneCardLayout {
   cardWidth: number;
   frameHeight: number;
 }
+
+type ObjectiveLaneOrder = [LaneKey, LaneKey, LaneKey, LaneKey];
 
 const LANE_META: Record<
   LaneKey,
@@ -60,6 +66,13 @@ const BOARD_LAYOUT = {
   showConnectorLabelsMaxLinks: 10,
   showConnectorLabelsMaxNodes: 16,
 } as const;
+
+const OBJECTIVE_LANE_ORDERS: Record<LitigationIntakeObjective, ObjectiveLaneOrder> = {
+  board_overview: ['claims', 'evidence', 'witnesses', 'timeline'],
+  chronology: ['timeline', 'claims', 'evidence', 'witnesses'],
+  contradictions: ['witnesses', 'claims', 'evidence', 'timeline'],
+  witness_prep: ['witnesses', 'evidence', 'claims', 'timeline'],
+};
 
 function shortenLine(line: string, limit = 96): string {
   const cleaned = line.trim().replace(/\s+/g, ' ');
@@ -111,38 +124,47 @@ function createLaneCardLayout(itemCount: number): LaneCardLayout {
   };
 }
 
-function createLanePlacements(layouts: Record<LaneKey, LaneCardLayout>): Record<LaneKey, LanePlacement> {
-  const topHeight = Math.max(layouts.claims.frameHeight, layouts.evidence.frameHeight);
-  const bottomHeight = Math.max(layouts.witnesses.frameHeight, layouts.timeline.frameHeight);
+function createLanePlacements(
+  layouts: Record<LaneKey, LaneCardLayout>,
+  objective: LitigationIntakeObjective,
+): Record<LaneKey, LanePlacement> {
+  const [topLeftLane, topRightLane, bottomLeftLane, bottomRightLane] =
+    OBJECTIVE_LANE_ORDERS[objective];
+  const topHeight = Math.max(layouts[topLeftLane].frameHeight, layouts[topRightLane].frameHeight);
+  const bottomHeight = Math.max(
+    layouts[bottomLeftLane].frameHeight,
+    layouts[bottomRightLane].frameHeight,
+  );
   const rightX = BOARD_LAYOUT.startX + BOARD_LAYOUT.laneWidth + BOARD_LAYOUT.laneGapX;
   const bottomY = BOARD_LAYOUT.startY + topHeight + BOARD_LAYOUT.laneGapY;
 
-  return {
-    claims: {
-      x: BOARD_LAYOUT.startX,
-      y: BOARD_LAYOUT.startY,
-      width: BOARD_LAYOUT.laneWidth,
-      height: topHeight,
-    },
-    evidence: {
-      x: rightX,
-      y: BOARD_LAYOUT.startY,
-      width: BOARD_LAYOUT.laneWidth,
-      height: topHeight,
-    },
-    witnesses: {
-      x: BOARD_LAYOUT.startX,
-      y: bottomY,
-      width: BOARD_LAYOUT.laneWidth,
-      height: bottomHeight,
-    },
-    timeline: {
-      x: rightX,
-      y: bottomY,
-      width: BOARD_LAYOUT.laneWidth,
-      height: bottomHeight,
-    },
+  const placements: Record<LaneKey, LanePlacement> = {
+    claims: { x: BOARD_LAYOUT.startX, y: BOARD_LAYOUT.startY, width: BOARD_LAYOUT.laneWidth, height: topHeight },
+    evidence: { x: rightX, y: BOARD_LAYOUT.startY, width: BOARD_LAYOUT.laneWidth, height: topHeight },
+    witnesses: { x: BOARD_LAYOUT.startX, y: bottomY, width: BOARD_LAYOUT.laneWidth, height: bottomHeight },
+    timeline: { x: rightX, y: bottomY, width: BOARD_LAYOUT.laneWidth, height: bottomHeight },
   };
+
+  const assignPlacement = (
+    lane: LaneKey,
+    x: number,
+    y: number,
+    rowHeight: number,
+  ): void => {
+    placements[lane] = {
+      x,
+      y,
+      width: BOARD_LAYOUT.laneWidth,
+      height: rowHeight,
+    };
+  };
+
+  assignPlacement(topLeftLane, BOARD_LAYOUT.startX, BOARD_LAYOUT.startY, topHeight);
+  assignPlacement(topRightLane, rightX, BOARD_LAYOUT.startY, topHeight);
+  assignPlacement(bottomLeftLane, BOARD_LAYOUT.startX, bottomY, bottomHeight);
+  assignPlacement(bottomRightLane, rightX, bottomY, bottomHeight);
+
+  return placements;
 }
 
 function laneItemPosition(
@@ -262,14 +284,60 @@ function createConnectorAction(
   };
 }
 
+function buildClaimCardText(
+  claim: LitigationIntakeDraft['claims'][number],
+  options: CardContentOptions,
+): string {
+  if (options.compact || !claim.summary) {
+    return claim.title;
+  }
+  return `${claim.title}\n${claim.summary}`;
+}
+
+function buildEvidenceCardText(
+  evidence: LitigationIntakeDraft['evidence'][number],
+  options: CardContentOptions,
+): string {
+  if (options.compact || !evidence.citation) {
+    return evidence.label;
+  }
+  return `${evidence.label}\n${evidence.citation}`;
+}
+
+function buildWitnessCardText(
+  witness: LitigationIntakeDraft['witnesses'][number],
+  options: CardContentOptions,
+): string {
+  if (options.compact) {
+    return witness.name;
+  }
+  const quote = witness.quote ? `\n"${witness.quote}"` : '';
+  const citation = witness.citation ? `\n${witness.citation}` : '';
+  return `${witness.name}${quote}${citation}`;
+}
+
+function buildTimelineCardText(
+  timelineEvent: LitigationIntakeDraft['timeline'][number],
+  options: CardContentOptions,
+): string {
+  if (options.compact) {
+    return timelineEvent.dateLabel;
+  }
+  return `${timelineEvent.dateLabel}\n${timelineEvent.event}`;
+}
+
 export function buildBoardActionsFromLitigationDraft(
   draft: LitigationIntakeDraft,
   options: BuildBoardActionsFromDraftOptions = {},
 ): BuildBoardActionsFromDraftResult {
+  const objective = options.objective || 'board_overview';
   const layoutMode = options.layoutMode || 'summary';
+  const cardContentOptions: CardContentOptions = {
+    compact: layoutMode === 'summary',
+  };
   const layoutDraft = condenseLitigationDraftForLayout(draft, {
     mode: layoutMode,
-    objective: options.objective,
+    objective,
   });
   const usedIds = new Set<string>(options.existingObjectIds || []);
   const actions: AIActionPreview[] = [];
@@ -299,7 +367,7 @@ export function buildBoardActionsFromLitigationDraft(
     witnesses: createLaneCardLayout(layoutDraft.witnesses.length),
     timeline: createLaneCardLayout(layoutDraft.timeline.length),
   };
-  const lanePlacements = createLanePlacements(laneLayouts);
+  const lanePlacements = createLanePlacements(laneLayouts, objective);
 
   actions.push(
     createFrameAction(
@@ -345,7 +413,7 @@ export function buildBoardActionsFromLitigationDraft(
     actions.push(
       createStickyAction(
         objectId,
-        claim.summary ? `${claim.title}\n${claim.summary}` : claim.title,
+        buildClaimCardText(claim, cardContentOptions),
         position.x,
         position.y,
         LANE_META.claims.color,
@@ -359,12 +427,11 @@ export function buildBoardActionsFromLitigationDraft(
   layoutDraft.evidence.forEach((evidence, index) => {
     const objectId = ensureUniqueId(evidence.id || `evidence-${index + 1}`, usedIds);
     idMap.set(evidence.id, objectId);
-    const text = evidence.citation ? `${evidence.label}\n${evidence.citation}` : evidence.label;
     const position = laneItemPosition(lanePlacements.evidence, laneLayouts.evidence, index);
     actions.push(
       createStickyAction(
         objectId,
-        text,
+        buildEvidenceCardText(evidence, cardContentOptions),
         position.x,
         position.y,
         LANE_META.evidence.color,
@@ -378,13 +445,11 @@ export function buildBoardActionsFromLitigationDraft(
   layoutDraft.witnesses.forEach((witness, index) => {
     const objectId = ensureUniqueId(witness.id || `witness-${index + 1}`, usedIds);
     idMap.set(witness.id, objectId);
-    const quote = witness.quote ? `\n"${witness.quote}"` : '';
-    const citation = witness.citation ? `\n${witness.citation}` : '';
     const position = laneItemPosition(lanePlacements.witnesses, laneLayouts.witnesses, index);
     actions.push(
       createStickyAction(
         objectId,
-        `${witness.name}${quote}${citation}`,
+        buildWitnessCardText(witness, cardContentOptions),
         position.x,
         position.y,
         LANE_META.witnesses.color,
@@ -402,7 +467,7 @@ export function buildBoardActionsFromLitigationDraft(
     actions.push(
       createStickyAction(
         objectId,
-        `${timelineEvent.dateLabel}\n${timelineEvent.event}`,
+        buildTimelineCardText(timelineEvent, cardContentOptions),
         position.x,
         position.y,
         LANE_META.timeline.color,
