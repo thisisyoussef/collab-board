@@ -174,7 +174,6 @@ function createAggregateEvidenceNode(
   evidence.push({
     id,
     label: `+${count} more evidence`,
-    citation: `Summary mode collapsed ${pluralize(count, 'linked exhibit')}.`,
   });
   return id;
 }
@@ -189,7 +188,6 @@ function createAggregateWitnessNode(
   witnesses.push({
     id,
     name: `+${count} more witnesses`,
-    quote: `Summary mode collapsed ${pluralize(count, 'witness statement')}.`,
   });
   return id;
 }
@@ -203,8 +201,8 @@ function createAggregateTimelineNode(
   const id = ensureUniqueId(`aggregate-timeline-${claimId}`, usedNodeIds);
   timeline.push({
     id,
-    dateLabel: 'Additional timeline events',
-    event: `+${count} more timeline dependencies`,
+    dateLabel: `+${count} more timeline events`,
+    event: '',
   });
   return id;
 }
@@ -219,7 +217,6 @@ function createAggregateClaimNode(
   claims.push({
     id,
     title: `+${count} more linked claims`,
-    summary: 'Summary mode collapsed additional claim relationships.',
   });
   return id;
 }

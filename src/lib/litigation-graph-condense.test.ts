@@ -53,9 +53,15 @@ describe('condenseLitigationDraftForLayout', () => {
 
     const aggregateEvidence = condensed.evidence.find((entry) => entry.id.startsWith('aggregate-evidence-'));
     expect(aggregateEvidence?.label).toContain('more evidence');
+    expect(aggregateEvidence?.citation).toBeUndefined();
 
     const aggregateWitness = condensed.witnesses.find((entry) => entry.id.startsWith('aggregate-witness-'));
     expect(aggregateWitness?.name).toContain('more witnesses');
+    expect(aggregateWitness?.quote).toBeUndefined();
+
+    const aggregateTimeline = condensed.timeline.find((entry) => entry.id.startsWith('aggregate-timeline-'));
+    expect(aggregateTimeline?.dateLabel).toContain('more timeline');
+    expect(aggregateTimeline?.event).toBe('');
   });
 
   it('keeps expanded mode near-source fidelity while de-duplicating links', () => {

@@ -363,4 +363,53 @@ describe('AI Intake-to-Board API', () => {
     expect(payload.message).toContain('low-confidence text extraction');
     expect(payload.message).toContain('OCR-processed');
   });
+
+  it('filters exhibit heading noise and legal boilerplate timeline snippets from document extraction', async () => {
+    const handler = (await import('../../api/ai/intake-to-board')).default;
+    const req = createMockReq({
+      body: {
+        boardId: 'board-1',
+        intake: {
+          caseSummary: '',
+          claims: '',
+          witnesses: '',
+          evidence: '',
+          timeline: '',
+        },
+        documents: [
+          {
+            name: 'case-outline.txt',
+            excerpt: '',
+            content:
+              'Exhibit Numbers: and Title/Descriptions\n' +
+              'Exhibit 12: Cash Register Tape\n' +
+              'March 25, 2023, in Fondren County, State of Mississippi, LANE KING did, commit the crime of murder by stabbing.\n' +
+              'March 11, 2023: Saul and Errol argue in the parking lot at 6pm.',
+          },
+        ],
+        preferences: {
+          objective: 'board_overview',
+          includeClaims: true,
+          includeEvidence: true,
+          includeWitnesses: true,
+          includeTimeline: true,
+        },
+      },
+    });
+    const res = createMockRes();
+
+    await handler(req as never, res as never);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const evidenceLabels = payload.draft.evidence.map((entry: { label: string }) => entry.label);
+    expect(evidenceLabels.some((label: string) => /exhibit numbers/i.test(label))).toBe(false);
+    expect(evidenceLabels.some((label: string) => /cash register tape/i.test(label))).toBe(true);
+
+    const timelineEvents = payload.draft.timeline.map(
+      (entry: { dateLabel: string; event: string }) => `${entry.dateLabel} ${entry.event}`.toLowerCase(),
+    );
+    expect(timelineEvents.some((event: string) => event.includes('did, commit the'))).toBe(false);
+    expect(timelineEvents.some((event: string) => event.includes('state of mississippi'))).toBe(false);
+  });
 });

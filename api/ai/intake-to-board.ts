@@ -86,6 +86,8 @@ const MAX_LIST_ITEMS = 24;
 const MAX_DOCUMENTS = 20;
 const MAX_DOCUMENT_TEXT_LENGTH = 6_000;
 const MAX_INLINE_BINARY_BYTES = 3_000_000;
+const MONTH_DATE_PATTERN_TEXT =
+  '\\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t|tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\\.?\\s+\\d{1,2}(?:,\\s*\\d{4})?';
 const DEFAULT_PREFERENCES: LitigationIntakePreferences = {
   objective: 'board_overview',
   includeClaims: true,
@@ -181,12 +183,93 @@ function cleanListLine(rawLine: string): string {
     .trim();
 }
 
+function isHeadingNoiseLine(value: string): boolean {
+  const normalized = value
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[:;]+$/g, '')
+    .trim();
+
+  if (!normalized) {
+    return true;
+  }
+
+  if (/^exhibit numbers?(?:\s+and\s+title\/descriptions?)?$/.test(normalized)) {
+    return true;
+  }
+
+  if (/^title\/descriptions?$/.test(normalized)) {
+    return true;
+  }
+
+  if (
+    /^(claims?|evidence(?:\/exhibits?)?|exhibits?|witness(?:es| statements?)?|timeline|chronology|case summary|summary|overview)$/.test(
+      normalized,
+    )
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function shouldStartNewListEntry(rawLine: string, cleanedLine: string, previousLine: string): boolean {
+  if (/^[-*•]\s+/.test(rawLine) || /^\d+[).]\s+/.test(rawLine)) {
+    return true;
+  }
+
+  if (
+    /^(?:claims?|evidence(?:\/exhibits?)?|exhibits?|witness(?:es| statements?)?|timeline|chronology|case summary|summary|overview)\s*:/i.test(
+      rawLine,
+    )
+  ) {
+    return true;
+  }
+
+  if (new RegExp(`^${MONTH_DATE_PATTERN_TEXT}`, 'i').test(cleanedLine)) {
+    return true;
+  }
+
+  if (/^exhibit\s+/i.test(cleanedLine)) {
+    return true;
+  }
+
+  if (/[.!?;:]$/.test(previousLine) || previousLine.length >= 180) {
+    return true;
+  }
+
+  return false;
+}
+
 function parseList(value: string): string[] {
-  return value
+  const rawLines = value
     .split(/\r?\n/)
-    .map((line) => cleanListLine(line))
-    .filter((line) => line.length > 0)
-    .slice(0, MAX_LIST_ITEMS);
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const merged: string[] = [];
+  rawLines.forEach((rawLine) => {
+    const cleanedLine = cleanListLine(rawLine);
+    if (!cleanedLine || isHeadingNoiseLine(cleanedLine)) {
+      return;
+    }
+
+    if (merged.length === 0) {
+      merged.push(cleanedLine);
+      return;
+    }
+
+    const lastIndex = merged.length - 1;
+    const previousLine = merged[lastIndex] || '';
+    if (shouldStartNewListEntry(rawLine, cleanedLine, previousLine)) {
+      merged.push(cleanedLine);
+      return;
+    }
+
+    merged[lastIndex] = `${previousLine} ${cleanedLine}`.replace(/\s+/g, ' ').trim();
+  });
+
+  return merged.slice(0, MAX_LIST_ITEMS);
 }
 
 function dedupeNormalizedLines(lines: string[]): string[] {
@@ -238,6 +321,49 @@ function splitCitation(value: string): { text: string; citation?: string } {
   };
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function isLikelyExhibitId(value: string): boolean {
+  const normalized = value.trim().toUpperCase();
+  if (!normalized) {
+    return false;
+  }
+
+  const compact = normalized.replace(/[^A-Z0-9]/g, '');
+  if (!compact) {
+    return false;
+  }
+
+  return (
+    /^\d{1,4}[A-Z]?$/.test(compact) ||
+    /^[A-Z]{1,3}\d{0,2}$/.test(compact) ||
+    /^[A-Z]\d{1,4}$/.test(compact)
+  );
+}
+
+function isLowSignalTimelineSnippet(snippet: string): boolean {
+  const normalized = snippet.toLowerCase().replace(/\s+/g, ' ').trim();
+  if (!normalized || normalized.length < 12) {
+    return true;
+  }
+
+  if (/\bdid,\s*commit\b/.test(normalized)) {
+    return true;
+  }
+
+  if (/\bstate of [a-z ]+\b/.test(normalized) && /\bcounty\b/.test(normalized)) {
+    return true;
+  }
+
+  if (/\b(circuit court|grand jury|indictment|cause no|charged with)\b/.test(normalized)) {
+    return true;
+  }
+
+  return false;
+}
+
 function buildClaims(input: LitigationIntakeInput, usedIds: Set<string>): LitigationDraftClaim[] {
   const claimLines = dedupeNormalizedLines(parseList(input.claims));
   const caseSummary = input.caseSummary.trim();
@@ -272,6 +398,9 @@ function buildEvidence(input: LitigationIntakeInput, usedIds: Set<string>): Liti
 
   lines.forEach((line, index) => {
     const parsed = splitCitation(line);
+    if (isHeadingNoiseLine(parsed.text)) {
+      return;
+    }
     const signature = `${parsed.text.toLowerCase()}::${(parsed.citation || '').toLowerCase()}`;
     if (seen.has(signature)) {
       return;
@@ -310,34 +439,51 @@ function buildWitnesses(input: LitigationIntakeInput, usedIds: Set<string>): Lit
   });
 }
 
-function parseTimelineLine(line: string): { dateLabel: string; event: string } {
+function parseTimelineLine(line: string): { dateLabel: string; event: string } | null {
   const split = splitTitleAndDetails(line);
+  const dateLabel = split.detail ? split.title.slice(0, 80) : 'Event';
+  const rawEvent = split.detail ? split.detail : split.title;
+  const cleanedEvent = rawEvent
+    .replace(new RegExp(`^${escapeRegExp(dateLabel)}\\s*[:\\-–]?\\s*`, 'i'), '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 220);
+
+  if (!cleanedEvent || isLowSignalTimelineSnippet(cleanedEvent)) {
+    return null;
+  }
+
   if (split.detail) {
     return {
-      dateLabel: split.title.slice(0, 80),
-      event: split.detail.slice(0, 220),
+      dateLabel,
+      event: cleanedEvent,
     };
   }
 
   return {
-    dateLabel: `Event`,
-    event: split.title.slice(0, 220),
+    dateLabel: 'Event',
+    event: cleanedEvent,
   };
 }
 
 function buildTimeline(input: LitigationIntakeInput, usedIds: Set<string>): LitigationDraftTimelineEvent[] {
-  return parseList(input.timeline).map((line, index) => {
+  const timeline: LitigationDraftTimelineEvent[] = [];
+  parseList(input.timeline).forEach((line, index) => {
     const parsed = parseTimelineLine(line);
+    if (!parsed) {
+      return;
+    }
     const id = ensureUniqueId(
       `timeline-${sanitizeIdPart(`${parsed.dateLabel}-${index + 1}`, 'timeline')}`,
       usedIds,
     );
-    return {
+    timeline.push({
       id,
       dateLabel: parsed.dateLabel,
       event: parsed.event,
-    };
+    });
   });
+  return timeline;
 }
 
 function buildFallbackClaimFromEvidence(
@@ -564,7 +710,7 @@ function extractEvidenceFromNarrativeText(text: string): string[] {
   for (const match of text.matchAll(/exhibit[s]?\s+([a-z0-9-]{1,8})\s*(?:is|:|-)?\s*([^\n.]{0,200})/gi)) {
     const exhibitId = cleanListLine(match[1] || '');
     const description = cleanListLine(match[2] || '');
-    if (!exhibitId) {
+    if (!exhibitId || !isLikelyExhibitId(exhibitId)) {
       continue;
     }
     evidence.push(description ? `Exhibit ${exhibitId}: ${description}` : `Exhibit ${exhibitId}`);
@@ -596,23 +742,35 @@ function extractWitnessesFromNarrativeText(text: string): string[] {
 
 function extractTimelineFromNarrativeText(text: string): string[] {
   const timeline: string[] = [];
-  const datePattern =
-    /\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t|tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+\d{1,2}(?:,\s*\d{4})?/gi;
+  const datePattern = new RegExp(MONTH_DATE_PATTERN_TEXT, 'gi');
+  const sectionMatch = text.match(
+    /(?:timeline|chronology|sequence of events)[\s\S]{0,3200}/i,
+  );
+  const candidateText = sectionMatch ? sectionMatch[0] : text;
 
-  for (const match of text.matchAll(datePattern)) {
+  for (const match of candidateText.matchAll(datePattern)) {
     if (!match.index && match.index !== 0) {
       continue;
     }
     const dateLabel = match[0];
-    const snippet = text
+    const snippetRaw = candidateText
       .slice(match.index, match.index + 180)
-      .split(/[.\n]/)[0]
+      .split(/\r?\n/)[0]
+      ?.split(/[.;]/)[0]
       ?.replace(/\s+/g, ' ')
       .trim();
-    if (!dateLabel || !snippet) {
+    if (!dateLabel || !snippetRaw) {
       continue;
     }
-    timeline.push(`${dateLabel}: ${snippet}`);
+
+    const event = snippetRaw
+      .replace(new RegExp(`^${escapeRegExp(dateLabel)}\\s*[:\\-–]?\\s*`, 'i'), '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!event || isLowSignalTimelineSnippet(event)) {
+      continue;
+    }
+    timeline.push(`${dateLabel}: ${event}`);
   }
 
   return dedupeNormalizedLines(timeline).slice(0, 10);
