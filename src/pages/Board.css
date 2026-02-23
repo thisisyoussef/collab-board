@@ -520,6 +520,30 @@
   line-height: 1.35;
 }
 
+.claim-strength-item.level-moderate {
+  border-left-color: #b9811b;
+}
+
+.claim-strength-level.is-moderate {
+  background: #fdf0d5;
+  color: #b9811b;
+  border: 1px solid #b9811b;
+}
+
+.claim-strength-ai-suggestion {
+  font-size: 0.7rem;
+  color: #888;
+  font-style: italic;
+  margin-top: 0.15rem;
+}
+
+.claim-strength-ai-reason {
+  font-size: 0.7rem;
+  color: #666;
+  margin-top: 0.25rem;
+  line-height: 1.3;
+}
+
 .ai-panel-header {
   display: flex;
   align-items: center;
