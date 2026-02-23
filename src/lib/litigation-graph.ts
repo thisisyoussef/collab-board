@@ -1,5 +1,6 @@
 import type {
   BoardObject,
+  ClaimStrengthLevel,
   LitigationConnectorRelation,
   LitigationNodeRole,
 } from '../types/board';
@@ -74,6 +75,11 @@ export interface ClaimStrengthResult {
   contradictionCount: number;
   dependencyGapCount: number;
   reasons: string[];
+  aiStrengthLevel?: ClaimStrengthLevel;
+  aiStrengthReason?: string;
+  manualStrengthOverride?: ClaimStrengthLevel;
+  effectiveLevel: ClaimStrengthLevel;
+  isOverridden: boolean;
 }
 
 export function extractLitigationGraph(objects: Iterable<BoardObject>): LitigationGraphData {
@@ -176,6 +182,20 @@ export function evaluateClaimStrength(objects: Iterable<BoardObject>): ClaimStre
       reasons.push('All mapped dependencies resolve to tagged nodes.');
     }
 
+    const obj = objectsById.get(claimId);
+    const aiLevel = obj?.aiStrengthLevel;
+    const aiReason = obj?.aiStrengthReason;
+    const manualOverride = obj?.manualStrengthOverride;
+
+    // Map deterministic 'medium' to ClaimStrengthLevel 'moderate'
+    const deterministicLevel: ClaimStrengthLevel =
+      level === 'medium' ? 'moderate' : level;
+
+    // Priority: manual > AI > deterministic
+    const effectiveLevel: ClaimStrengthLevel =
+      manualOverride || aiLevel || deterministicLevel;
+    const isOverridden = !!manualOverride;
+
     return {
       claimId,
       claimLabel: resolveClaimLabel(objectsById.get(claimId), claimId),
@@ -185,6 +205,11 @@ export function evaluateClaimStrength(objects: Iterable<BoardObject>): ClaimStre
       contradictionCount,
       dependencyGapCount: unresolvedDependencyCount,
       reasons,
+      aiStrengthLevel: aiLevel,
+      aiStrengthReason: aiReason,
+      manualStrengthOverride: manualOverride,
+      effectiveLevel,
+      isOverridden,
     };
   });
 }

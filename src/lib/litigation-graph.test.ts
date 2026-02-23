@@ -91,6 +91,8 @@ describe('litigation-graph', () => {
       dependencyGapCount: 0,
       score: 58,
       level: 'medium',
+      effectiveLevel: 'moderate',
+      isOverridden: false,
     });
     expect(results[1]).toMatchObject({
       claimId: 'claim-b',
@@ -99,6 +101,8 @@ describe('litigation-graph', () => {
       dependencyGapCount: 1,
       score: 35,
       level: 'weak',
+      effectiveLevel: 'weak',
+      isOverridden: false,
     });
   });
 
@@ -140,6 +144,8 @@ describe('litigation-graph', () => {
       dependencyGapCount: 4,
       score: 24,
       level: 'weak',
+      effectiveLevel: 'weak',
+      isOverridden: false,
     });
   });
 });

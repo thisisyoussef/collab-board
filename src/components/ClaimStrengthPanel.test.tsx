@@ -25,6 +25,8 @@ describe('ClaimStrengthPanel', () => {
             contradictionCount: 0,
             dependencyGapCount: 0,
             reasons: ['3 supporting links found.'],
+            effectiveLevel: 'strong',
+            isOverridden: false,
           },
         ]}
         onFocusClaim={onFocusClaim}
