@@ -11,6 +11,14 @@ const baseState: AIPanelState = {
   error: null,
   message: null,
   actions: [],
+  conversation: [
+    {
+      id: 'assistant-welcome',
+      role: 'assistant',
+      text: 'I can help map claims, evidence, witnesses, and chronology.',
+      createdAt: 1,
+    },
+  ],
 };
 
 describe('AICommandCenter', () => {
@@ -28,13 +36,14 @@ describe('AICommandCenter', () => {
     vi.clearAllMocks();
   });
 
-  it('renders prompt input, submit button, and auto mode status', () => {
+  it('renders chat UI with prompt input and generate action', () => {
     render(<AICommandCenter state={baseState} {...handlers} />);
 
-    expect(screen.getByText('AI Command Center')).toBeInTheDocument();
-    expect(screen.getByLabelText('AI prompt')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Generate Plan' })).toBeInTheDocument();
-    expect(screen.getByText('Auto apply')).toBeInTheDocument();
+    expect(screen.getByText('AI Case Assistant')).toBeInTheDocument();
+    expect(screen.getByLabelText('Case AI prompt')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Generate' })).toBeInTheDocument();
+    expect(screen.getByText('Conversation')).toBeInTheDocument();
+    expect(screen.getByText('I can help map claims, evidence, witnesses, and chronology.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Preview mode' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Auto mode' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Apply changes' })).toBeInTheDocument();
@@ -61,6 +70,21 @@ describe('AICommandCenter', () => {
         state={{
           ...baseState,
           message: 'Here is a suggested plan.',
+          conversation: [
+            ...baseState.conversation,
+            {
+              id: 'user-1',
+              role: 'user',
+              text: 'Generate a kickoff note.',
+              createdAt: 2,
+            },
+            {
+              id: 'assistant-1',
+              role: 'assistant',
+              text: 'Here is a suggested plan.',
+              createdAt: 3,
+            },
+          ],
           actions: [
             {
               id: 'a-1',
@@ -74,7 +98,8 @@ describe('AICommandCenter', () => {
       />,
     );
 
-    expect(screen.getByText('Here is a suggested plan.')).toBeInTheDocument();
+    expect(screen.getAllByText('Here is a suggested plan.')).toHaveLength(1);
+    expect(screen.getByText('Generate a kickoff note.')).toBeInTheDocument();
     expect(screen.getByText('createStickyNote')).toBeInTheDocument();
     expect(screen.getByText('text=Kickoff · x=100 · y=140')).toBeInTheDocument();
   });
@@ -140,7 +165,7 @@ describe('AICommandCenter', () => {
   it('shows explicit hint when no executable actions are available', () => {
     render(<AICommandCenter state={baseState} {...handlers} />);
 
-    expect(screen.getByText('No executable actions in this plan yet.')).toBeInTheDocument();
+    expect(screen.getByText('No executable case actions generated yet.')).toBeInTheDocument();
   });
 
   it('disables controls and renders reason when AI access is blocked', () => {
@@ -165,8 +190,8 @@ describe('AICommandCenter', () => {
       />,
     );
 
-    expect(screen.getByLabelText('AI prompt')).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Generate Plan' })).toBeDisabled();
+    expect(screen.getByLabelText('Case AI prompt')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Generate' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Apply changes' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Undo last change' })).toBeDisabled();
     expect(screen.getByText('AI requires signed-in editor access.')).toBeInTheDocument();

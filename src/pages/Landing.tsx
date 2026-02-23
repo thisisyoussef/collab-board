@@ -70,34 +70,34 @@ export function Landing() {
           </span>
           <div className="landing-brand-copy">
             <span className="landing-brand-name">CollabBoard</span>
-            <span className="landing-brand-subtitle">Design System Preview</span>
+            <span className="landing-brand-subtitle">Litigation Intelligence</span>
           </div>
         </div>
         <div className="landing-top-actions">
-          <span className="landing-muted landing-top-caption">Built for clarity under pressure</span>
+          <span className="landing-muted landing-top-caption">Built for litigators who need clarity under pressure</span>
         </div>
       </header>
 
       <section className="landing-content-grid">
         <aside className="landing-sidebar">
-          <p className="landing-sidebar-kicker">Workspace</p>
-          <h2>Command center</h2>
-          <p className="landing-muted">Recent boards and quick links</p>
+          <p className="landing-sidebar-kicker">Case Management</p>
+          <h2>Case command center</h2>
+          <p className="landing-muted">Active cases and recent matters</p>
           <div className="landing-sidebar-list">
             <button className="landing-sidebar-item active">
-              <span>Product Planning</span>
+              <span>Smith v. Acme Corp</span>
               <span className="landing-sidebar-tag">Active</span>
             </button>
             <button className="landing-sidebar-item">
-              <span>Research Notes</span>
+              <span>Patent Infringement Review</span>
               <span className="landing-sidebar-tag">Review</span>
             </button>
             <button className="landing-sidebar-item">
-              <span>Design Critique</span>
+              <span>Deposition Prep — Dr. Lee</span>
               <span className="landing-sidebar-tag">Ready</span>
             </button>
             <button className="landing-sidebar-item">
-              <span>Retrospective</span>
+              <span>Insurance Defense Strategy</span>
               <span className="landing-sidebar-tag">Draft</span>
             </button>
           </div>
@@ -105,11 +105,11 @@ export function Landing() {
 
         <section className="landing-main-panel">
           <div className="landing-hero">
-            <p className="landing-kicker">Collaborative canvas</p>
-            <h1>See the whole board, act with confidence.</h1>
+            <p className="landing-kicker">AI-powered litigation workspace</p>
+            <h1>Map your case. Strengthen every claim.</h1>
             <p>
-              Sign in to access your dashboard where you can create, rename, open, and delete
-              boards.
+              Sign in to access your case dashboard. Create litigation boards, map claims to
+              evidence, score argument strength, and collaborate with co-counsel in real time.
             </p>
 
             <div className="auth-actions">
@@ -119,14 +119,14 @@ export function Landing() {
             </div>
 
             {error && <p className="auth-error">{error}</p>}
-            <p className="landing-auth-meta">Secure sign-in via Google authentication.</p>
+            <p className="landing-auth-meta">Secure sign-in via Google. Your case data stays private.</p>
           </div>
 
           <div className="landing-preview">
             <div className="preview-toolbar">
               <div className="preview-toolbar-copy">
-                <span className="preview-toolbar-title">Prototype Board Preview</span>
-                <span className="preview-toolbar-meta">Live collaboration demo</span>
+                <span className="preview-toolbar-title">Case Board Preview</span>
+                <span className="preview-toolbar-meta">Real-time case collaboration</span>
               </div>
               <div className="preview-dots">
                 <span />
@@ -136,16 +136,16 @@ export function Landing() {
             </div>
             <div className="preview-canvas">
               <div className="preview-card sticky-a">
-                <strong>User Flow</strong>
-                <span>Core path</span>
+                <strong>Claims</strong>
+                <span>Breach of duty</span>
               </div>
               <div className="preview-card sticky-b">
-                <strong>Pain Points</strong>
-                <span>Open questions</span>
+                <strong>Evidence</strong>
+                <span>Exhibit A — Memo</span>
               </div>
               <div className="preview-card sticky-c">
-                <strong>MVP Scope</strong>
-                <span>Release window</span>
+                <strong>Timeline</strong>
+                <span>Mar 2024 recall</span>
               </div>
               <div className="preview-line" />
             </div>

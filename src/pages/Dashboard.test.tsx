@@ -103,14 +103,14 @@ describe('Dashboard', () => {
   it('renders the new dashboard layout scaffolding', () => {
     renderDashboard();
 
-    expect(screen.getByText('Workspace overview')).toBeInTheDocument();
-    expect(screen.getByText('Board command center')).toBeInTheDocument();
+    expect(screen.getByText('Caseload overview')).toBeInTheDocument();
+    expect(screen.getByText('Case command center')).toBeInTheDocument();
   });
 
   it('shows loading state while boards are loading', () => {
     renderDashboard({}, { loading: true });
 
-    expect(screen.getByText('Loading your boards...')).toBeInTheDocument();
+    expect(screen.getByText('Loading your cases...')).toBeInTheDocument();
   });
 
   it('renders Shared with me tab as available', () => {
@@ -154,8 +154,8 @@ describe('Dashboard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
 
     expect(screen.getByRole('heading', { name: 'Shared with me' })).toBeInTheDocument();
-    expect(screen.getByText('Shared directly')).toBeInTheDocument();
-    expect(screen.getByText('Recent shared links')).toBeInTheDocument();
+    expect(screen.getByText('Shared by co-counsel')).toBeInTheDocument();
+    expect(screen.getByText('Recent case links')).toBeInTheDocument();
     expect(screen.getByText('Shared Planning')).toBeInTheDocument();
     expect(screen.getByText('Recent Retro')).toBeInTheDocument();
   });
@@ -188,7 +188,7 @@ describe('Dashboard', () => {
   it('shows empty state when no boards exist', () => {
     renderDashboard({}, { boards: [] });
 
-    expect(screen.getByText('No boards yet. Create your first board above.')).toBeInTheDocument();
+    expect(screen.getByText('No cases yet. Create your first litigation board above.')).toBeInTheDocument();
   });
 
   it('displays board count label for multiple boards', () => {
@@ -199,7 +199,7 @@ describe('Dashboard', () => {
       ],
     });
 
-    expect(screen.getByText('2 boards')).toBeInTheDocument();
+    expect(screen.getByText('2 cases')).toBeInTheDocument();
   });
 
   it('displays singular board count label', () => {
@@ -209,7 +209,7 @@ describe('Dashboard', () => {
       ],
     });
 
-    expect(screen.getByText('1 board')).toBeInTheDocument();
+    expect(screen.getByText('1 case')).toBeInTheDocument();
   });
 
   it('renders board cards with Open, Rename, and Delete buttons', () => {
@@ -244,7 +244,7 @@ describe('Dashboard', () => {
 
     renderDashboard();
 
-    const input = screen.getByPlaceholderText('New board name');
+    const input = screen.getByPlaceholderText('New case name (e.g., Smith v. Acme)');
     fireEvent.change(input, { target: { value: 'My New Board' } });
     fireEvent.submit(input.closest('form')!);
 
@@ -331,7 +331,7 @@ describe('Dashboard', () => {
 
     fireEvent.click(screen.getByText('Delete'));
 
-    expect(mockConfirm).toHaveBeenCalledWith('Delete "Sprint Plan"? This action cannot be undone.');
+    expect(mockConfirm).toHaveBeenCalledWith('Delete case "Sprint Plan"? This action cannot be undone.');
     mockConfirm.mockRestore();
   });
 

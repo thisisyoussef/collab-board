@@ -81,16 +81,16 @@ export function ShareSettingsPanel({
         className="share-panel"
         role="dialog"
         aria-modal="true"
-        aria-label="Share board"
+        aria-label="Share case board"
         onClick={(event) => event.stopPropagation()}
       >
         <header className="share-panel-head">
           <div className="share-panel-head-copy">
             <p className="share-panel-kicker" data-testid="share-panel-kicker">
-              Access control
+              Case access control
             </p>
-            <h3>Share board</h3>
-            <p className="share-panel-muted">Manage visibility and collaborator roles.</p>
+            <h3>Share case board</h3>
+            <p className="share-panel-muted">Manage visibility and case team roles.</p>
           </div>
           <button className="secondary-btn" type="button" onClick={onClose}>
             Close
@@ -98,7 +98,7 @@ export function ShareSettingsPanel({
         </header>
 
         <section className="share-panel-section">
-          <h4>Link</h4>
+          <h4>Case link</h4>
           <div className="share-link-row">
             <button className="secondary-btn" type="button" onClick={onCopyLink}>
               {copyState === 'copied' ? 'Copied' : copyState === 'error' ? 'Copy failed' : 'Copy link'}
@@ -177,7 +177,7 @@ export function ShareSettingsPanel({
 
             <section className="share-panel-section">
               <div className="share-panel-row">
-                <h4>Members</h4>
+                <h4>Case team</h4>
                 <button className="secondary-btn" type="button" onClick={onRefreshMembers}>
                   Refresh
                 </button>
@@ -186,21 +186,21 @@ export function ShareSettingsPanel({
               {membersLoading ? (
                 <p className="share-panel-muted">Loading members...</p>
               ) : members.length === 0 ? (
-                <p className="share-panel-muted">No explicit members yet.</p>
+                <p className="share-panel-muted">No case team members yet.</p>
               ) : (
                 <ul className="share-member-list">
                   {members.map((member) => (
                     <li key={member.membershipId} className="share-member-row">
                       <div className="share-member-meta">
                         <span className="share-member-id">
-                          {member.displayName || 'Member'}
+                          {member.displayName || 'Team member'}
                           {currentUserId && member.userId === currentUserId ? ' (you)' : ''}
                         </span>
                       </div>
 
                       <div className="share-member-actions">
                         {member.role === 'owner' ? (
-                          <span className="share-member-owner">Owner</span>
+                          <span className="share-member-owner">Lead counsel</span>
                         ) : (
                           <>
                             <select
@@ -233,7 +233,7 @@ export function ShareSettingsPanel({
         ) : (
           <section className="share-panel-section">
             <h4>Sharing settings</h4>
-            <p className="share-panel-muted">Only owner can change sharing settings.</p>
+            <p className="share-panel-muted">Only lead counsel can change sharing settings.</p>
             {canSaveToWorkspace ? (
               <div className="share-panel-save-workspace">
                 <button
@@ -246,7 +246,7 @@ export function ShareSettingsPanel({
                     ? 'Saving...'
                     : workspaceState === 'saved'
                       ? 'Saved'
-                      : 'Save to workspace'}
+                      : 'Save to my caseload'}
                 </button>
                 {workspaceError ? <p className="share-panel-error">{workspaceError}</p> : null}
               </div>

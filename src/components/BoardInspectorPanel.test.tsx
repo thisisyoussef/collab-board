@@ -65,7 +65,7 @@ function renderPanel(
 describe('BoardInspectorPanel', () => {
   it('renders neutral inspector state when nothing is selected', () => {
     renderPanel(null, []);
-    expect(screen.getByText('Inspector')).toBeInTheDocument();
+    expect(screen.getByText('Case element inspector')).toBeInTheDocument();
     expect(screen.getByText('None')).toBeInTheDocument();
     expect(screen.getByText('120%')).toBeInTheDocument();
   });
@@ -74,7 +74,7 @@ describe('BoardInspectorPanel', () => {
     const rect = baseObject({ id: 'rect-1', type: 'rect' });
     renderPanel(rect, [rect.id]);
 
-    expect(screen.getByText('Rectangle')).toBeInTheDocument();
+    expect(screen.getByText('Region')).toBeInTheDocument();
     expect(screen.getByText('100')).toBeInTheDocument(); // x
     expect(screen.getByText('120')).toBeInTheDocument(); // y
     expect(screen.getByText('220')).toBeInTheDocument(); // w
@@ -106,7 +106,7 @@ describe('BoardInspectorPanel', () => {
     });
     renderPanel(text, [text.id]);
 
-    expect(screen.getByText('Text')).toBeInTheDocument();
+    expect(screen.getByText('Annotation')).toBeInTheDocument();
     expect(screen.getByLabelText('Font size')).toBeInTheDocument();
   });
 
@@ -133,7 +133,7 @@ describe('BoardInspectorPanel', () => {
     });
     const { onUpdateConnector } = renderPanel(connector, [connector.id]);
 
-    expect(screen.getByText('Connector')).toBeInTheDocument();
+    expect(screen.getByText('Relationship')).toBeInTheDocument();
     expect(screen.getByLabelText('Path')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Path'), {
       target: { value: 'curved' },
@@ -165,6 +165,14 @@ describe('BoardInspectorPanel', () => {
 
     expect(onUpdateObject).toHaveBeenCalledWith('claim-1', {
       nodeRole: 'claim',
+    });
+
+    fireEvent.change(screen.getByLabelText('Node role'), {
+      target: { value: 'contradiction' },
+    });
+
+    expect(onUpdateObject).toHaveBeenCalledWith('claim-1', {
+      nodeRole: 'contradiction',
     });
   });
 

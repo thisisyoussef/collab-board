@@ -61,7 +61,7 @@ describe('ShareSettingsPanel', () => {
       currentRole: 'editor',
     });
 
-    expect(screen.getByTestId('share-panel-kicker')).toHaveTextContent('Access control');
+    expect(screen.getByTestId('share-panel-kicker')).toHaveTextContent('Case access control');
     expect(screen.getByTestId('share-current-role-badge')).toHaveTextContent('editor');
   });
 
@@ -89,9 +89,9 @@ describe('ShareSettingsPanel', () => {
     });
 
     expect(screen.queryByLabelText('Visibility mode')).not.toBeInTheDocument();
-    expect(screen.getByText('Only owner can change sharing settings.')).toBeInTheDocument();
+    expect(screen.getByText('Only lead counsel can change sharing settings.')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Save to workspace' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save to my caseload' }));
     expect(handlers.onSaveToWorkspace).toHaveBeenCalledTimes(1);
   });
 

@@ -172,7 +172,7 @@ describe('Board', () => {
     expect(screen.getByText('CollabBoard')).toHaveClass('topbar-title-text');
     expect(screen.getByText('Test Board Title')).toHaveClass('topbar-title-text');
     expect(screen.getByText('Case element inspector')).toBeInTheDocument();
-    expect(screen.getByText('AI Co-Counsel')).toBeInTheDocument();
+    expect(screen.getByText('AI Case Assistant')).toBeInTheDocument();
     expect(screen.getByTestId('konva-stage')).toBeInTheDocument();
   });
 
@@ -231,6 +231,14 @@ describe('Board', () => {
     expect(screen.getByLabelText('Annotation tool')).toBeInTheDocument();
     expect(screen.getByLabelText('Case group tool')).toBeInTheDocument();
     expect(screen.getByLabelText('Relationship tool')).toBeInTheDocument();
+    expect(screen.getByLabelText('Claim node tool')).toBeInTheDocument();
+    expect(screen.getByLabelText('Evidence node tool')).toBeInTheDocument();
+    expect(screen.getByLabelText('Witness node tool')).toBeInTheDocument();
+    expect(screen.getByLabelText('Timeline event node tool')).toBeInTheDocument();
+    expect(screen.getByLabelText('Contradiction node tool')).toBeInTheDocument();
+    expect(screen.getByLabelText('Supports link tool')).toBeInTheDocument();
+    expect(screen.getByLabelText('Contradicts link tool')).toBeInTheDocument();
+    expect(screen.getByLabelText('Dependency link tool')).toBeInTheDocument();
   });
 
   it('treats Backspace as a delete shortcut when not typing', async () => {
@@ -398,7 +406,7 @@ describe('Board', () => {
 
     await renderBoardReady('board-ai-test');
 
-    fireEvent.change(screen.getByLabelText('Message to AI'), {
+    fireEvent.change(screen.getByLabelText('Case AI prompt'), {
       target: { value: 'Create a kickoff sticky note' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Generate' }));
@@ -462,7 +470,9 @@ describe('Board', () => {
     await screen.findByText('Viewer Board');
 
     expect(screen.getByLabelText('Case card tool')).toBeDisabled();
-    expect(screen.getByLabelText('Message to AI')).toBeDisabled();
+    expect(screen.getByLabelText('Evidence node tool')).toBeDisabled();
+    expect(screen.getByLabelText('Contradicts link tool')).toBeDisabled();
+    expect(screen.getByLabelText('Case AI prompt')).toBeDisabled();
     expect(screen.getByText(/Read-only mode/i)).toBeInTheDocument();
   });
 

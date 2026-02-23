@@ -116,12 +116,20 @@ describe('Board object v2 controls', () => {
     renderBoard();
     await screen.findByText('Board V2');
 
-    expect(screen.getByLabelText('Sticky note tool')).toBeInTheDocument();
-    expect(screen.getByLabelText('Rectangle tool')).toBeInTheDocument();
-    expect(screen.getByLabelText('Circle tool')).toBeInTheDocument();
+    expect(screen.getByLabelText('Case card tool')).toBeInTheDocument();
+    expect(screen.getByLabelText('Region tool')).toBeInTheDocument();
+    expect(screen.getByLabelText('Marker tool')).toBeInTheDocument();
     expect(screen.getByLabelText('Line tool')).toBeInTheDocument();
-    expect(screen.getByLabelText('Text tool')).toBeInTheDocument();
-    expect(screen.getByLabelText('Frame tool')).toBeInTheDocument();
-    expect(screen.getByLabelText('Connector tool')).toBeInTheDocument();
+    expect(screen.getByLabelText('Annotation tool')).toBeInTheDocument();
+    expect(screen.getByLabelText('Case group tool')).toBeInTheDocument();
+    expect(screen.getByLabelText('Relationship tool')).toBeInTheDocument();
+    expect(screen.getByLabelText('Claim node tool')).toBeInTheDocument();
+    expect(screen.getByLabelText('Evidence node tool')).toBeInTheDocument();
+    expect(screen.getByLabelText('Witness node tool')).toBeInTheDocument();
+    expect(screen.getByLabelText('Timeline event node tool')).toBeInTheDocument();
+    expect(screen.getByLabelText('Contradiction node tool')).toBeInTheDocument();
+    expect(screen.getByLabelText('Supports link tool')).toBeInTheDocument();
+    expect(screen.getByLabelText('Contradicts link tool')).toBeInTheDocument();
+    expect(screen.getByLabelText('Dependency link tool')).toBeInTheDocument();
   });
 });

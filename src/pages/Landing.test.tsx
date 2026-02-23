@@ -54,8 +54,8 @@ describe('Landing', () => {
   it('renders the litigation design-system header treatment', () => {
     renderLanding();
 
-    expect(screen.getByText('Design System Preview')).toBeInTheDocument();
-    expect(screen.getByText('Built for clarity under pressure')).toBeInTheDocument();
+    expect(screen.getByText('Litigation Intelligence')).toBeInTheDocument();
+    expect(screen.getByText('Built for litigators who need clarity under pressure')).toBeInTheDocument();
   });
 
   it('shows loading state while auth is checking', () => {
@@ -120,15 +120,15 @@ describe('Landing', () => {
   it('renders the preview cards', () => {
     renderLanding();
 
-    expect(screen.getByText('User Flow')).toBeInTheDocument();
-    expect(screen.getByText('Pain Points')).toBeInTheDocument();
-    expect(screen.getByText('MVP Scope')).toBeInTheDocument();
+    expect(screen.getByText('Claims')).toBeInTheDocument();
+    expect(screen.getByText('Evidence')).toBeInTheDocument();
+    expect(screen.getByText('Timeline')).toBeInTheDocument();
   });
 
   it('renders the updated hero messaging and auth metadata', () => {
     renderLanding();
 
-    expect(screen.getByRole('heading', { name: 'See the whole board, act with confidence.' })).toBeInTheDocument();
-    expect(screen.getByText('Secure sign-in via Google authentication.')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Map your case. Strengthen every claim.' })).toBeInTheDocument();
+    expect(screen.getByText('Secure sign-in via Google. Your case data stays private.')).toBeInTheDocument();
   });
 });

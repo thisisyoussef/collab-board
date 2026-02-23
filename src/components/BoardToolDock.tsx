@@ -25,13 +25,13 @@ interface ToolConfig {
 
 const TOOLS: ToolConfig[] = [
   { tool: 'select', label: 'Select tool', shortLabel: 'Sel' },
-  { tool: 'sticky', label: 'Sticky note tool', shortLabel: 'Note', editRequired: true },
-  { tool: 'rect', label: 'Rectangle tool', shortLabel: 'Rect', editRequired: true },
-  { tool: 'circle', label: 'Circle tool', shortLabel: 'Circ', editRequired: true },
+  { tool: 'sticky', label: 'Case card tool', shortLabel: 'Card', editRequired: true },
+  { tool: 'rect', label: 'Region tool', shortLabel: 'Region', editRequired: true },
+  { tool: 'circle', label: 'Marker tool', shortLabel: 'Mark', editRequired: true },
   { tool: 'line', label: 'Line tool', shortLabel: 'Line', editRequired: true },
-  { tool: 'text', label: 'Text tool', shortLabel: 'Text', editRequired: true },
-  { tool: 'frame', label: 'Frame tool', shortLabel: 'Frame', editRequired: true },
-  { tool: 'connector', label: 'Connector tool', shortLabel: 'Link', editRequired: true },
+  { tool: 'text', label: 'Annotation tool', shortLabel: 'Note', editRequired: true },
+  { tool: 'frame', label: 'Case group tool', shortLabel: 'Group', editRequired: true },
+  { tool: 'connector', label: 'Relationship tool', shortLabel: 'Link', editRequired: true },
 ];
 
 function ToolIcon({ tool }: { tool: BoardTool }): ReactElement {

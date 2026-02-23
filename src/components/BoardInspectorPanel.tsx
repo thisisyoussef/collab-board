@@ -19,24 +19,24 @@ interface BoardInspectorPanelProps {
 
 function selectedLabel(object: BoardObject): string {
   if (object.type === 'sticky') {
-    return 'Sticky Note';
+    return 'Case Card';
   }
   if (object.type === 'rect') {
-    return 'Rectangle';
+    return 'Region';
   }
   if (object.type === 'circle') {
-    return 'Circle';
+    return 'Marker';
   }
   if (object.type === 'line') {
     return 'Line';
   }
   if (object.type === 'text') {
-    return 'Text';
+    return 'Annotation';
   }
   if (object.type === 'frame') {
-    return 'Frame';
+    return 'Case Group';
   }
-  return 'Connector';
+  return 'Relationship';
 }
 
 const NODE_ROLE_OPTIONS: Array<{ value: NonNullable<BoardObject['nodeRole']>; label: string }> = [
@@ -72,7 +72,7 @@ export function BoardInspectorPanel({
 
   return (
     <section className="properties-panel">
-      <h3>Inspector</h3>
+      <h3>Case element inspector</h3>
       {selectedIds.length === 0 ? (
         <>
           <div className="property-row">
