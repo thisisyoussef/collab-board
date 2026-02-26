@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthProvider } from './AuthContext';
 import { AuthContext } from './auth-context';
 
+const AUTH_INIT_TIMEOUT_MS = 8000;
+
 const mockOnAuthStateChanged = vi.fn();
 const mockSignInWithPopup = vi.fn();
 const mockFirebaseSignOut = vi.fn();
@@ -151,6 +153,67 @@ describe('AuthProvider', () => {
     await waitFor(() => {
       expect(screen.getByText('error:Failed to sign out. Please try again.')).toBeInTheDocument();
     });
+  });
+
+  it('falls back from loading state if auth initialization stalls', async () => {
+    vi.useFakeTimers();
+
+    try {
+      render(
+        <AuthProvider>
+          <ContextProbe />
+        </AuthProvider>,
+      );
+
+      expect(screen.getByText('loading:true')).toBeInTheDocument();
+
+      await act(async () => {
+        vi.advanceTimersByTime(AUTH_INIT_TIMEOUT_MS + 1);
+      });
+
+      expect(screen.getByText('loading:false')).toBeInTheDocument();
+
+      expect(
+        screen.getByText(
+          'error:Authentication is taking longer than expected. You can still sign in with Google.',
+        ),
+      ).toBeInTheDocument();
+      expect(screen.getByText('user:none')).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('recovers if auth state resolves after timeout fallback', async () => {
+    vi.useFakeTimers();
+
+    try {
+      render(
+        <AuthProvider>
+          <ContextProbe />
+        </AuthProvider>,
+      );
+
+      await act(async () => {
+        vi.advanceTimersByTime(AUTH_INIT_TIMEOUT_MS + 1);
+      });
+
+      expect(screen.getByText('loading:false')).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          'error:Authentication is taking longer than expected. You can still sign in with Google.',
+        ),
+      ).toBeInTheDocument();
+
+      await act(async () => {
+        authStateCallback?.({ uid: 'late-user-123' });
+      });
+
+      expect(screen.getByText('user:present')).toBeInTheDocument();
+      expect(screen.getByText('error:none')).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('unsubscribes from auth listener on unmount', () => {

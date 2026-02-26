@@ -9,6 +9,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -20,10 +21,15 @@ interface AuthProviderProps {
   children: ReactNode;
 }
 
+const AUTH_INIT_TIMEOUT_MS = 8000;
+const AUTH_INIT_TIMEOUT_MESSAGE =
+  'Authentication is taking longer than expected. You can still sign in with Google.';
+
 export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const hasResolvedInitialAuthStateRef = useRef(false);
 
   const syncUserProfile = useCallback(async (firebaseUser: User) => {
     const normalizedDisplayName =
@@ -51,7 +57,26 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, []);
 
   useEffect(() => {
+    const timeoutId = globalThis.setTimeout(() => {
+      if (hasResolvedInitialAuthStateRef.current) {
+        return;
+      }
+      logger.warn('AUTH', `Auth state check exceeded ${AUTH_INIT_TIMEOUT_MS}ms; showing sign-in fallback`);
+      setLoading(false);
+      setError((current) => current ?? AUTH_INIT_TIMEOUT_MESSAGE);
+    }, AUTH_INIT_TIMEOUT_MS);
+
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      const isInitialResolution = !hasResolvedInitialAuthStateRef.current;
+      if (isInitialResolution) {
+        hasResolvedInitialAuthStateRef.current = true;
+      }
+      globalThis.clearTimeout(timeoutId);
+
+      if (isInitialResolution) {
+        setError((current) => (current === AUTH_INIT_TIMEOUT_MESSAGE ? null : current));
+      }
+
       if (firebaseUser) {
         logger.info('AUTH', `User authenticated: '${firebaseUser.displayName || firebaseUser.email}' (${firebaseUser.uid})`, {
           uid: firebaseUser.uid,
@@ -59,7 +84,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
           displayName: firebaseUser.displayName,
         });
         void syncUserProfile(firebaseUser);
-      } else if (!loading) {
+      } else if (!isInitialResolution) {
         // Only log sign-out after initial load (not on first page load when user is null)
         logger.info('AUTH', 'User signed out');
       }
@@ -67,8 +92,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setLoading(false);
     });
 
-    return unsubscribe;
-  }, [loading, syncUserProfile]);
+    return () => {
+      globalThis.clearTimeout(timeoutId);
+      unsubscribe();
+    };
+  }, [syncUserProfile]);
 
   const signInWithGoogle = useCallback(async () => {
     setError(null);
