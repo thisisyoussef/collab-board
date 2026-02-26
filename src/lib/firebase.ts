@@ -1,5 +1,12 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider } from 'firebase/auth';
+import {
+  GoogleAuthProvider,
+  browserLocalPersistence,
+  browserPopupRedirectResolver,
+  browserSessionPersistence,
+  inMemoryPersistence,
+  initializeAuth,
+} from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore/lite';
 
 const firebaseConfig = {
@@ -14,7 +21,12 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
-export const auth = getAuth(app);
+export const auth = initializeAuth(app, {
+  // Avoid IndexedDB persistence to reduce auth bootstrap stalls in browsers
+  // with blocked or unstable storage, while still preserving local-session auth.
+  persistence: [browserLocalPersistence, browserSessionPersistence, inMemoryPersistence],
+  popupRedirectResolver: browserPopupRedirectResolver,
+});
 export const db = getFirestore(app);
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });

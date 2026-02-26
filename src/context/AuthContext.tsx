@@ -24,6 +24,8 @@ interface AuthProviderProps {
 const AUTH_INIT_TIMEOUT_MS = 8000;
 const AUTH_INIT_TIMEOUT_MESSAGE =
   'Authentication is taking longer than expected. You can still sign in with Google.';
+const AUTH_INIT_ERROR_MESSAGE =
+  'Authentication failed to initialize. Please reload and try again.';
 
 export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null);
@@ -66,31 +68,44 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setError((current) => current ?? AUTH_INIT_TIMEOUT_MESSAGE);
     }, AUTH_INIT_TIMEOUT_MS);
 
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-      const isInitialResolution = !hasResolvedInitialAuthStateRef.current;
-      if (isInitialResolution) {
+    const unsubscribe = onAuthStateChanged(
+      auth,
+      (firebaseUser) => {
+        const isInitialResolution = !hasResolvedInitialAuthStateRef.current;
+        if (isInitialResolution) {
+          hasResolvedInitialAuthStateRef.current = true;
+        }
+        globalThis.clearTimeout(timeoutId);
+
+        if (isInitialResolution) {
+          setError((current) => (current === AUTH_INIT_TIMEOUT_MESSAGE ? null : current));
+        }
+
+        if (firebaseUser) {
+          logger.info('AUTH', `User authenticated: '${firebaseUser.displayName || firebaseUser.email}' (${firebaseUser.uid})`, {
+            uid: firebaseUser.uid,
+            email: firebaseUser.email,
+            displayName: firebaseUser.displayName,
+          });
+          void syncUserProfile(firebaseUser);
+        } else if (!isInitialResolution) {
+          // Only log sign-out after initial load (not on first page load when user is null)
+          logger.info('AUTH', 'User signed out');
+        }
+        setUser(firebaseUser);
+        setLoading(false);
+      },
+      (authError) => {
         hasResolvedInitialAuthStateRef.current = true;
-      }
-      globalThis.clearTimeout(timeoutId);
-
-      if (isInitialResolution) {
-        setError((current) => (current === AUTH_INIT_TIMEOUT_MESSAGE ? null : current));
-      }
-
-      if (firebaseUser) {
-        logger.info('AUTH', `User authenticated: '${firebaseUser.displayName || firebaseUser.email}' (${firebaseUser.uid})`, {
-          uid: firebaseUser.uid,
-          email: firebaseUser.email,
-          displayName: firebaseUser.displayName,
+        globalThis.clearTimeout(timeoutId);
+        logger.error('AUTH', 'Auth state observer failed during initialization', {
+          error: authError instanceof Error ? authError.message : String(authError),
         });
-        void syncUserProfile(firebaseUser);
-      } else if (!isInitialResolution) {
-        // Only log sign-out after initial load (not on first page load when user is null)
-        logger.info('AUTH', 'User signed out');
-      }
-      setUser(firebaseUser);
-      setLoading(false);
-    });
+        setUser(null);
+        setLoading(false);
+        setError(AUTH_INIT_ERROR_MESSAGE);
+      },
+    );
 
     return () => {
       globalThis.clearTimeout(timeoutId);

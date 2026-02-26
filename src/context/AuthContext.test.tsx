@@ -15,6 +15,7 @@ const mockSetDoc = vi.fn();
 const mockServerTimestamp = vi.fn(() => 'mock-ts');
 
 let authStateCallback: ((user: unknown) => void) | null = null;
+let authStateErrorCallback: ((error: unknown) => void) | null = null;
 
 vi.mock('firebase/auth', () => ({
   onAuthStateChanged: (...args: unknown[]) => mockOnAuthStateChanged(...args),
@@ -55,10 +56,18 @@ describe('AuthProvider', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     authStateCallback = null;
-    mockOnAuthStateChanged.mockImplementation((_auth: unknown, callback: (user: unknown) => void) => {
+    authStateErrorCallback = null;
+    mockOnAuthStateChanged.mockImplementation(
+      (
+        _auth: unknown,
+        callback: (user: unknown) => void,
+        errorCallback?: (error: unknown) => void,
+      ) => {
       authStateCallback = callback;
+      authStateErrorCallback = errorCallback ?? null;
       return mockUnsubscribe;
-    });
+      },
+    );
     mockDoc.mockImplementation((_db: unknown, collectionName: string, docId: string) => ({
       id: docId,
       path: `${collectionName}/${docId}`,
@@ -153,6 +162,26 @@ describe('AuthProvider', () => {
     await waitFor(() => {
       expect(screen.getByText('error:Failed to sign out. Please try again.')).toBeInTheDocument();
     });
+  });
+
+  it('unlocks loading and surfaces observer errors from auth state subscription', async () => {
+    render(
+      <AuthProvider>
+        <ContextProbe />
+      </AuthProvider>,
+    );
+
+    act(() => {
+      authStateErrorCallback?.({ message: 'storage blocked' });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('loading:false')).toBeInTheDocument();
+    });
+    expect(
+      screen.getByText('error:Authentication failed to initialize. Please reload and try again.'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('user:none')).toBeInTheDocument();
   });
 
   it('falls back from loading state if auth initialization stalls', async () => {
