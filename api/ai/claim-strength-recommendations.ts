@@ -7,8 +7,8 @@ import { normalizeBoardRole, resolveBoardAccess } from '../../src/lib/access.js'
 import type {
   ClaimStrengthRecommendation,
   ClaimStrengthRecommendationResponse,
-} from '../../src/types/claim-strength-tools';
-import type { BoardObject } from '../../src/types/board';
+} from '../../src/types/claim-strength-tools.js';
+import type { BoardObject } from '../../src/types/board.js';
 
 interface BoardDocData {
   ownerId?: string;
@@ -348,4 +348,3 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ error: `Failed to generate recommendations: ${message}` });
   }
 }
-
