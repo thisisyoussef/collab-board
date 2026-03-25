@@ -165,6 +165,47 @@ describe('useBoards', () => {
     );
   });
 
+  it('reloads boards on demand after a transient load failure', async () => {
+    const failure = new Error('temporary outage');
+    const ownerDocs = snapshotFromDocs([
+      {
+        id: 'board-1',
+        data: () => ({
+          title: 'Recovered Board',
+          ownerId: 'user-1',
+          createdAt: timestamp(1000),
+          updatedAt: timestamp(2000),
+        }),
+      },
+    ]);
+
+    mockGetDocs
+      .mockRejectedValueOnce(failure)
+      .mockRejectedValueOnce(failure)
+      .mockImplementation((queryRef: { whereClause: { field: string } }) => {
+        if (queryRef.whereClause.field === 'ownerId') {
+          return Promise.resolve(ownerDocs);
+        }
+        return Promise.resolve(snapshotFromDocs([]));
+      });
+
+    const { result } = renderHook(() => useBoards('user-1'));
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+    expect(result.current.error).toBe('Unable to load boards right now.');
+
+    await act(async () => {
+      await result.current.reload();
+    });
+
+    await waitFor(() => {
+      expect(result.current.error).toBeNull();
+      expect(result.current.boards.map((item) => item.id)).toEqual(['board-1']);
+    });
+  });
+
   it('creates a board optimistically and commits it', async () => {
     const { result } = renderHook(() => useBoards('user-1'));
 

@@ -80,8 +80,14 @@ function SharedBoardsSection({ title, emptyText, boards, onOpenBoard }: SharedSe
 export function Dashboard() {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
-  const { boards, loading, error, createBoard, renameBoard, removeBoard } = useBoards(user?.uid);
-  const { explicitBoards, recentBoards, loading: sharedLoading, error: sharedError } = useSharedBoards(
+  const { boards, loading, error, createBoard, renameBoard, removeBoard, reload: reloadOwnedBoards } = useBoards(user?.uid);
+  const {
+    explicitBoards,
+    recentBoards,
+    loading: sharedLoading,
+    error: sharedError,
+    reload: reloadSharedBoards,
+  } = useSharedBoards(
     user?.uid,
   );
 
@@ -92,6 +98,8 @@ export function Dashboard() {
   const [editingName, setEditingName] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [renamingBoardId, setRenamingBoardId] = useState<string | null>(null);
+  const [isRetryingOwned, setIsRetryingOwned] = useState(false);
+  const [isRetryingShared, setIsRetryingShared] = useState(false);
 
   const displayName = user?.displayName || user?.email || 'Unknown';
   const userInitial = displayName.charAt(0).toUpperCase();
@@ -104,6 +112,8 @@ export function Dashboard() {
     activeView === 'owned'
       ? `Tracking ${countLabel} in your direct caseload.`
       : `Tracking ${countLabel} shared via team access and recent links.`;
+  const hasOwnedLoadError = activeView === 'owned' && Boolean(error);
+  const hasSharedLoadError = activeView === 'shared' && Boolean(sharedError);
 
   const openBoard = (boardId: string) => {
     navigate(`/board/${boardId}`);
@@ -153,6 +163,26 @@ export function Dashboard() {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to delete case. Please try again.';
       setActionError(message);
+    }
+  };
+
+  const handleRetryOwned = async () => {
+    if (isRetryingOwned) return;
+    setIsRetryingOwned(true);
+    try {
+      await reloadOwnedBoards();
+    } finally {
+      setIsRetryingOwned(false);
+    }
+  };
+
+  const handleRetryShared = async () => {
+    if (isRetryingShared) return;
+    setIsRetryingShared(true);
+    try {
+      await reloadSharedBoards();
+    } finally {
+      setIsRetryingShared(false);
     }
   };
 
@@ -324,6 +354,28 @@ export function Dashboard() {
           </div>
 
           {visibleError ? <p className="auth-error">{visibleError}</p> : null}
+          {hasOwnedLoadError ? (
+            <button
+              className="secondary-btn"
+              type="button"
+              aria-label="Retry loading cases"
+              disabled={isRetryingOwned}
+              onClick={() => void handleRetryOwned()}
+            >
+              {isRetryingOwned ? 'Retrying...' : 'Retry'}
+            </button>
+          ) : null}
+          {hasSharedLoadError ? (
+            <button
+              className="secondary-btn"
+              type="button"
+              aria-label="Retry loading shared cases"
+              disabled={isRetryingShared}
+              onClick={() => void handleRetryShared()}
+            >
+              {isRetryingShared ? 'Retrying...' : 'Retry'}
+            </button>
+          ) : null}
 
           {activeView === 'owned' ? (
             loading ? (

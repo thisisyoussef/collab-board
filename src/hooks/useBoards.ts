@@ -290,7 +290,8 @@ export function useBoards(userId: string | undefined) {
       createBoard,
       renameBoard,
       removeBoard,
+      reload: loadBoards,
     }),
-    [userId, boards, loading, error, createBoard, renameBoard, removeBoard],
+    [userId, boards, loading, error, createBoard, renameBoard, removeBoard, loadBoards],
   );
 }

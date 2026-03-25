@@ -8,6 +8,7 @@ import type { SharedBoardDashboardEntry } from '../types/sharing';
 const mockCreateBoard = vi.fn();
 const mockRenameBoard = vi.fn();
 const mockRemoveBoard = vi.fn();
+const mockReloadBoards = vi.fn().mockResolvedValue(undefined);
 let mockBoardsReturn = {
   boards: [] as { id: string; title: string; ownerId: string; createdAtMs: number; updatedAtMs: number }[],
   loading: false,
@@ -15,6 +16,7 @@ let mockBoardsReturn = {
   createBoard: mockCreateBoard,
   renameBoard: mockRenameBoard,
   removeBoard: mockRemoveBoard,
+  reload: mockReloadBoards,
 };
 
 vi.mock('../hooks/useBoards', () => ({
@@ -68,6 +70,7 @@ function renderDashboard(
     createBoard: mockCreateBoard,
     renameBoard: mockRenameBoard,
     removeBoard: mockRemoveBoard,
+    reload: mockReloadBoards,
     ...boardsOverrides,
   };
   mockSharedBoardsReturn = {
@@ -352,5 +355,50 @@ describe('Dashboard', () => {
     });
 
     vi.restoreAllMocks();
+  });
+
+  it('retries loading owned boards from error state', async () => {
+    let resolveRetry: (() => void) | null = null;
+    const retryPromise = new Promise<void>((resolve) => {
+      resolveRetry = resolve;
+    });
+    mockReloadBoards.mockReturnValueOnce(retryPromise);
+
+    renderDashboard({}, { error: 'Unable to load boards right now.' });
+
+    const retryButton = screen.getByRole('button', { name: 'Retry loading cases' });
+    fireEvent.click(retryButton);
+    fireEvent.click(retryButton);
+
+    expect(mockReloadBoards).toHaveBeenCalledTimes(1);
+    expect(retryButton).toBeDisabled();
+    expect(retryButton).toHaveTextContent('Retrying...');
+
+    resolveRetry?.();
+
+    await waitFor(() => {
+      expect(retryButton).not.toBeDisabled();
+      expect(retryButton).toHaveTextContent('Retry');
+    });
+  });
+
+  it('retries loading shared boards from error state', async () => {
+    const mockReloadShared = vi.fn().mockResolvedValue(undefined);
+
+    renderDashboard(
+      {},
+      {},
+      {
+        error: 'Unable to load shared boards right now.',
+        reload: mockReloadShared,
+      },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry loading shared cases' }));
+
+    await waitFor(() => {
+      expect(mockReloadShared).toHaveBeenCalledTimes(1);
+    });
   });
 });
