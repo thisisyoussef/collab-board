@@ -97,6 +97,7 @@ function renderDashboard(
 describe('Dashboard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
   });
 
   it('renders the user display name and avatar', () => {
@@ -125,6 +126,34 @@ describe('Dashboard', () => {
     const sharedButton = screen.getByRole('button', { name: 'Shared with me' });
     expect(sharedButton).toBeInTheDocument();
     expect(sharedButton).toBeEnabled();
+  });
+
+  it('defaults to All cases view when no saved view preference exists', () => {
+    renderDashboard();
+
+    expect(screen.getByRole('heading', { name: 'Cases' })).toBeInTheDocument();
+  });
+
+  it('restores Shared with me view from saved preference', () => {
+    window.localStorage.setItem('collabboard.dashboard.active-view', 'shared');
+    renderDashboard();
+
+    expect(screen.getByRole('heading', { name: 'Shared with me' })).toBeInTheDocument();
+  });
+
+  it('falls back to All cases when saved view preference is invalid', () => {
+    window.localStorage.setItem('collabboard.dashboard.active-view', 'invalid-view');
+    renderDashboard();
+
+    expect(screen.getByRole('heading', { name: 'Cases' })).toBeInTheDocument();
+  });
+
+  it('persists selected dashboard view when switching tabs', () => {
+    renderDashboard();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+
+    expect(window.localStorage.getItem('collabboard.dashboard.active-view')).toBe('shared');
   });
 
   it('renders shared dashboard sections when Shared with me is selected', () => {

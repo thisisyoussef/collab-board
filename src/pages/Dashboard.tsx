@@ -2,7 +2,7 @@
 // Shows two tabs: "My Boards" (owned) and "Shared with me" (via boardMembers/boardRecents).
 // Supports create, rename, delete operations via useBoards hook.
 // Board cards link to /board/:id for the canvas editor.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useBoards } from '../hooks/useBoards';
@@ -13,6 +13,11 @@ import type { SharedBoardDashboardEntry } from '../types/sharing';
 import './Dashboard.css';
 
 type DashboardView = 'owned' | 'shared';
+const DASHBOARD_ACTIVE_VIEW_STORAGE_KEY = 'collabboard.dashboard.active-view';
+
+function parseStoredDashboardView(value: string | null): DashboardView {
+  return value === 'shared' ? 'shared' : 'owned';
+}
 
 function formatDate(ms: number): string {
   if (!ms) return 'Just now';
@@ -102,7 +107,13 @@ export function Dashboard() {
     user?.uid,
   );
 
-  const [activeView, setActiveView] = useState<DashboardView>('owned');
+  const [activeView, setActiveView] = useState<DashboardView>(() => {
+    if (typeof window === 'undefined') {
+      return 'owned';
+    }
+
+    return parseStoredDashboardView(window.localStorage.getItem(DASHBOARD_ACTIVE_VIEW_STORAGE_KEY));
+  });
   const [newBoardName, setNewBoardName] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
   const [editingBoardId, setEditingBoardId] = useState<string | null>(null);
@@ -139,6 +150,13 @@ export function Dashboard() {
       : `Tracking ${countLabel} shared via team access and recent links.`;
   const hasOwnedLoadError = activeView === 'owned' && Boolean(error);
   const hasSharedLoadError = activeView === 'shared' && Boolean(sharedError);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    window.localStorage.setItem(DASHBOARD_ACTIVE_VIEW_STORAGE_KEY, activeView);
+  }, [activeView]);
 
   const openBoard = (boardId: string) => {
     navigate(`/board/${boardId}`);
