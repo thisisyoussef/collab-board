@@ -13,6 +13,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toFirestoreUserMessage, withFirestoreTimeout } from '../lib/firestore-client';
 import { db } from '../lib/firebase';
 import { logger } from '../lib/logger';
+import { buildDemoCasePack } from '../lib/demo-case-packs';
+import type { BoardObject, BoardObjectsRecord } from '../types/board';
+import type { DemoCasePackKey } from '../types/claim-strength-tools';
 
 export interface BoardSummary {
   id: string;
@@ -63,6 +66,13 @@ function toBoardSummary(
 
 function sortBoards(items: BoardSummary[]): BoardSummary[] {
   return [...items].sort((a, b) => b.updatedAtMs - a.updatedAtMs);
+}
+
+function toObjectsRecord(objects: BoardObject[]): BoardObjectsRecord {
+  return objects.reduce<BoardObjectsRecord>((record, entry) => {
+    record[entry.id] = entry;
+    return record;
+  }, {});
 }
 
 async function queryBoardsByField(userId: string, field: 'ownerId' | 'createdBy') {
@@ -155,8 +165,8 @@ export function useBoards(userId: string | undefined) {
     void loadBoards();
   }, [userId, loadBoards]);
 
-  const createBoard = useCallback(
-    (title: string): CreateBoardResult => {
+  const persistBoard = useCallback(
+    (title: string, objects: BoardObjectsRecord): CreateBoardResult => {
       if (!userId) {
         throw new Error('Not authenticated');
       }
@@ -185,7 +195,7 @@ export function useBoards(userId: string | undefined) {
         ownerId: userId,
         createdBy: userId,
         title: cleanedTitle,
-        objects: {},
+        objects,
         schemaVersion: 2,
         sharing: {
           visibility: 'private',
@@ -209,6 +219,28 @@ export function useBoards(userId: string | undefined) {
       return { id: boardRef.id, committed: wrappedCommit };
     },
     [userId],
+  );
+
+  const createBoard = useCallback(
+    (title: string): CreateBoardResult => persistBoard(title, {}),
+    [persistBoard],
+  );
+
+  const createBoardFromTemplate = useCallback(
+    (pack: DemoCasePackKey): CreateBoardResult => {
+      if (!userId) {
+        throw new Error('Not authenticated');
+      }
+
+      const blueprint = buildDemoCasePack({
+        pack,
+        center: { x: 1200, y: 720 },
+        actorUserId: userId,
+      });
+
+      return persistBoard(blueprint.label, toObjectsRecord(blueprint.objects));
+    },
+    [persistBoard, userId],
   );
 
   const renameBoard = useCallback(async (boardId: string, title: string) => {
@@ -288,10 +320,11 @@ export function useBoards(userId: string | undefined) {
       loading: userId ? loading : false,
       error: userId ? error : null,
       createBoard,
+      createBoardFromTemplate,
       renameBoard,
       removeBoard,
       reload: loadBoards,
     }),
-    [userId, boards, loading, error, createBoard, renameBoard, removeBoard, loadBoards],
+    [userId, boards, loading, error, createBoard, createBoardFromTemplate, renameBoard, removeBoard, loadBoards],
   );
 }

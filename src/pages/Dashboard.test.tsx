@@ -6,6 +6,7 @@ import type { SharedBoardDashboardEntry } from '../types/sharing';
 
 // Mock useBoards
 const mockCreateBoard = vi.fn();
+const mockCreateBoardFromTemplate = vi.fn();
 const mockRenameBoard = vi.fn();
 const mockRemoveBoard = vi.fn();
 const mockReloadBoards = vi.fn().mockResolvedValue(undefined);
@@ -14,6 +15,7 @@ let mockBoardsReturn = {
   loading: false,
   error: null as string | null,
   createBoard: mockCreateBoard,
+  createBoardFromTemplate: mockCreateBoardFromTemplate,
   renameBoard: mockRenameBoard,
   removeBoard: mockRemoveBoard,
   reload: mockReloadBoards,
@@ -68,6 +70,7 @@ function renderDashboard(
     loading: false,
     error: null,
     createBoard: mockCreateBoard,
+    createBoardFromTemplate: mockCreateBoardFromTemplate,
     renameBoard: mockRenameBoard,
     removeBoard: mockRemoveBoard,
     reload: mockReloadBoards,
@@ -254,6 +257,59 @@ describe('Dashboard', () => {
     expect(mockCreateBoard).toHaveBeenCalledWith('My New Board');
     await waitFor(() => {
       expect(mockNavigate).toHaveBeenCalledWith('/board/new-board-id');
+    });
+  });
+
+  it('creates a board from selected template and navigates after commit resolves', async () => {
+    mockCreateBoardFromTemplate.mockReturnValue({
+      id: 'template-board-id',
+      committed: Promise.resolve(),
+    });
+
+    renderDashboard();
+
+    fireEvent.change(screen.getByLabelText('Case template'), { target: { value: 'johnson' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create from template' }));
+
+    expect(mockCreateBoardFromTemplate).toHaveBeenCalledWith('johnson');
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/board/template-board-id');
+    });
+  });
+
+  it('keeps create from template disabled until a template is selected', () => {
+    renderDashboard();
+
+    expect(screen.getByRole('button', { name: 'Create from template' })).toBeDisabled();
+  });
+
+  it('prevents duplicate template create requests while a template commit is pending', async () => {
+    let resolveCommit: (() => void) | null = null;
+    const pendingCommit = new Promise<void>((resolve) => {
+      resolveCommit = resolve;
+    });
+    mockCreateBoardFromTemplate.mockReturnValue({
+      id: 'template-board-id',
+      committed: pendingCommit,
+    });
+
+    renderDashboard();
+
+    fireEvent.change(screen.getByLabelText('Case template'), { target: { value: 'defectco' } });
+    const createFromTemplateButton = screen.getByRole('button', { name: 'Create from template' });
+
+    fireEvent.click(createFromTemplateButton);
+    fireEvent.click(createFromTemplateButton);
+
+    expect(mockCreateBoardFromTemplate).toHaveBeenCalledTimes(1);
+    expect(createFromTemplateButton).toBeDisabled();
+    expect(createFromTemplateButton).toHaveTextContent('Creating...');
+
+    resolveCommit?.();
+
+    await waitFor(() => {
+      expect(createFromTemplateButton).not.toBeDisabled();
+      expect(createFromTemplateButton).toHaveTextContent('Create from template');
     });
   });
 

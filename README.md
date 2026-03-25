@@ -53,6 +53,7 @@ Real-time collaborative whiteboard with AI-powered board manipulation and litiga
 - **Litigation workflow** — case intake dialog, claim-evidence graph with strength heatmap, contradiction radar, session replay
 - **Share links** — UUID-based URLs for instant collaboration
 - **Dashboard recovery actions** — retry owned/shared case loading directly from error states
+- **Dashboard case templates** — create a prefilled starter board from a litigation template pack
 - **Metrics overlay** — real-time FPS, latency, connection status with PRD threshold indicators
 
 ---

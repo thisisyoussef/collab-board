@@ -7,6 +7,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useBoards } from '../hooks/useBoards';
 import { useSharedBoards } from '../hooks/useSharedBoards';
+import { DEMO_CASE_PACK_OPTIONS } from '../lib/demo-case-packs';
+import type { DemoCasePackKey } from '../types/claim-strength-tools';
 import type { SharedBoardDashboardEntry } from '../types/sharing';
 import './Dashboard.css';
 
@@ -80,7 +82,16 @@ function SharedBoardsSection({ title, emptyText, boards, onOpenBoard }: SharedSe
 export function Dashboard() {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
-  const { boards, loading, error, createBoard, renameBoard, removeBoard, reload: reloadOwnedBoards } = useBoards(user?.uid);
+  const {
+    boards,
+    loading,
+    error,
+    createBoard,
+    createBoardFromTemplate,
+    renameBoard,
+    removeBoard,
+    reload: reloadOwnedBoards,
+  } = useBoards(user?.uid);
   const {
     explicitBoards,
     recentBoards,
@@ -97,6 +108,8 @@ export function Dashboard() {
   const [editingBoardId, setEditingBoardId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<DemoCasePackKey | ''>('');
+  const [isCreatingTemplate, setIsCreatingTemplate] = useState(false);
   const [renamingBoardId, setRenamingBoardId] = useState<string | null>(null);
   const [isRetryingOwned, setIsRetryingOwned] = useState(false);
   const [isRetryingShared, setIsRetryingShared] = useState(false);
@@ -150,6 +163,24 @@ export function Dashboard() {
       setActionError(message);
     } finally {
       setRenamingBoardId(null);
+    }
+  };
+
+  const handleCreateFromTemplate = async () => {
+    if (!selectedTemplate || isCreatingTemplate) return;
+
+    setActionError(null);
+    setIsCreatingTemplate(true);
+    try {
+      const { id: boardId, committed } = createBoardFromTemplate(selectedTemplate);
+      await committed;
+      setSelectedTemplate('');
+      openBoard(boardId);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to create case from template. Please try again.';
+      setActionError(message);
+    } finally {
+      setIsCreatingTemplate(false);
     }
   };
 
@@ -297,8 +328,8 @@ export function Dashboard() {
             >
               Shared with me
             </button>
-            <button className="sidebar-item" disabled>
-              Case templates (soon)
+            <button className="sidebar-item" onClick={() => setActiveView('owned')}>
+              Case templates
             </button>
           </div>
           <div className="dashboard-sidebar-metrics">
@@ -334,8 +365,30 @@ export function Dashboard() {
                   placeholder="New case name (e.g., Smith v. Acme)"
                   className="board-input"
                 />
+                <select
+                  aria-label="Case template"
+                  className="board-template-select"
+                  value={selectedTemplate}
+                  onChange={(event) => setSelectedTemplate(event.target.value as DemoCasePackKey | '')}
+                  disabled={isCreatingTemplate}
+                >
+                  <option value="">Template</option>
+                  {DEMO_CASE_PACK_OPTIONS.map((option) => (
+                    <option key={option.pack} value={option.pack}>
+                      {option.menuLabel}
+                    </option>
+                  ))}
+                </select>
                 <button className="primary-btn" type="submit" disabled={isCreating}>
                   {isCreating ? 'Creating...' : 'Create Case'}
+                </button>
+                <button
+                  className="secondary-btn"
+                  type="button"
+                  disabled={!selectedTemplate || isCreatingTemplate}
+                  onClick={() => void handleCreateFromTemplate()}
+                >
+                  {isCreatingTemplate ? 'Creating...' : 'Create from template'}
                 </button>
               </form>
             ) : null}

@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useBoards } from './useBoards';
+import type { DemoCasePackKey } from '../types/claim-strength-tools';
 
 const mockCollection = vi.fn();
 const mockWhere = vi.fn();
@@ -14,6 +15,7 @@ const mockServerTimestamp = vi.fn(() => 'server-timestamp');
 
 const mockWithFirestoreTimeout = vi.fn((_: string, promise: Promise<unknown>) => promise);
 const mockToFirestoreUserMessage = vi.fn((fallback: string) => fallback);
+const mockBuildDemoCasePack = vi.fn();
 
 vi.mock('firebase/firestore/lite', () => ({
   collection: (...args: unknown[]) => mockCollection(...args),
@@ -34,6 +36,10 @@ vi.mock('../lib/firebase', () => ({
 vi.mock('../lib/firestore-client', () => ({
   withFirestoreTimeout: (...args: [string, Promise<unknown>]) => mockWithFirestoreTimeout(...args),
   toFirestoreUserMessage: (...args: [string, unknown]) => mockToFirestoreUserMessage(...args),
+}));
+
+vi.mock('../lib/demo-case-packs', () => ({
+  buildDemoCasePack: (...args: unknown[]) => mockBuildDemoCasePack(...args),
 }));
 
 interface SnapshotDoc {
@@ -80,6 +86,27 @@ describe('useBoards', () => {
     mockSetDoc.mockResolvedValue(undefined);
     mockUpdateDoc.mockResolvedValue(undefined);
     mockDeleteDoc.mockResolvedValue(undefined);
+    mockBuildDemoCasePack.mockImplementation(({ pack }: { pack: DemoCasePackKey }) => ({
+      pack,
+      label: `Template ${pack}`,
+      focusClaimId: `${pack}-claim-1`,
+      objects: [
+        {
+          id: `${pack}-obj-1`,
+          type: 'sticky',
+          x: 10,
+          y: 20,
+          width: 200,
+          height: 100,
+          rotation: 0,
+          text: 'Template note',
+          color: '#fff3a0',
+          zIndex: 1,
+          createdBy: 'user-1',
+          updatedAt: '2026-03-25T00:00:00.000Z',
+        },
+      ],
+    }));
     mockWithFirestoreTimeout.mockImplementation((_: string, promise: Promise<unknown>) => promise);
     mockToFirestoreUserMessage.mockImplementation((fallback: string) => fallback);
   });
@@ -246,6 +273,46 @@ describe('useBoards', () => {
   it('throws when createBoard is called without an authenticated user', () => {
     const { result } = renderHook(() => useBoards(undefined));
     expect(() => result.current.createBoard('Board')).toThrow('Not authenticated');
+  });
+
+  it('creates a board from a template pack and persists template objects', async () => {
+    const { result } = renderHook(() => useBoards('user-1'));
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    let created: ReturnType<typeof result.current.createBoardFromTemplate> | null = null;
+    act(() => {
+      created = result.current.createBoardFromTemplate('johnson');
+    });
+
+    expect(mockBuildDemoCasePack).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pack: 'johnson',
+        actorUserId: 'user-1',
+      }),
+    );
+    expect(created?.id).toBe('board-new');
+    expect(result.current.boards[0]).toMatchObject({
+      id: 'board-new',
+      title: 'Template johnson',
+      ownerId: 'user-1',
+    });
+
+    await expect(created?.committed).resolves.toBeUndefined();
+    expect(mockSetDoc).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'board-new' }),
+      expect.objectContaining({
+        title: 'Template johnson',
+        objects: {
+          'johnson-obj-1': expect.objectContaining({
+            id: 'johnson-obj-1',
+            text: 'Template note',
+          }),
+        },
+      }),
+    );
   });
 
   it('rolls back a failed rename', async () => {

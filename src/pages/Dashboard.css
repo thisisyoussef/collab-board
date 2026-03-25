@@ -280,7 +280,23 @@
   min-width: 220px;
 }
 
+.board-template-select {
+  border: 1px solid #c9c2b6;
+  background: #fff;
+  color: #1e1c19;
+  border-radius: 9px;
+  height: 38px;
+  padding: 0 0.6rem;
+  font-size: 0.84rem;
+  min-width: 180px;
+}
+
 .board-input:focus {
+  outline: 2px solid rgba(212, 149, 43, 0.24);
+  border-color: #d4952b;
+}
+
+.board-template-select:focus {
   outline: 2px solid rgba(212, 149, 43, 0.24);
   border-color: #d4952b;
 }
@@ -503,6 +519,11 @@
   }
 
   .board-input {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .board-template-select {
     min-width: 0;
     flex: 1;
   }
