@@ -113,12 +113,24 @@ export function Dashboard() {
   const [renamingBoardId, setRenamingBoardId] = useState<string | null>(null);
   const [isRetryingOwned, setIsRetryingOwned] = useState(false);
   const [isRetryingShared, setIsRetryingShared] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+  const boardMatchesSearch = (title: string) =>
+    !normalizedSearchQuery || title.toLowerCase().includes(normalizedSearchQuery);
+  const filteredOwnedBoards = boards.filter((board) => boardMatchesSearch(board.title));
+  const filteredExplicitBoards = explicitBoards.filter((board) => boardMatchesSearch(board.title));
+  const filteredRecentBoards = recentBoards.filter((board) => boardMatchesSearch(board.title));
 
   const displayName = user?.displayName || user?.email || 'Unknown';
   const userInitial = displayName.charAt(0).toUpperCase();
   const sharedCount = explicitBoards.length + recentBoards.length;
+  const filteredSharedCount = filteredExplicitBoards.length + filteredRecentBoards.length;
   const heading = activeView === 'owned' ? 'Cases' : 'Shared with me';
-  const countLabel = activeView === 'owned' ? boardCountLabel(boards.length) : boardCountLabel(sharedCount);
+  const countLabel =
+    activeView === 'owned'
+      ? boardCountLabel(filteredOwnedBoards.length)
+      : boardCountLabel(filteredSharedCount);
   const visibleError = activeView === 'owned' ? error || actionError : sharedError;
   const coverageLabel = activeView === 'owned' ? 'Active caseload' : 'Shared cases';
   const coverageSummary =
@@ -217,7 +229,7 @@ export function Dashboard() {
     }
   };
 
-  const ownedBoardCards = boards.map((board) => {
+  const ownedBoardCards = filteredOwnedBoards.map((board) => {
     const isEditing = editingBoardId === board.id;
 
     return (
@@ -393,6 +405,13 @@ export function Dashboard() {
               </form>
             ) : null}
           </div>
+          <input
+            aria-label="Search cases"
+            className="board-input"
+            placeholder={activeView === 'owned' ? 'Search my cases' : 'Search shared cases'}
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+          />
           <div className="dashboard-context-cards">
             <article className="dashboard-context-card">
               <p className="dashboard-context-kicker">Focus</p>
@@ -435,6 +454,8 @@ export function Dashboard() {
               <div className="dashboard-empty">Loading your cases...</div>
             ) : boards.length === 0 ? (
               <div className="dashboard-empty">No cases yet. Create your first litigation board above.</div>
+            ) : filteredOwnedBoards.length === 0 ? (
+              <div className="dashboard-empty">No cases match your search.</div>
             ) : (
               <div className="board-list">{ownedBoardCards}</div>
             )
@@ -444,17 +465,19 @@ export function Dashboard() {
             <div className="dashboard-empty">
               No shared cases yet. Open a shared case link or ask lead counsel to add you.
             </div>
+          ) : filteredExplicitBoards.length === 0 && filteredRecentBoards.length === 0 ? (
+            <div className="dashboard-empty">No shared cases match your search.</div>
           ) : (
             <div className="shared-boards-list">
               <SharedBoardsSection
                 title="Shared by co-counsel"
-                boards={explicitBoards}
+                boards={filteredExplicitBoards}
                 emptyText="No directly shared cases yet."
                 onOpenBoard={openBoard}
               />
               <SharedBoardsSection
                 title="Recent case links"
-                boards={recentBoards}
+                boards={filteredRecentBoards}
                 emptyText="No recent case links yet."
                 onOpenBoard={openBoard}
               />
