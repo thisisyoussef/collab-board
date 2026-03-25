@@ -281,6 +281,84 @@ describe('Dashboard', () => {
     expect(screen.queryByText('Trial Strategy')).not.toBeInTheDocument();
   });
 
+  it('does not carry owned-case search into shared view', () => {
+    renderDashboard(
+      {},
+      {
+        boards: [
+          { id: 'b1', title: 'Smith v. Acme', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 2000 },
+        ],
+      },
+      {
+        explicitBoards: [
+          {
+            id: 'shared-1',
+            title: 'Trial Strategy',
+            ownerId: 'owner-1',
+            createdAtMs: 1000,
+            updatedAtMs: 3000,
+            role: 'viewer',
+            source: 'explicit',
+          },
+        ],
+      },
+    );
+
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'smith' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+
+    expect(screen.getByLabelText('Search cases')).toHaveValue('');
+    expect(screen.getByText('Trial Strategy')).toBeInTheDocument();
+  });
+
+  it('restores each view search when switching tabs', () => {
+    renderDashboard(
+      {},
+      {
+        boards: [
+          { id: 'b1', title: 'Smith v. Acme', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 2000 },
+          { id: 'b2', title: 'Johnson Intake', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 2000 },
+        ],
+      },
+      {
+        explicitBoards: [
+          {
+            id: 'shared-1',
+            title: 'Trial Strategy',
+            ownerId: 'owner-1',
+            createdAtMs: 1000,
+            updatedAtMs: 3000,
+            role: 'viewer',
+            source: 'explicit',
+          },
+          {
+            id: 'shared-2',
+            title: 'Deposition Notes',
+            ownerId: 'owner-2',
+            createdAtMs: 1100,
+            updatedAtMs: 3100,
+            role: 'editor',
+            source: 'explicit',
+          },
+        ],
+      },
+    );
+
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'johnson' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'deposition' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'All cases' }));
+    expect(screen.getByLabelText('Search cases')).toHaveValue('johnson');
+    expect(screen.getByText('Johnson Intake')).toBeInTheDocument();
+    expect(screen.queryByText('Smith v. Acme')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+    expect(screen.getByLabelText('Search cases')).toHaveValue('deposition');
+    expect(screen.getByText('Deposition Notes')).toBeInTheDocument();
+    expect(screen.queryByText('Trial Strategy')).not.toBeInTheDocument();
+  });
+
   it('renders board cards with Open, Rename, and Delete buttons', () => {
     renderDashboard({}, {
       boards: [
