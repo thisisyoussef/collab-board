@@ -281,6 +281,112 @@ describe('Dashboard', () => {
     expect(screen.queryByText('Trial Strategy')).not.toBeInTheDocument();
   });
 
+  it('keeps owned and shared search filters independent', () => {
+    renderDashboard(
+      {},
+      {
+        boards: [
+          { id: 'owned-1', title: 'Smith v. Acme', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 2000 },
+          { id: 'owned-2', title: 'Johnson Intake', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 3000 },
+        ],
+      },
+      {
+        explicitBoards: [
+          {
+            id: 'shared-1',
+            title: 'Trial Strategy',
+            ownerId: 'owner-1',
+            createdAtMs: 1000,
+            updatedAtMs: 3000,
+            role: 'viewer',
+            source: 'explicit',
+          },
+        ],
+        recentBoards: [
+          {
+            id: 'recent-1',
+            title: 'Deposition Notes',
+            ownerId: 'owner-2',
+            createdAtMs: 1200,
+            updatedAtMs: 2200,
+            lastOpenedAtMs: 5000,
+            source: 'recent',
+          },
+        ],
+      },
+    );
+
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'smith' } });
+    expect(screen.getByText('Smith v. Acme')).toBeInTheDocument();
+    expect(screen.queryByText('Johnson Intake')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+    expect(screen.getByDisplayValue('')).toBeInTheDocument();
+    expect(screen.getByText('Trial Strategy')).toBeInTheDocument();
+    expect(screen.getByText('Deposition Notes')).toBeInTheDocument();
+  });
+
+  it('restores owned search text after returning from shared view', () => {
+    renderDashboard({}, {
+      boards: [
+        { id: 'owned-1', title: 'Smith v. Acme', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 2000 },
+        { id: 'owned-2', title: 'Johnson Intake', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 3000 },
+      ],
+    });
+
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'johnson' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+    fireEvent.click(screen.getByRole('button', { name: 'All cases' }));
+
+    expect(screen.getByDisplayValue('johnson')).toBeInTheDocument();
+    expect(screen.getByText('Johnson Intake')).toBeInTheDocument();
+    expect(screen.queryByText('Smith v. Acme')).not.toBeInTheDocument();
+  });
+
+  it('restores shared search text after returning from owned view', () => {
+    renderDashboard(
+      {},
+      {
+        boards: [
+          { id: 'owned-1', title: 'Smith v. Acme', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 2000 },
+        ],
+      },
+      {
+        explicitBoards: [
+          {
+            id: 'shared-1',
+            title: 'Trial Strategy',
+            ownerId: 'owner-1',
+            createdAtMs: 1000,
+            updatedAtMs: 3000,
+            role: 'viewer',
+            source: 'explicit',
+          },
+        ],
+        recentBoards: [
+          {
+            id: 'recent-1',
+            title: 'Deposition Notes',
+            ownerId: 'owner-2',
+            createdAtMs: 1200,
+            updatedAtMs: 2200,
+            lastOpenedAtMs: 5000,
+            source: 'recent',
+          },
+        ],
+      },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'deposition' } });
+    fireEvent.click(screen.getByRole('button', { name: 'All cases' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+
+    expect(screen.getByDisplayValue('deposition')).toBeInTheDocument();
+    expect(screen.getByText('Deposition Notes')).toBeInTheDocument();
+    expect(screen.queryByText('Trial Strategy')).not.toBeInTheDocument();
+  });
+
   it('renders board cards with Open, Rename, and Delete buttons', () => {
     renderDashboard({}, {
       boards: [

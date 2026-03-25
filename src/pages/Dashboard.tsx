@@ -113,14 +113,22 @@ export function Dashboard() {
   const [renamingBoardId, setRenamingBoardId] = useState<string | null>(null);
   const [isRetryingOwned, setIsRetryingOwned] = useState(false);
   const [isRetryingShared, setIsRetryingShared] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQueries, setSearchQueries] = useState<Record<DashboardView, string>>({
+    owned: '',
+    shared: '',
+  });
 
-  const normalizedSearchQuery = searchQuery.trim().toLowerCase();
-  const boardMatchesSearch = (title: string) =>
-    !normalizedSearchQuery || title.toLowerCase().includes(normalizedSearchQuery);
-  const filteredOwnedBoards = boards.filter((board) => boardMatchesSearch(board.title));
-  const filteredExplicitBoards = explicitBoards.filter((board) => boardMatchesSearch(board.title));
-  const filteredRecentBoards = recentBoards.filter((board) => boardMatchesSearch(board.title));
+  const normalizedOwnedSearchQuery = searchQueries.owned.trim().toLowerCase();
+  const normalizedSharedSearchQuery = searchQueries.shared.trim().toLowerCase();
+  const boardMatchesSearch = (title: string, normalizedQuery: string) =>
+    !normalizedQuery || title.toLowerCase().includes(normalizedQuery);
+  const filteredOwnedBoards = boards.filter((board) => boardMatchesSearch(board.title, normalizedOwnedSearchQuery));
+  const filteredExplicitBoards = explicitBoards.filter((board) =>
+    boardMatchesSearch(board.title, normalizedSharedSearchQuery),
+  );
+  const filteredRecentBoards = recentBoards.filter((board) =>
+    boardMatchesSearch(board.title, normalizedSharedSearchQuery),
+  );
 
   const displayName = user?.displayName || user?.email || 'Unknown';
   const userInitial = displayName.charAt(0).toUpperCase();
@@ -409,8 +417,13 @@ export function Dashboard() {
             aria-label="Search cases"
             className="board-input"
             placeholder={activeView === 'owned' ? 'Search my cases' : 'Search shared cases'}
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
+            value={searchQueries[activeView]}
+            onChange={(event) =>
+              setSearchQueries((previous) => ({
+                ...previous,
+                [activeView]: event.target.value,
+              }))
+            }
           />
           <div className="dashboard-context-cards">
             <article className="dashboard-context-card">
