@@ -259,6 +259,20 @@
   text-transform: uppercase;
 }
 
+.dashboard-search-row {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.dashboard-search-row .board-input {
+  flex: 1;
+}
+
+.dashboard-search-clear {
+  white-space: nowrap;
+}
+
 .create-board-row {
   display: flex;
   align-items: center;
