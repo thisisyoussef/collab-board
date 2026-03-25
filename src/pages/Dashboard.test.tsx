@@ -4,6 +4,8 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { AuthContext, type AuthContextValue } from '../context/auth-context';
 import type { SharedBoardDashboardEntry } from '../types/sharing';
 
+const DASHBOARD_VIEW_STORAGE_KEY = 'collabboard.dashboard.active-view';
+
 // Mock useBoards
 const mockCreateBoard = vi.fn();
 const mockCreateBoardFromTemplate = vi.fn();
@@ -97,6 +99,7 @@ function renderDashboard(
 describe('Dashboard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
   });
 
   it('renders the user display name and avatar', () => {
@@ -125,6 +128,34 @@ describe('Dashboard', () => {
     const sharedButton = screen.getByRole('button', { name: 'Shared with me' });
     expect(sharedButton).toBeInTheDocument();
     expect(sharedButton).toBeEnabled();
+  });
+
+  it('restores Shared with me view from saved localStorage preference', () => {
+    window.localStorage.setItem(DASHBOARD_VIEW_STORAGE_KEY, 'shared');
+
+    renderDashboard();
+
+    expect(screen.getByRole('heading', { name: 'Shared with me' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Shared with me' })).toHaveClass('active');
+  });
+
+  it('falls back to All cases when saved view preference is invalid', () => {
+    window.localStorage.setItem(DASHBOARD_VIEW_STORAGE_KEY, 'unknown');
+
+    renderDashboard();
+
+    expect(screen.getByRole('heading', { name: 'Cases' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'All cases' })).toHaveClass('active');
+  });
+
+  it('saves selected dashboard view to localStorage when tab changes', () => {
+    renderDashboard();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+    expect(window.localStorage.getItem(DASHBOARD_VIEW_STORAGE_KEY)).toBe('shared');
+
+    fireEvent.click(screen.getByRole('button', { name: 'All cases' }));
+    expect(window.localStorage.getItem(DASHBOARD_VIEW_STORAGE_KEY)).toBe('owned');
   });
 
   it('renders shared dashboard sections when Shared with me is selected', () => {
