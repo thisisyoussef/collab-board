@@ -259,6 +259,17 @@
   text-transform: uppercase;
 }
 
+.dashboard-main-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.dashboard-filter-input {
+  min-width: 230px;
+}
+
 .create-board-row {
   display: flex;
   align-items: center;
@@ -490,6 +501,10 @@
     align-items: flex-start;
   }
 
+  .dashboard-main-controls {
+    width: 100%;
+  }
+
   .dashboard-context-cards {
     grid-template-columns: 1fr;
   }
@@ -502,7 +517,8 @@
     width: 100%;
   }
 
-  .board-input {
+  .board-input,
+  .dashboard-filter-input {
     min-width: 0;
     flex: 1;
   }
