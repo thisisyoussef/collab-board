@@ -97,6 +97,7 @@ function renderDashboard(
 describe('Dashboard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
   });
 
   it('renders the user display name and avatar', () => {
@@ -125,6 +126,55 @@ describe('Dashboard', () => {
     const sharedButton = screen.getByRole('button', { name: 'Shared with me' });
     expect(sharedButton).toBeInTheDocument();
     expect(sharedButton).toBeEnabled();
+  });
+
+  it('defaults to All cases when no saved dashboard view exists', () => {
+    renderDashboard();
+
+    expect(screen.getByRole('heading', { name: 'Cases' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'All cases' })).toHaveClass('active');
+  });
+
+  it('restores Shared with me when it was the last saved dashboard view', () => {
+    window.localStorage.setItem('collabboard.dashboard.active-view', 'shared');
+    renderDashboard(
+      {},
+      {},
+      {
+        explicitBoards: [
+          {
+            id: 'shared-restored-1',
+            title: 'Restored Shared Case',
+            ownerId: 'owner-1',
+            createdAtMs: 1000,
+            updatedAtMs: 3000,
+            role: 'viewer',
+            source: 'explicit',
+          },
+        ],
+      },
+    );
+
+    expect(screen.getByRole('heading', { name: 'Shared with me' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Shared with me' })).toHaveClass('active');
+  });
+
+  it('falls back to All cases when saved dashboard view is invalid', () => {
+    window.localStorage.setItem('collabboard.dashboard.active-view', 'invalid');
+    renderDashboard();
+
+    expect(screen.getByRole('heading', { name: 'Cases' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'All cases' })).toHaveClass('active');
+  });
+
+  it('persists selected dashboard view when switching tabs', () => {
+    renderDashboard();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+    expect(window.localStorage.getItem('collabboard.dashboard.active-view')).toBe('shared');
+
+    fireEvent.click(screen.getByRole('button', { name: 'All cases' }));
+    expect(window.localStorage.getItem('collabboard.dashboard.active-view')).toBe('owned');
   });
 
   it('renders shared dashboard sections when Shared with me is selected', () => {
