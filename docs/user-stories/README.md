@@ -38,6 +38,7 @@ All docs live in `docs/` and should be consulted before each story:
 6. `US-05-local-canvas-and-persistence.md`
 7. `US-06-realtime-object-sync.md`
 8. `US-07-reconnect-and-phase1-validation.md`
+9. `US-08-dashboard-case-filter.md`
 
 ## Definition of Done (Phase I)
 

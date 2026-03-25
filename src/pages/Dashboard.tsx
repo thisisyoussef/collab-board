@@ -87,6 +87,7 @@ export function Dashboard() {
 
   const [activeView, setActiveView] = useState<DashboardView>('owned');
   const [newBoardName, setNewBoardName] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
   const [editingBoardId, setEditingBoardId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
@@ -104,6 +105,12 @@ export function Dashboard() {
     activeView === 'owned'
       ? `Tracking ${countLabel} in your direct caseload.`
       : `Tracking ${countLabel} shared via team access and recent links.`;
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const filterByTitle = (title: string) =>
+    normalizedQuery.length === 0 || title.toLowerCase().includes(normalizedQuery);
+  const filteredOwnedBoards = boards.filter((board) => filterByTitle(board.title));
+  const filteredExplicitBoards = explicitBoards.filter((board) => filterByTitle(board.title));
+  const filteredRecentBoards = recentBoards.filter((board) => filterByTitle(board.title));
 
   const openBoard = (boardId: string) => {
     navigate(`/board/${boardId}`);
@@ -156,7 +163,7 @@ export function Dashboard() {
     }
   };
 
-  const ownedBoardCards = boards.map((board) => {
+  const ownedBoardCards = filteredOwnedBoards.map((board) => {
     const isEditing = editingBoardId === board.id;
 
     return (
@@ -290,25 +297,34 @@ export function Dashboard() {
               <h1>{heading}</h1>
               <p className="landing-muted">{countLabel}</p>
             </div>
-            {activeView === 'owned' ? (
-              <form
-                className="create-board-row"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void handleCreateBoard();
-                }}
-              >
-                <input
-                  value={newBoardName}
-                  onChange={(event) => setNewBoardName(event.target.value)}
-                  placeholder="New case name (e.g., Smith v. Acme)"
-                  className="board-input"
-                />
-                <button className="primary-btn" type="submit" disabled={isCreating}>
-                  {isCreating ? 'Creating...' : 'Create Case'}
-                </button>
-              </form>
-            ) : null}
+            <div className="dashboard-main-controls">
+              <input
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Filter cases by name"
+                className="board-input dashboard-filter-input"
+                aria-label="Filter cases by name"
+              />
+              {activeView === 'owned' ? (
+                <form
+                  className="create-board-row"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void handleCreateBoard();
+                  }}
+                >
+                  <input
+                    value={newBoardName}
+                    onChange={(event) => setNewBoardName(event.target.value)}
+                    placeholder="New case name (e.g., Smith v. Acme)"
+                    className="board-input"
+                  />
+                  <button className="primary-btn" type="submit" disabled={isCreating}>
+                    {isCreating ? 'Creating...' : 'Create Case'}
+                  </button>
+                </form>
+              ) : null}
+            </div>
           </div>
           <div className="dashboard-context-cards">
             <article className="dashboard-context-card">
@@ -330,6 +346,8 @@ export function Dashboard() {
               <div className="dashboard-empty">Loading your cases...</div>
             ) : boards.length === 0 ? (
               <div className="dashboard-empty">No cases yet. Create your first litigation board above.</div>
+            ) : normalizedQuery && filteredOwnedBoards.length === 0 ? (
+              <div className="dashboard-empty">No matching cases for "{searchQuery.trim()}".</div>
             ) : (
               <div className="board-list">{ownedBoardCards}</div>
             )
@@ -339,18 +357,26 @@ export function Dashboard() {
             <div className="dashboard-empty">
               No shared cases yet. Open a shared case link or ask lead counsel to add you.
             </div>
+          ) : filteredExplicitBoards.length === 0 && filteredRecentBoards.length === 0 ? (
+            <div className="dashboard-empty">No matching shared cases for "{searchQuery.trim()}".</div>
           ) : (
             <div className="shared-boards-list">
               <SharedBoardsSection
                 title="Shared by co-counsel"
-                boards={explicitBoards}
-                emptyText="No directly shared cases yet."
+                boards={filteredExplicitBoards}
+                emptyText={
+                  normalizedQuery
+                    ? 'No directly shared cases match your filter.'
+                    : 'No directly shared cases yet.'
+                }
                 onOpenBoard={openBoard}
               />
               <SharedBoardsSection
                 title="Recent case links"
-                boards={recentBoards}
-                emptyText="No recent case links yet."
+                boards={filteredRecentBoards}
+                emptyText={
+                  normalizedQuery ? 'No recent case links match your filter.' : 'No recent case links yet.'
+                }
                 onOpenBoard={openBoard}
               />
             </div>

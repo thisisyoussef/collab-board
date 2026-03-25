@@ -225,6 +225,76 @@ describe('Dashboard', () => {
     expect(screen.getByText('Delete')).toBeInTheDocument();
   });
 
+  it('filters owned cases by a case-insensitive search query', () => {
+    renderDashboard({}, {
+      boards: [
+        { id: 'b1', title: 'Sprint Plan', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 2000 },
+        { id: 'b2', title: 'Deposition Notes', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 3000 },
+      ],
+    });
+
+    fireEvent.change(screen.getByPlaceholderText('Filter cases by name'), {
+      target: { value: 'depos' },
+    });
+
+    expect(screen.queryByText('Sprint Plan')).not.toBeInTheDocument();
+    expect(screen.getByText('Deposition Notes')).toBeInTheDocument();
+  });
+
+  it('shows no-match empty state in owned cases when search has no results', () => {
+    renderDashboard({}, {
+      boards: [
+        { id: 'b1', title: 'Sprint Plan', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 2000 },
+      ],
+    });
+
+    fireEvent.change(screen.getByPlaceholderText('Filter cases by name'), {
+      target: { value: 'xyz' },
+    });
+
+    expect(screen.getByText('No matching cases for "xyz".')).toBeInTheDocument();
+  });
+
+  it('filters shared cases across both shared sections', () => {
+    renderDashboard(
+      {},
+      {},
+      {
+        explicitBoards: [
+          {
+            id: 'shared-1',
+            title: 'Shared Planning',
+            ownerId: 'owner-1',
+            createdAtMs: 1000,
+            updatedAtMs: 3000,
+            role: 'viewer',
+            source: 'explicit',
+          },
+        ],
+        recentBoards: [
+          {
+            id: 'recent-1',
+            title: 'Recent Retro',
+            ownerId: 'owner-2',
+            createdAtMs: 1200,
+            updatedAtMs: 2200,
+            lastOpenedAtMs: 5000,
+            source: 'recent',
+          },
+        ],
+      },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+    fireEvent.change(screen.getByPlaceholderText('Filter cases by name'), {
+      target: { value: 'retro' },
+    });
+
+    expect(screen.queryByText('Shared Planning')).not.toBeInTheDocument();
+    expect(screen.getByText('Recent Retro')).toBeInTheDocument();
+    expect(screen.getByText('No directly shared cases match your filter.')).toBeInTheDocument();
+  });
+
   it('navigates to board page when Open is clicked', () => {
     renderDashboard({}, {
       boards: [

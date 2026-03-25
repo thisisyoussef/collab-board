@@ -52,6 +52,7 @@ Real-time collaborative whiteboard with AI-powered board manipulation and litiga
 - **Multi-model AI routing** — automatic complexity classification routes simple prompts to fast/cheap models (Haiku, gpt-4o-mini) and complex prompts to capable models (Sonnet, gpt-4.1)
 - **Litigation workflow** — case intake dialog, claim-evidence graph with strength heatmap, contradiction radar, session replay
 - **Share links** — UUID-based URLs for instant collaboration
+- **Dashboard case filtering** — filter owned and shared cases by title
 - **Metrics overlay** — real-time FPS, latency, connection status with PRD threshold indicators
 
 ---
