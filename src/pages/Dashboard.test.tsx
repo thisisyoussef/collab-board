@@ -52,6 +52,8 @@ const mockUser = {
   email: 'test@example.com',
 } as AuthContextValue['user'];
 
+const DASHBOARD_VIEW_STORAGE_KEY = 'collabboard.dashboard.active-view';
+
 const baseAuth: AuthContextValue = {
   user: mockUser,
   loading: false,
@@ -97,6 +99,7 @@ function renderDashboard(
 describe('Dashboard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
   });
 
   it('renders the user display name and avatar', () => {
@@ -125,6 +128,38 @@ describe('Dashboard', () => {
     const sharedButton = screen.getByRole('button', { name: 'Shared with me' });
     expect(sharedButton).toBeInTheDocument();
     expect(sharedButton).toBeEnabled();
+  });
+
+  it('defaults to All cases when no saved dashboard view exists', () => {
+    renderDashboard();
+
+    expect(screen.getByRole('heading', { name: 'Cases' })).toBeInTheDocument();
+  });
+
+  it('restores Shared with me when persisted in localStorage', () => {
+    window.localStorage.setItem(DASHBOARD_VIEW_STORAGE_KEY, 'shared');
+
+    renderDashboard();
+
+    expect(screen.getByRole('heading', { name: 'Shared with me' })).toBeInTheDocument();
+  });
+
+  it('falls back to All cases when persisted dashboard view is invalid', () => {
+    window.localStorage.setItem(DASHBOARD_VIEW_STORAGE_KEY, 'invalid-view');
+
+    renderDashboard();
+
+    expect(screen.getByRole('heading', { name: 'Cases' })).toBeInTheDocument();
+  });
+
+  it('persists selected dashboard view when tabs are switched', () => {
+    renderDashboard();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+    expect(window.localStorage.getItem(DASHBOARD_VIEW_STORAGE_KEY)).toBe('shared');
+
+    fireEvent.click(screen.getByRole('button', { name: 'All cases' }));
+    expect(window.localStorage.getItem(DASHBOARD_VIEW_STORAGE_KEY)).toBe('owned');
   });
 
   it('renders shared dashboard sections when Shared with me is selected', () => {

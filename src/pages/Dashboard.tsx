@@ -2,7 +2,7 @@
 // Shows two tabs: "My Boards" (owned) and "Shared with me" (via boardMembers/boardRecents).
 // Supports create, rename, delete operations via useBoards hook.
 // Board cards link to /board/:id for the canvas editor.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useBoards } from '../hooks/useBoards';
@@ -13,6 +13,20 @@ import type { SharedBoardDashboardEntry } from '../types/sharing';
 import './Dashboard.css';
 
 type DashboardView = 'owned' | 'shared';
+const DASHBOARD_VIEW_STORAGE_KEY = 'collabboard.dashboard.active-view';
+
+function isDashboardView(value: string | null): value is DashboardView {
+  return value === 'owned' || value === 'shared';
+}
+
+function readStoredDashboardView(): DashboardView {
+  if (typeof window === 'undefined') {
+    return 'owned';
+  }
+
+  const rawValue = window.localStorage.getItem(DASHBOARD_VIEW_STORAGE_KEY);
+  return isDashboardView(rawValue) ? rawValue : 'owned';
+}
 
 function formatDate(ms: number): string {
   if (!ms) return 'Just now';
@@ -102,7 +116,7 @@ export function Dashboard() {
     user?.uid,
   );
 
-  const [activeView, setActiveView] = useState<DashboardView>('owned');
+  const [activeView, setActiveView] = useState<DashboardView>(() => readStoredDashboardView());
   const [newBoardName, setNewBoardName] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
   const [editingBoardId, setEditingBoardId] = useState<string | null>(null);
@@ -114,6 +128,10 @@ export function Dashboard() {
   const [isRetryingOwned, setIsRetryingOwned] = useState(false);
   const [isRetryingShared, setIsRetryingShared] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+
+  useEffect(() => {
+    window.localStorage.setItem(DASHBOARD_VIEW_STORAGE_KEY, activeView);
+  }, [activeView]);
 
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
   const boardMatchesSearch = (title: string) =>
