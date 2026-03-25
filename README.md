@@ -134,7 +134,7 @@ docs/
 | Path | Page |
 |---|---|
 | `/` | Landing / login |
-| `/dashboard` | Board list (user's boards) |
+| `/dashboard` | Case dashboard (owned + shared boards, search, and shared access badges) |
 | `/board/:id` | Canvas editor (UUID-based, shareable) |
 
 ---

@@ -166,6 +166,79 @@ describe('Dashboard', () => {
     expect(screen.getByText('Recent Retro')).toBeInTheDocument();
   });
 
+  it('shows an editor access badge on explicitly shared boards', () => {
+    renderDashboard(
+      {},
+      {},
+      {
+        explicitBoards: [
+          {
+            id: 'shared-editor-1',
+            title: 'Motion Draft Board',
+            ownerId: 'owner-1',
+            createdAtMs: 1000,
+            updatedAtMs: 3000,
+            role: 'editor',
+            source: 'explicit',
+          },
+        ],
+      },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+
+    expect(screen.getByText('Can edit')).toBeInTheDocument();
+  });
+
+  it('shows a viewer access badge on explicitly shared viewer boards', () => {
+    renderDashboard(
+      {},
+      {},
+      {
+        explicitBoards: [
+          {
+            id: 'shared-viewer-1',
+            title: 'Read-only Timeline',
+            ownerId: 'owner-2',
+            createdAtMs: 1000,
+            updatedAtMs: 3000,
+            role: 'viewer',
+            source: 'explicit',
+          },
+        ],
+      },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+
+    expect(screen.getByText('Can view')).toBeInTheDocument();
+  });
+
+  it('does not show an access badge for recent-link boards without explicit membership', () => {
+    renderDashboard(
+      {},
+      {},
+      {
+        recentBoards: [
+          {
+            id: 'recent-no-role-1',
+            title: 'Recently Opened',
+            ownerId: 'owner-3',
+            createdAtMs: 1000,
+            updatedAtMs: 3000,
+            source: 'recent',
+            lastOpenedAtMs: 3500,
+          },
+        ],
+      },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+
+    expect(screen.queryByText('Can edit')).not.toBeInTheDocument();
+    expect(screen.queryByText('Can view')).not.toBeInTheDocument();
+  });
+
   it('opens shared board cards from Shared with me view', () => {
     renderDashboard(
       {},
