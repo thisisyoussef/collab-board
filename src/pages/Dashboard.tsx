@@ -113,8 +113,12 @@ export function Dashboard() {
   const [renamingBoardId, setRenamingBoardId] = useState<string | null>(null);
   const [isRetryingOwned, setIsRetryingOwned] = useState(false);
   const [isRetryingShared, setIsRetryingShared] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchByView, setSearchByView] = useState<Record<DashboardView, string>>({
+    owned: '',
+    shared: '',
+  });
 
+  const searchQuery = searchByView[activeView];
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
   const boardMatchesSearch = (title: string) =>
     !normalizedSearchQuery || title.toLowerCase().includes(normalizedSearchQuery);
@@ -410,7 +414,12 @@ export function Dashboard() {
             className="board-input"
             placeholder={activeView === 'owned' ? 'Search my cases' : 'Search shared cases'}
             value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
+            onChange={(event) =>
+              setSearchByView((prev) => ({
+                ...prev,
+                [activeView]: event.target.value,
+              }))
+            }
           />
           <div className="dashboard-context-cards">
             <article className="dashboard-context-card">
