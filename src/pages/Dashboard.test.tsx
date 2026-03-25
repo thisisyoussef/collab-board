@@ -369,6 +369,74 @@ describe('Dashboard', () => {
     expect(screen.queryByText('Trial Strategy')).not.toBeInTheDocument();
   });
 
+  it('does not render clear search control when the active query is empty', () => {
+    renderDashboard();
+
+    expect(screen.queryByRole('button', { name: 'Clear case search' })).not.toBeInTheDocument();
+  });
+
+  it('clears owned-case search and restores all owned results', () => {
+    renderDashboard(
+      {},
+      {
+        boards: [
+          { id: 'owned-1', title: 'Smith v. Acme', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 3000 },
+          { id: 'owned-2', title: 'Johnson Intake', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 2000 },
+        ],
+      },
+      {},
+    );
+
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'johnson' } });
+    expect(screen.getByRole('button', { name: 'Clear case search' })).toBeInTheDocument();
+    expect(screen.queryByText('Smith v. Acme')).not.toBeInTheDocument();
+    expect(screen.getByText('Johnson Intake')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear case search' }));
+
+    expect(screen.getByDisplayValue('')).toBeInTheDocument();
+    expect(screen.getByText('Smith v. Acme')).toBeInTheDocument();
+    expect(screen.getByText('Johnson Intake')).toBeInTheDocument();
+  });
+
+  it('clears only the active tab search query', () => {
+    renderDashboard(
+      {},
+      {
+        boards: [
+          { id: 'owned-1', title: 'Smith v. Acme', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 3000 },
+          { id: 'owned-2', title: 'Johnson Intake', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 2000 },
+        ],
+      },
+      {
+        recentBoards: [
+          {
+            id: 'recent-1',
+            title: 'Deposition Notes',
+            ownerId: 'owner-2',
+            createdAtMs: 1200,
+            updatedAtMs: 2200,
+            lastOpenedAtMs: 5000,
+            source: 'recent',
+          },
+        ],
+      },
+    );
+
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'johnson' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'deposition' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Clear case search' }));
+
+    expect(screen.getByDisplayValue('')).toBeInTheDocument();
+    expect(screen.getByText('Deposition Notes')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'All cases' }));
+    expect(screen.getByDisplayValue('johnson')).toBeInTheDocument();
+    expect(screen.getByText('Johnson Intake')).toBeInTheDocument();
+    expect(screen.queryByText('Smith v. Acme')).not.toBeInTheDocument();
+  });
+
   it('renders board cards with Open, Rename, and Delete buttons', () => {
     renderDashboard({}, {
       boards: [
