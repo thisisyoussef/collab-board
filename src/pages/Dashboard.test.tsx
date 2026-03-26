@@ -411,6 +411,51 @@ describe('Dashboard', () => {
     });
   });
 
+  it('keeps Create Case disabled until the case name contains non-whitespace characters', () => {
+    renderDashboard();
+
+    const input = screen.getByPlaceholderText('New case name (e.g., Smith v. Acme)');
+    const createButton = screen.getByRole('button', { name: 'Create Case' });
+
+    expect(createButton).toBeDisabled();
+
+    fireEvent.change(input, { target: { value: '   ' } });
+    expect(createButton).toBeDisabled();
+
+    fireEvent.change(input, { target: { value: 'Case A' } });
+    expect(createButton).toBeEnabled();
+  });
+
+  it('shows validation and blocks create when submitted with whitespace-only name', () => {
+    renderDashboard();
+
+    const input = screen.getByPlaceholderText('New case name (e.g., Smith v. Acme)');
+    fireEvent.change(input, { target: { value: '   ' } });
+    fireEvent.submit(input.closest('form')!);
+
+    expect(screen.getByText('Case name cannot be empty.')).toBeInTheDocument();
+    expect(mockCreateBoard).not.toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('trims case name before create', async () => {
+    mockCreateBoard.mockReturnValue({
+      id: 'trimmed-board-id',
+      committed: Promise.resolve(),
+    });
+
+    renderDashboard();
+
+    const input = screen.getByPlaceholderText('New case name (e.g., Smith v. Acme)');
+    fireEvent.change(input, { target: { value: '   Trimmed Case   ' } });
+    fireEvent.submit(input.closest('form')!);
+
+    expect(mockCreateBoard).toHaveBeenCalledWith('Trimmed Case');
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/board/trimmed-board-id');
+    });
+  });
+
   it('creates a board from selected template and navigates after commit resolves', async () => {
     mockCreateBoardFromTemplate.mockReturnValue({
       id: 'template-board-id',
