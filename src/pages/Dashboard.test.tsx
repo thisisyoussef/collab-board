@@ -97,6 +97,7 @@ function renderDashboard(
 describe('Dashboard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
   });
 
   it('renders the user display name and avatar', () => {
@@ -607,5 +608,111 @@ describe('Dashboard', () => {
     await waitFor(() => {
       expect(mockReloadShared).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('restores active tab and per-tab search queries from persisted dashboard state', () => {
+    window.localStorage.setItem(
+      'collabboard-dashboard-state',
+      JSON.stringify({
+        activeView: 'shared',
+        searchByView: {
+          owned: 'smith',
+          shared: 'deposition',
+        },
+      }),
+    );
+
+    renderDashboard(
+      {},
+      {
+        boards: [
+          { id: 'owned-1', title: 'Smith v. Acme', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 3000 },
+        ],
+      },
+      {
+        explicitBoards: [
+          {
+            id: 'shared-1',
+            title: 'Trial Strategy',
+            ownerId: 'owner-1',
+            createdAtMs: 1000,
+            updatedAtMs: 3000,
+            role: 'viewer',
+            source: 'explicit',
+          },
+        ],
+        recentBoards: [
+          {
+            id: 'recent-1',
+            title: 'Deposition Notes',
+            ownerId: 'owner-2',
+            createdAtMs: 1200,
+            updatedAtMs: 2200,
+            lastOpenedAtMs: 5000,
+            source: 'recent',
+          },
+        ],
+      },
+    );
+
+    expect(screen.getByRole('heading', { name: 'Shared with me' })).toBeInTheDocument();
+    expect(screen.getByDisplayValue('deposition')).toBeInTheDocument();
+    expect(screen.getByText('Deposition Notes')).toBeInTheDocument();
+    expect(screen.queryByText('Trial Strategy')).not.toBeInTheDocument();
+  });
+
+  it('persists active tab and tab-scoped search queries to localStorage', () => {
+    renderDashboard(
+      {},
+      {
+        boards: [
+          { id: 'owned-1', title: 'Smith v. Acme', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 3000 },
+        ],
+      },
+      {
+        recentBoards: [
+          {
+            id: 'recent-1',
+            title: 'Deposition Notes',
+            ownerId: 'owner-2',
+            createdAtMs: 1200,
+            updatedAtMs: 2200,
+            lastOpenedAtMs: 5000,
+            source: 'recent',
+          },
+        ],
+      },
+    );
+
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'smith' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'deposition' } });
+
+    expect(window.localStorage.getItem('collabboard-dashboard-state')).toBe(
+      JSON.stringify({
+        activeView: 'shared',
+        searchByView: {
+          owned: 'smith',
+          shared: 'deposition',
+        },
+      }),
+    );
+  });
+
+  it('falls back to default dashboard state when persisted data is malformed', () => {
+    window.localStorage.setItem('collabboard-dashboard-state', '{not-valid-json');
+
+    renderDashboard(
+      {},
+      {
+        boards: [
+          { id: 'owned-1', title: 'Smith v. Acme', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 3000 },
+        ],
+      },
+    );
+
+    expect(screen.getByRole('heading', { name: 'Cases' })).toBeInTheDocument();
+    expect(screen.getByDisplayValue('')).toBeInTheDocument();
+    expect(screen.getByText('Smith v. Acme')).toBeInTheDocument();
   });
 });
