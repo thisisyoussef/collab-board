@@ -34,6 +34,28 @@ export interface BoardChangedPayload {
   actorUserId?: string;
 }
 
+export interface PresenterState {
+  socketId: string;
+  userId: string;
+  displayName: string;
+  color: string;
+}
+
+export interface PresenterStatePayload {
+  boardId: string;
+  presenter: PresenterState | null;
+  _ts: number;
+}
+
+export interface PresenterViewportPayload {
+  boardId: string;
+  presenterUserId: string;
+  x: number;
+  y: number;
+  scale: number;
+  _ts: number;
+}
+
 export interface RealtimeObjectEventMeta {
   txId?: string;
   source?: 'user' | 'ai';
@@ -85,6 +107,9 @@ export interface ClientToServerEvents {
   'object:create': (payload: ObjectCreatePayload) => void;
   'object:update': (payload: ObjectUpdatePayload) => void;
   'object:delete': (payload: ObjectDeletePayload) => void;
+  'presenter:start': (payload: { boardId: string }) => void;
+  'presenter:stop': (payload: { boardId: string }) => void;
+  'presenter:viewport': (payload: PresenterViewportPayload) => void;
 }
 
 export interface ServerToClientEvents {
@@ -97,5 +122,7 @@ export interface ServerToClientEvents {
   'object:create': (payload: ObjectCreatePayload) => void;
   'object:update': (payload: ObjectUpdatePayload) => void;
   'object:delete': (payload: ObjectDeletePayload) => void;
+  'presenter:state': (payload: PresenterStatePayload) => void;
+  'presenter:viewport': (payload: PresenterViewportPayload) => void;
   'server:error': (payload: ServerErrorPayload) => void;
 }

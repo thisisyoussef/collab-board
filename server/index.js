@@ -10,6 +10,11 @@ import {
   normalizeNonEmptyString,
 } from './presence.js';
 import { extractRealtimeMeta } from './realtime-meta.js';
+import {
+  clearRoomPresenterState,
+  getRoomPresenterState,
+  setRoomPresenterState,
+} from './presenter-state.js';
 import { logger } from './logger.js';
 
 const PORT = Number(process.env.PORT || 3001);
@@ -63,6 +68,7 @@ const io = new Server(server, {
   },
   transports: ['polling', 'websocket'],
 });
+const presentersByBoard = new Map();
 
 function applyGuestIdentity(socket) {
   const requestedGuestId = normalizeNonEmptyString(socket.handshake.auth?.guestId);
@@ -130,6 +136,14 @@ io.on('connection', (socket) => {
     if (previousBoardId && previousBoardId !== boardId) {
       logger.info('PRESENCE', `User '${socket.data.displayName}' leaving board before joining new one`, { previousBoardId, newBoardId: boardId, socketId: socket.id });
       socket.leave(boardRoom(previousBoardId));
+      const presenterCleared = clearRoomPresenterState(presentersByBoard, previousBoardId, socket.id);
+      if (presenterCleared) {
+        socket.to(boardRoom(previousBoardId)).emit('presenter:state', {
+          boardId: previousBoardId,
+          presenter: null,
+          _ts: Date.now(),
+        });
+      }
     }
 
     const requestedName = normalizeNonEmptyString(payload?.user?.displayName);
@@ -155,6 +169,12 @@ io.on('connection', (socket) => {
     });
     socket.emit('presence:snapshot', snapshot);
     socket.to(room).emit('user:joined', buildPresenceMember(socket));
+
+    socket.emit('presenter:state', {
+      boardId,
+      presenter: getRoomPresenterState(presentersByBoard, boardId),
+      _ts: Date.now(),
+    });
   });
 
   socket.on('disconnecting', () => {
@@ -172,6 +192,79 @@ io.on('connection', (socket) => {
     socket.to(boardRoom(boardId)).emit('user:left', {
       socketId: socket.id,
       userId: socket.data.userId,
+    });
+
+    const presenterCleared = clearRoomPresenterState(presentersByBoard, boardId, socket.id);
+    if (presenterCleared) {
+      socket.to(boardRoom(boardId)).emit('presenter:state', {
+        boardId,
+        presenter: null,
+        _ts: Date.now(),
+      });
+    }
+  });
+
+  socket.on('presenter:start', (data) => {
+    const boardId = resolveBoardIdFromPayload(socket, data);
+    if (!boardId) {
+      return;
+    }
+
+    const presenter = setRoomPresenterState(presentersByBoard, boardId, socket);
+    if (!presenter) {
+      return;
+    }
+
+    io.to(boardRoom(boardId)).emit('presenter:state', {
+      boardId,
+      presenter,
+      _ts: Date.now(),
+    });
+  });
+
+  socket.on('presenter:stop', (data) => {
+    const boardId = resolveBoardIdFromPayload(socket, data);
+    if (!boardId) {
+      return;
+    }
+
+    const presenterCleared = clearRoomPresenterState(presentersByBoard, boardId, socket.id);
+    if (!presenterCleared) {
+      return;
+    }
+
+    io.to(boardRoom(boardId)).emit('presenter:state', {
+      boardId,
+      presenter: null,
+      _ts: Date.now(),
+    });
+  });
+
+  socket.on('presenter:viewport', (data) => {
+    const boardId = resolveBoardIdFromPayload(socket, data);
+    if (!boardId) {
+      return;
+    }
+
+    const presenter = getRoomPresenterState(presentersByBoard, boardId);
+    if (!presenter || presenter.socketId !== socket.id) {
+      return;
+    }
+
+    const x = Number(data?.x);
+    const y = Number(data?.y);
+    const scale = Number(data?.scale);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(scale)) {
+      return;
+    }
+
+    socket.to(boardRoom(boardId)).emit('presenter:viewport', {
+      boardId,
+      presenterUserId: presenter.userId,
+      x,
+      y,
+      scale,
+      _ts: Date.now(),
     });
   });
 

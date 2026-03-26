@@ -274,7 +274,7 @@
   min-height: 54px;
   border-bottom: 1px solid #ddd7cc;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 1rem;
   padding: 0.55rem 0.9rem;
@@ -307,6 +307,18 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.presenter-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.presenter-banner-copy {
+  font-size: 0.76rem;
+  color: #3e372d;
+  white-space: nowrap;
 }
 
 .canvas-grid {

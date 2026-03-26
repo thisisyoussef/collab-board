@@ -37,6 +37,22 @@ vi.mock('../hooks/usePresence', () => ({
   }),
 }));
 
+vi.mock('../hooks/usePresenterMode', () => ({
+  usePresenterMode: () => ({
+    presenter: null,
+    isPresenting: false,
+    isFollowing: false,
+    canFollow: false,
+    pendingViewport: null,
+    startPresenting: vi.fn(),
+    stopPresenting: vi.fn(),
+    startFollowing: vi.fn(),
+    stopFollowing: vi.fn(),
+    publishViewport: vi.fn(),
+    clearPendingViewport: vi.fn(),
+  }),
+}));
+
 vi.mock('konva', () => ({
   default: {
     Node: class {},
@@ -220,6 +236,7 @@ describe('Board', () => {
     expect(screen.getByRole('button', { name: 'Redo' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Start Demo' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Legal quick start' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Start presenter mode' })).toBeEnabled();
   });
 
   it('shows all demo pack templates in Start Demo launcher', async () => {
