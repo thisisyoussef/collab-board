@@ -4,6 +4,8 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { AuthContext, type AuthContextValue } from '../context/auth-context';
 import type { SharedBoardDashboardEntry } from '../types/sharing';
 
+const DASHBOARD_ACTIVE_VIEW_STORAGE_KEY = 'collabboard:dashboard:activeView';
+
 // Mock useBoards
 const mockCreateBoard = vi.fn();
 const mockCreateBoardFromTemplate = vi.fn();
@@ -97,6 +99,7 @@ function renderDashboard(
 describe('Dashboard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
   });
 
   it('renders the user display name and avatar', () => {
@@ -367,6 +370,50 @@ describe('Dashboard', () => {
     expect(screen.getByDisplayValue('deposition')).toBeInTheDocument();
     expect(screen.getByText('Deposition Notes')).toBeInTheDocument();
     expect(screen.queryByText('Trial Strategy')).not.toBeInTheDocument();
+  });
+
+  it('restores the Shared with me tab from local storage on initial load', () => {
+    window.localStorage.setItem(DASHBOARD_ACTIVE_VIEW_STORAGE_KEY, 'shared');
+
+    renderDashboard(
+      {},
+      {},
+      {
+        explicitBoards: [
+          {
+            id: 'shared-1',
+            title: 'Shared Planning',
+            ownerId: 'owner-1',
+            createdAtMs: 1000,
+            updatedAtMs: 3000,
+            role: 'viewer',
+            source: 'explicit',
+          },
+        ],
+      },
+    );
+
+    expect(screen.getByRole('heading', { name: 'Shared with me' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Search cases')).toHaveAttribute('placeholder', 'Search shared cases');
+  });
+
+  it('falls back to All cases when local storage has an invalid active tab', () => {
+    window.localStorage.setItem(DASHBOARD_ACTIVE_VIEW_STORAGE_KEY, 'invalid-value');
+
+    renderDashboard();
+
+    expect(screen.getByRole('heading', { name: 'Cases' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Search cases')).toHaveAttribute('placeholder', 'Search my cases');
+  });
+
+  it('persists active tab to local storage when the user switches tabs', () => {
+    renderDashboard();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+    expect(window.localStorage.getItem(DASHBOARD_ACTIVE_VIEW_STORAGE_KEY)).toBe('shared');
+
+    fireEvent.click(screen.getByRole('button', { name: 'All cases' }));
+    expect(window.localStorage.getItem(DASHBOARD_ACTIVE_VIEW_STORAGE_KEY)).toBe('owned');
   });
 
   it('renders board cards with Open, Rename, and Delete buttons', () => {

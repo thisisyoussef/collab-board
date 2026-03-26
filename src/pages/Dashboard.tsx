@@ -2,7 +2,7 @@
 // Shows two tabs: "My Boards" (owned) and "Shared with me" (via boardMembers/boardRecents).
 // Supports create, rename, delete operations via useBoards hook.
 // Board cards link to /board/:id for the canvas editor.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useBoards } from '../hooks/useBoards';
@@ -13,6 +13,28 @@ import type { SharedBoardDashboardEntry } from '../types/sharing';
 import './Dashboard.css';
 
 type DashboardView = 'owned' | 'shared';
+const DASHBOARD_ACTIVE_VIEW_STORAGE_KEY = 'collabboard:dashboard:activeView';
+
+function isDashboardView(value: string): value is DashboardView {
+  return value === 'owned' || value === 'shared';
+}
+
+function readInitialDashboardView(): DashboardView {
+  if (typeof window === 'undefined') {
+    return 'owned';
+  }
+
+  try {
+    const stored = window.localStorage.getItem(DASHBOARD_ACTIVE_VIEW_STORAGE_KEY);
+    if (stored && isDashboardView(stored)) {
+      return stored;
+    }
+  } catch {
+    // localStorage can throw in restricted browser contexts; keep dashboard usable.
+  }
+
+  return 'owned';
+}
 
 function formatDate(ms: number): string {
   if (!ms) return 'Just now';
@@ -102,7 +124,7 @@ export function Dashboard() {
     user?.uid,
   );
 
-  const [activeView, setActiveView] = useState<DashboardView>('owned');
+  const [activeView, setActiveView] = useState<DashboardView>(() => readInitialDashboardView());
   const [newBoardName, setNewBoardName] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
   const [editingBoardId, setEditingBoardId] = useState<string | null>(null);
@@ -232,6 +254,18 @@ export function Dashboard() {
       setIsRetryingShared(false);
     }
   };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(DASHBOARD_ACTIVE_VIEW_STORAGE_KEY, activeView);
+    } catch {
+      // Ignore persistence failures to avoid breaking primary dashboard flows.
+    }
+  }, [activeView]);
 
   const ownedBoardCards = filteredOwnedBoards.map((board) => {
     const isEditing = editingBoardId === board.id;
