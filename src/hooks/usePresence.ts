@@ -54,9 +54,33 @@ function sortMembers(items: PresenceMemberWithState[]): PresenceMemberWithState[
 }
 
 export function usePresence({ boardId, user, socketRef, socketStatus }: UsePresenceParams) {
-  const [members, setMembers] = useState<PresenceMemberWithState[]>([]);
+  const [socketMembers, setSocketMembers] = useState<PresenceMemberWithState[]>([]);
   const leaveTimersRef = useRef<Record<string, number>>({});
   const guestIdentity = useMemo(() => getOrCreateGuestIdentity(), []);
+
+  const members = useMemo(() => {
+    const byUserId = new Map<string, PresenceMemberWithState>();
+
+    socketMembers.forEach((entry) => {
+      const existing = byUserId.get(entry.userId);
+      if (!existing) {
+        byUserId.set(entry.userId, entry);
+        return;
+      }
+
+      // Prefer active sockets over leaving sockets for the same user.
+      if (existing.isLeaving && !entry.isLeaving) {
+        byUserId.set(entry.userId, entry);
+        return;
+      }
+
+      if (existing.isLeaving === entry.isLeaving && entry.socketId.localeCompare(existing.socketId) < 0) {
+        byUserId.set(entry.userId, entry);
+      }
+    });
+
+    return sortMembers(Array.from(byUserId.values()));
+  }, [socketMembers]);
 
   useEffect(() => {
     const socket = socketRef.current;
@@ -99,11 +123,13 @@ export function usePresence({ boardId, user, socketRef, socketStatus }: UsePrese
       });
 
       const memberList = Array.from(nextBySocketId.values());
-      logger.info('PRESENCE', `Presence snapshot received: ${memberList.length} user(s) online`, {
+      const uniqueUserIds = new Set(memberList.map((entry) => entry.userId));
+      logger.info('PRESENCE', `Presence snapshot received: ${uniqueUserIds.size} unique user(s) online`, {
         members: memberList.map((m) => m.displayName),
-        count: memberList.length,
+        socketCount: memberList.length,
+        count: uniqueUserIds.size,
       });
-      setMembers(sortMembers(memberList));
+      setSocketMembers(sortMembers(memberList));
     };
 
     const handleJoined = (member: PresenceMember) => {
@@ -117,7 +143,7 @@ export function usePresence({ boardId, user, socketRef, socketStatus }: UsePrese
         socketId: normalized.socketId,
       });
       clearLeaveTimer(normalized.socketId);
-      setMembers((previous) => {
+      setSocketMembers((previous) => {
         const next = previous.filter((entry) => entry.socketId !== normalized.socketId);
         next.push(normalized);
         return sortMembers(next);
@@ -135,7 +161,7 @@ export function usePresence({ boardId, user, socketRef, socketStatus }: UsePrese
         userId: payload.userId,
       });
 
-      setMembers((previous) =>
+      setSocketMembers((previous) =>
         previous.map((entry) =>
           entry.socketId === socketId ? { ...entry, isLeaving: true } : entry,
         ),
@@ -143,7 +169,7 @@ export function usePresence({ boardId, user, socketRef, socketStatus }: UsePrese
 
       clearLeaveTimer(socketId);
       leaveTimers[socketId] = window.setTimeout(() => {
-        setMembers((previous) => previous.filter((entry) => entry.socketId !== socketId));
+        setSocketMembers((previous) => previous.filter((entry) => entry.socketId !== socketId));
         delete leaveTimers[socketId];
       }, LEAVE_ANIMATION_MS);
     };

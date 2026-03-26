@@ -13,6 +13,7 @@ describe('PresenceAvatars', () => {
     render(<PresenceAvatars members={[baseMembers[0]]} currentUserId="u1" />);
 
     expect(screen.getByLabelText('Alex Johnson')).toBeInTheDocument();
+    expect(screen.getByLabelText('1 person on this case board')).toBeInTheDocument();
     expect(screen.queryByText('1 people')).not.toBeInTheDocument();
   });
 

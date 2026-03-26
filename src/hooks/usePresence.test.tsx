@@ -102,6 +102,45 @@ describe('usePresence', () => {
     expect(result.current.members[1].displayName).toBe('Sam Doe');
   });
 
+  it('deduplicates multiple sockets that belong to the same user in presence:snapshot', () => {
+    const socket = createMockSocket(true);
+    const socketRef = { current: socket as never };
+    const { result } = renderHook(() =>
+      usePresence({
+        boardId: 'board-1',
+        user: mockUser,
+        socketRef,
+        socketStatus: 'connected',
+      }),
+    );
+
+    act(() => {
+      socket.trigger('presence:snapshot', [
+        {
+          socketId: 'socket-a',
+          userId: 'user-123',
+          displayName: 'Alex Johnson',
+          color: 'hsl(10, 65%, 55%)',
+        },
+        {
+          socketId: 'socket-a-2',
+          userId: 'user-123',
+          displayName: 'Alex Johnson',
+          color: 'hsl(10, 65%, 55%)',
+        },
+        {
+          socketId: 'socket-b',
+          userId: 'user-456',
+          displayName: 'Sam Doe',
+          color: 'hsl(80, 65%, 55%)',
+        },
+      ]);
+    });
+
+    expect(result.current.members).toHaveLength(2);
+    expect(result.current.members.map((member) => member.userId)).toEqual(['user-123', 'user-456']);
+  });
+
   it('adds users on user:joined and removes them after user:left animation delay', () => {
     const socket = createMockSocket(true);
     const socketRef = { current: socket as never };
@@ -150,5 +189,54 @@ describe('usePresence', () => {
 
     expect(result.current.members).toHaveLength(1);
     expect(result.current.members[0].socketId).toBe('socket-a');
+  });
+
+  it('keeps a user visible when one of their sockets leaves but another remains', () => {
+    const socket = createMockSocket(true);
+    const socketRef = { current: socket as never };
+    const { result } = renderHook(() =>
+      usePresence({
+        boardId: 'board-1',
+        user: mockUser,
+        socketRef,
+        socketStatus: 'connected',
+      }),
+    );
+
+    act(() => {
+      socket.trigger('presence:snapshot', [
+        {
+          socketId: 'socket-a',
+          userId: 'user-123',
+          displayName: 'Alex Johnson',
+          color: 'hsl(10, 65%, 55%)',
+        },
+        {
+          socketId: 'socket-a-2',
+          userId: 'user-123',
+          displayName: 'Alex Johnson',
+          color: 'hsl(10, 65%, 55%)',
+        },
+        {
+          socketId: 'socket-b',
+          userId: 'user-456',
+          displayName: 'Sam Doe',
+          color: 'hsl(80, 65%, 55%)',
+        },
+      ]);
+    });
+
+    expect(result.current.members).toHaveLength(2);
+
+    act(() => {
+      socket.trigger('user:left', { socketId: 'socket-a', userId: 'user-123' });
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+
+    expect(result.current.members).toHaveLength(2);
+    expect(result.current.members.find((member) => member.userId === 'user-123')).toBeTruthy();
   });
 });

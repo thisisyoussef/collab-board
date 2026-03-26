@@ -20,9 +20,10 @@ export function PresenceAvatars({ members, currentUserId }: PresenceAvatarsProps
   const showOverflow = members.length > MAX_VISIBLE_AVATARS;
   const visibleMembers = showOverflow ? members.slice(0, MAX_VISIBLE_AVATARS - 1) : members;
   const overflowCount = members.length - visibleMembers.length;
+  const peopleLabel = members.length === 1 ? 'person' : 'people';
 
   return (
-    <div className="presence-cluster" aria-label={`${members.length} people on this case board`}>
+    <div className="presence-cluster" aria-label={`${members.length} ${peopleLabel} on this case board`}>
       <div className="presence-stack">
         {visibleMembers.map((member) => {
           const isCurrentUser = Boolean(currentUserId && member.userId === currentUserId);

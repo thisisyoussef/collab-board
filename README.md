@@ -40,6 +40,7 @@ Real-time collaborative whiteboard with AI-powered board manipulation and litiga
 
 - **Infinite canvas** with smooth pan/zoom (scale 0.1–5x)
 - **Real-time collaboration** — cursors (<50ms), objects (<100ms), presence sync
+- **Presence clarity** — topbar avatars deduplicate multiple tabs/sockets from the same collaborator
 - **Board objects** — sticky notes, rectangles, circles, lines, text, frames, connectors
 - **Transforms** — move, resize, rotate objects with Transformer handles
 - **Selection** — single click, shift-click multi-select, drag-to-select rubber band
