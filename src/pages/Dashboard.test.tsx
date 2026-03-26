@@ -191,6 +191,90 @@ describe('Dashboard', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/board/shared-2');
   });
 
+  it('shows viewer and editor access labels for explicitly shared cases', () => {
+    renderDashboard(
+      {},
+      {},
+      {
+        explicitBoards: [
+          {
+            id: 'shared-viewer',
+            title: 'Viewer Case',
+            ownerId: 'owner-1',
+            createdAtMs: 1000,
+            updatedAtMs: 3000,
+            role: 'viewer',
+            source: 'explicit',
+          },
+          {
+            id: 'shared-editor',
+            title: 'Editor Case',
+            ownerId: 'owner-2',
+            createdAtMs: 1200,
+            updatedAtMs: 3200,
+            role: 'editor',
+            source: 'explicit',
+          },
+        ],
+      },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+
+    expect(screen.getByText('Viewer access')).toBeInTheDocument();
+    expect(screen.getByText('Editor access')).toBeInTheDocument();
+  });
+
+  it('shows owner access label for explicitly shared owner role entries', () => {
+    renderDashboard(
+      {},
+      {},
+      {
+        explicitBoards: [
+          {
+            id: 'shared-owner',
+            title: 'Owner Case',
+            ownerId: 'owner-3',
+            createdAtMs: 1500,
+            updatedAtMs: 3500,
+            role: 'owner',
+            source: 'explicit',
+          },
+        ],
+      },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+
+    expect(screen.getByText('Owner access')).toBeInTheDocument();
+  });
+
+  it('does not show access labels for recent shared links', () => {
+    renderDashboard(
+      {},
+      {},
+      {
+        recentBoards: [
+          {
+            id: 'recent-1',
+            title: 'Recent Case Link',
+            ownerId: 'owner-4',
+            createdAtMs: 1200,
+            updatedAtMs: 2200,
+            lastOpenedAtMs: 5000,
+            source: 'recent',
+          },
+        ],
+      },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+
+    expect(screen.queryByText('Viewer access')).not.toBeInTheDocument();
+    expect(screen.queryByText('Editor access')).not.toBeInTheDocument();
+    expect(screen.queryByText('Owner access')).not.toBeInTheDocument();
+  });
+
   it('shows empty state when no boards exist', () => {
     renderDashboard({}, { boards: [] });
 
