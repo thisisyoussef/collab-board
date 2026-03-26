@@ -3,7 +3,7 @@
 // Supports create, rename, delete operations via useBoards hook.
 // Board cards link to /board/:id for the canvas editor.
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useBoards } from '../hooks/useBoards';
 import { useSharedBoards } from '../hooks/useSharedBoards';
@@ -13,6 +13,10 @@ import type { SharedBoardDashboardEntry } from '../types/sharing';
 import './Dashboard.css';
 
 type DashboardView = 'owned' | 'shared';
+
+function resolveDashboardView(value: string | null): DashboardView {
+  return value === 'shared' ? 'shared' : 'owned';
+}
 
 function formatDate(ms: number): string {
   if (!ms) return 'Just now';
@@ -82,6 +86,7 @@ function SharedBoardsSection({ title, emptyText, boards, onOpenBoard }: SharedSe
 export function Dashboard() {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const {
     boards,
     loading,
@@ -102,7 +107,9 @@ export function Dashboard() {
     user?.uid,
   );
 
-  const [activeView, setActiveView] = useState<DashboardView>('owned');
+  const [activeView, setActiveView] = useState<DashboardView>(() =>
+    resolveDashboardView(searchParams.get('view')),
+  );
   const [newBoardName, setNewBoardName] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
   const [editingBoardId, setEditingBoardId] = useState<string | null>(null);
@@ -113,10 +120,41 @@ export function Dashboard() {
   const [renamingBoardId, setRenamingBoardId] = useState<string | null>(null);
   const [isRetryingOwned, setIsRetryingOwned] = useState(false);
   const [isRetryingShared, setIsRetryingShared] = useState(false);
-  const [searchByView, setSearchByView] = useState<Record<DashboardView, string>>({
-    owned: '',
-    shared: '',
-  });
+  const [searchByView, setSearchByView] = useState<Record<DashboardView, string>>(() => ({
+    owned: searchParams.get('qOwned') || '',
+    shared: searchParams.get('qShared') || '',
+  }));
+
+  const updateDashboardSearchParams = (
+    nextView: DashboardView,
+    nextSearchByView: Record<DashboardView, string>,
+  ) => {
+    const nextParams = new URLSearchParams();
+    nextParams.set('view', nextView);
+    if (nextSearchByView.owned.trim()) {
+      nextParams.set('qOwned', nextSearchByView.owned);
+    }
+    if (nextSearchByView.shared.trim()) {
+      nextParams.set('qShared', nextSearchByView.shared);
+    }
+    setSearchParams(nextParams, { replace: true });
+  };
+
+  const setActiveViewAndSync = (nextView: DashboardView) => {
+    setActiveView(nextView);
+    updateDashboardSearchParams(nextView, searchByView);
+  };
+
+  const setSearchForActiveViewAndSync = (nextSearch: string) => {
+    setSearchByView((prev) => {
+      const nextByView = {
+        ...prev,
+        [activeView]: nextSearch,
+      };
+      updateDashboardSearchParams(activeView, nextByView);
+      return nextByView;
+    });
+  };
 
   const searchQuery = searchByView[activeView];
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
@@ -334,17 +372,17 @@ export function Dashboard() {
           <div className="sidebar-list dashboard-sidebar-nav">
             <button
               className={`sidebar-item ${activeView === 'owned' ? 'active' : ''}`}
-              onClick={() => setActiveView('owned')}
+              onClick={() => setActiveViewAndSync('owned')}
             >
               All cases
             </button>
             <button
               className={`sidebar-item ${activeView === 'shared' ? 'active' : ''}`}
-              onClick={() => setActiveView('shared')}
+              onClick={() => setActiveViewAndSync('shared')}
             >
               Shared with me
             </button>
-            <button className="sidebar-item" onClick={() => setActiveView('owned')}>
+            <button className="sidebar-item" onClick={() => setActiveViewAndSync('owned')}>
               Case templates
             </button>
           </div>
@@ -414,12 +452,7 @@ export function Dashboard() {
             className="board-input"
             placeholder={activeView === 'owned' ? 'Search my cases' : 'Search shared cases'}
             value={searchQuery}
-            onChange={(event) =>
-              setSearchByView((prev) => ({
-                ...prev,
-                [activeView]: event.target.value,
-              }))
-            }
+            onChange={(event) => setSearchForActiveViewAndSync(event.target.value)}
           />
           <div className="dashboard-context-cards">
             <article className="dashboard-context-card">

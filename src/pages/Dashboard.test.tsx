@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { AuthContext, type AuthContextValue } from '../context/auth-context';
 import type { SharedBoardDashboardEntry } from '../types/sharing';
@@ -64,6 +64,7 @@ function renderDashboard(
   authOverrides: Partial<AuthContextValue> = {},
   boardsOverrides: Partial<typeof mockBoardsReturn> = {},
   sharedBoardsOverrides: Partial<typeof mockSharedBoardsReturn> = {},
+  initialEntries: string[] = ['/dashboard'],
 ) {
   mockBoardsReturn = {
     boards: [],
@@ -87,11 +88,17 @@ function renderDashboard(
 
   return render(
     <AuthContext.Provider value={{ ...baseAuth, ...authOverrides }}>
-      <MemoryRouter initialEntries={['/dashboard']}>
+      <MemoryRouter initialEntries={initialEntries}>
         <Dashboard />
+        <LocationSearchProbe />
       </MemoryRouter>
     </AuthContext.Provider>,
   );
+}
+
+function LocationSearchProbe() {
+  const location = useLocation();
+  return <output data-testid="location-search">{location.search}</output>;
 }
 
 describe('Dashboard', () => {
@@ -607,5 +614,58 @@ describe('Dashboard', () => {
     await waitFor(() => {
       expect(mockReloadShared).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('hydrates shared view and tab-scoped searches from URL params', () => {
+    renderDashboard(
+      {},
+      {
+        boards: [
+          { id: 'owned-1', title: 'Smith v. Acme', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 3000 },
+          { id: 'owned-2', title: 'Johnson Intake', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 2000 },
+        ],
+      },
+      {
+        explicitBoards: [
+          {
+            id: 'shared-1',
+            title: 'Deposition Notes',
+            ownerId: 'owner-2',
+            createdAtMs: 1200,
+            updatedAtMs: 2200,
+            source: 'explicit',
+          },
+        ],
+      },
+      ['/dashboard?view=shared&qOwned=johnson&qShared=deposition'],
+    );
+
+    expect(screen.getByRole('heading', { name: 'Shared with me' })).toBeInTheDocument();
+    expect(screen.getByDisplayValue('deposition')).toBeInTheDocument();
+    expect(screen.getByText('Deposition Notes')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'All cases' }));
+    expect(screen.getByDisplayValue('johnson')).toBeInTheDocument();
+    expect(screen.getByText('Johnson Intake')).toBeInTheDocument();
+  });
+
+  it('syncs owned-case search input to URL params', () => {
+    renderDashboard();
+
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'smith' } });
+
+    expect(screen.getByTestId('location-search')).toHaveTextContent('?view=owned&qOwned=smith');
+  });
+
+  it('persists both tab queries in URL while switching views', () => {
+    renderDashboard();
+
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'alpha' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'beta' } });
+
+    expect(screen.getByTestId('location-search')).toHaveTextContent(
+      '?view=shared&qOwned=alpha&qShared=beta',
+    );
   });
 });
