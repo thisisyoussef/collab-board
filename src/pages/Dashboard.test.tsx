@@ -97,6 +97,7 @@ function renderDashboard(
 describe('Dashboard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
   });
 
   it('renders the user display name and avatar', () => {
@@ -367,6 +368,74 @@ describe('Dashboard', () => {
     expect(screen.getByDisplayValue('deposition')).toBeInTheDocument();
     expect(screen.getByText('Deposition Notes')).toBeInTheDocument();
     expect(screen.queryByText('Trial Strategy')).not.toBeInTheDocument();
+  });
+
+  it('hydrates active tab and per-tab search queries from localStorage', () => {
+    window.localStorage.setItem(
+      'collabboard.dashboard.view-state.v1',
+      JSON.stringify({
+        activeView: 'shared',
+        searchByView: {
+          owned: 'smith',
+          shared: 'deposition',
+        },
+      }),
+    );
+
+    renderDashboard(
+      {},
+      {
+        boards: [{ id: 'owned-1', title: 'Smith v. Acme', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 3000 }],
+      },
+      {
+        recentBoards: [
+          {
+            id: 'recent-1',
+            title: 'Deposition Notes',
+            ownerId: 'owner-2',
+            createdAtMs: 1200,
+            updatedAtMs: 2200,
+            lastOpenedAtMs: 5000,
+            source: 'recent',
+          },
+        ],
+      },
+    );
+
+    expect(screen.getByRole('heading', { name: 'Shared with me' })).toBeInTheDocument();
+    expect(screen.getByDisplayValue('deposition')).toBeInTheDocument();
+    expect(screen.getByText('Deposition Notes')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'All cases' }));
+    expect(screen.getByDisplayValue('smith')).toBeInTheDocument();
+    expect(screen.getByText('Smith v. Acme')).toBeInTheDocument();
+  });
+
+  it('persists active tab and per-tab searches to localStorage after user interaction', () => {
+    renderDashboard();
+
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'owned-query' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'shared-query' } });
+
+    expect(window.localStorage.getItem('collabboard.dashboard.view-state.v1')).toBe(
+      JSON.stringify({
+        activeView: 'shared',
+        searchByView: {
+          owned: 'owned-query',
+          shared: 'shared-query',
+        },
+      }),
+    );
+  });
+
+  it('falls back to defaults when localStorage state is invalid', () => {
+    window.localStorage.setItem('collabboard.dashboard.view-state.v1', 'not-json');
+
+    renderDashboard();
+
+    expect(screen.getByRole('heading', { name: 'Cases' })).toBeInTheDocument();
+    expect(screen.getByDisplayValue('')).toBeInTheDocument();
   });
 
   it('renders board cards with Open, Rename, and Delete buttons', () => {
