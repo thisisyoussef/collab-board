@@ -120,6 +120,7 @@ export function Dashboard() {
 
   const searchQuery = searchByView[activeView];
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+  const hasSearchQuery = normalizedSearchQuery.length > 0;
   const boardMatchesSearch = (title: string) =>
     !normalizedSearchQuery || title.toLowerCase().includes(normalizedSearchQuery);
   const filteredOwnedBoards = boards.filter((board) => boardMatchesSearch(board.title));
@@ -231,6 +232,13 @@ export function Dashboard() {
     } finally {
       setIsRetryingShared(false);
     }
+  };
+
+  const updateActiveSearchQuery = (nextValue: string) => {
+    setSearchByView((prev) => ({
+      ...prev,
+      [activeView]: nextValue,
+    }));
   };
 
   const ownedBoardCards = filteredOwnedBoards.map((board) => {
@@ -409,18 +417,25 @@ export function Dashboard() {
               </form>
             ) : null}
           </div>
-          <input
-            aria-label="Search cases"
-            className="board-input"
-            placeholder={activeView === 'owned' ? 'Search my cases' : 'Search shared cases'}
-            value={searchQuery}
-            onChange={(event) =>
-              setSearchByView((prev) => ({
-                ...prev,
-                [activeView]: event.target.value,
-              }))
-            }
-          />
+          <div className="dashboard-search-row">
+            <input
+              aria-label="Search cases"
+              className="board-input"
+              placeholder={activeView === 'owned' ? 'Search my cases' : 'Search shared cases'}
+              value={searchQuery}
+              onChange={(event) => updateActiveSearchQuery(event.target.value)}
+            />
+            {hasSearchQuery ? (
+              <button
+                type="button"
+                className="secondary-btn"
+                aria-label="Clear case search"
+                onClick={() => updateActiveSearchQuery('')}
+              >
+                Clear
+              </button>
+            ) : null}
+          </div>
           <div className="dashboard-context-cards">
             <article className="dashboard-context-card">
               <p className="dashboard-context-kicker">Focus</p>
