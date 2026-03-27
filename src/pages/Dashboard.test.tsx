@@ -4,6 +4,8 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { AuthContext, type AuthContextValue } from '../context/auth-context';
 import type { SharedBoardDashboardEntry } from '../types/sharing';
 
+const DASHBOARD_CONTEXT_STORAGE_KEY = 'collab-board-dashboard-view-context';
+
 // Mock useBoards
 const mockCreateBoard = vi.fn();
 const mockCreateBoardFromTemplate = vi.fn();
@@ -97,6 +99,7 @@ function renderDashboard(
 describe('Dashboard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
   });
 
   it('renders the user display name and avatar', () => {
@@ -367,6 +370,126 @@ describe('Dashboard', () => {
     expect(screen.getByDisplayValue('deposition')).toBeInTheDocument();
     expect(screen.getByText('Deposition Notes')).toBeInTheDocument();
     expect(screen.queryByText('Trial Strategy')).not.toBeInTheDocument();
+  });
+
+  it('restores active tab and per-tab search query from localStorage on load', () => {
+    window.localStorage.setItem(
+      DASHBOARD_CONTEXT_STORAGE_KEY,
+      JSON.stringify({
+        activeView: 'shared',
+        searchByView: {
+          owned: 'smith',
+          shared: 'deposition',
+        },
+      }),
+    );
+
+    renderDashboard(
+      {},
+      {
+        boards: [
+          { id: 'owned-1', title: 'Smith v. Acme', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 3000 },
+        ],
+      },
+      {
+        explicitBoards: [
+          {
+            id: 'shared-1',
+            title: 'Trial Strategy',
+            ownerId: 'owner-1',
+            createdAtMs: 1000,
+            updatedAtMs: 3000,
+            role: 'viewer',
+            source: 'explicit',
+          },
+        ],
+        recentBoards: [
+          {
+            id: 'recent-1',
+            title: 'Deposition Notes',
+            ownerId: 'owner-2',
+            createdAtMs: 1200,
+            updatedAtMs: 2200,
+            lastOpenedAtMs: 5000,
+            source: 'recent',
+          },
+        ],
+      },
+    );
+
+    expect(screen.getByRole('heading', { name: 'Shared with me' })).toBeInTheDocument();
+    expect(screen.getByDisplayValue('deposition')).toBeInTheDocument();
+    expect(screen.getByText('Deposition Notes')).toBeInTheDocument();
+    expect(screen.queryByText('Trial Strategy')).not.toBeInTheDocument();
+  });
+
+  it('persists active tab and per-tab search query to localStorage after dashboard interactions', () => {
+    renderDashboard(
+      {},
+      {
+        boards: [
+          { id: 'owned-1', title: 'Smith v. Acme', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 3000 },
+        ],
+      },
+      {
+        explicitBoards: [
+          {
+            id: 'shared-1',
+            title: 'Trial Strategy',
+            ownerId: 'owner-1',
+            createdAtMs: 1000,
+            updatedAtMs: 3000,
+            role: 'viewer',
+            source: 'explicit',
+          },
+        ],
+      },
+    );
+
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'smith' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'trial' } });
+
+    const persistedRaw = window.localStorage.getItem(DASHBOARD_CONTEXT_STORAGE_KEY);
+    expect(persistedRaw).not.toBeNull();
+
+    const persisted = JSON.parse(persistedRaw as string) as {
+      activeView: string;
+      searchByView: Record<string, string>;
+    };
+
+    expect(persisted.activeView).toBe('shared');
+    expect(persisted.searchByView.owned).toBe('smith');
+    expect(persisted.searchByView.shared).toBe('trial');
+  });
+
+  it('falls back to default dashboard context when persisted localStorage payload is invalid', () => {
+    window.localStorage.setItem(DASHBOARD_CONTEXT_STORAGE_KEY, '{broken-json');
+
+    renderDashboard(
+      {},
+      {
+        boards: [
+          { id: 'owned-1', title: 'Smith v. Acme', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 3000 },
+        ],
+      },
+      {
+        explicitBoards: [
+          {
+            id: 'shared-1',
+            title: 'Trial Strategy',
+            ownerId: 'owner-1',
+            createdAtMs: 1000,
+            updatedAtMs: 3000,
+            role: 'viewer',
+            source: 'explicit',
+          },
+        ],
+      },
+    );
+
+    expect(screen.getByRole('heading', { name: 'Cases' })).toBeInTheDocument();
+    expect(screen.getByDisplayValue('')).toBeInTheDocument();
   });
 
   it('renders board cards with Open, Rename, and Delete buttons', () => {
