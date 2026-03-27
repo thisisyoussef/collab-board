@@ -500,6 +500,54 @@ describe('Dashboard', () => {
     });
   });
 
+  it('disables Save when the rename input is empty or whitespace-only', () => {
+    renderDashboard({}, {
+      boards: [
+        { id: 'b1', title: 'Sprint Plan', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 2000 },
+      ],
+    });
+
+    fireEvent.click(screen.getByText('Rename'));
+    const renameInput = screen.getByDisplayValue('Sprint Plan');
+    fireEvent.change(renameInput, { target: { value: '   ' } });
+
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+  });
+
+  it('does not submit rename on Enter when the rename input is whitespace-only', () => {
+    renderDashboard({}, {
+      boards: [
+        { id: 'b1', title: 'Sprint Plan', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 2000 },
+      ],
+    });
+
+    fireEvent.click(screen.getByText('Rename'));
+    const renameInput = screen.getByDisplayValue('Sprint Plan');
+    fireEvent.change(renameInput, { target: { value: '   ' } });
+    fireEvent.keyDown(renameInput, { key: 'Enter' });
+
+    expect(mockRenameBoard).not.toHaveBeenCalled();
+  });
+
+  it('trims rename input before calling renameBoard', async () => {
+    mockRenameBoard.mockResolvedValue(undefined);
+
+    renderDashboard({}, {
+      boards: [
+        { id: 'b1', title: 'Sprint Plan', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 2000 },
+      ],
+    });
+
+    fireEvent.click(screen.getByText('Rename'));
+    const renameInput = screen.getByDisplayValue('Sprint Plan');
+    fireEvent.change(renameInput, { target: { value: '  Sprint Plan V2  ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(mockRenameBoard).toHaveBeenCalledWith('b1', 'Sprint Plan V2');
+    });
+  });
+
   it('cancels rename when Cancel is clicked', () => {
     renderDashboard({}, {
       boards: [

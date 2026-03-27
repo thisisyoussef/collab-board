@@ -168,10 +168,15 @@ export function Dashboard() {
 
   const handleRenameBoard = async (boardId: string) => {
     if (renamingBoardId === boardId) return;
+    const cleanedName = editingName.trim();
+    if (!cleanedName) {
+      setActionError('Case name cannot be empty.');
+      return;
+    }
     setActionError(null);
     setRenamingBoardId(boardId);
     try {
-      await renameBoard(boardId, editingName);
+      await renameBoard(boardId, cleanedName);
       setEditingBoardId(null);
       setEditingName('');
     } catch (err: unknown) {
@@ -247,6 +252,9 @@ export function Dashboard() {
               onKeyDown={(event) => {
                 if (event.key === 'Enter') {
                   event.preventDefault();
+                  if (!editingName.trim()) {
+                    return;
+                  }
                   void handleRenameBoard(board.id);
                 }
                 if (event.key === 'Escape') {
@@ -271,7 +279,7 @@ export function Dashboard() {
             <>
               <button
                 className="primary-btn"
-                disabled={renamingBoardId === board.id}
+                disabled={renamingBoardId === board.id || !editingName.trim()}
                 onClick={() => void handleRenameBoard(board.id)}
               >
                 {renamingBoardId === board.id ? 'Saving...' : 'Save'}
