@@ -369,6 +369,92 @@ describe('Dashboard', () => {
     expect(screen.queryByText('Trial Strategy')).not.toBeInTheDocument();
   });
 
+  it('shows clear search button only when active tab has a query', () => {
+    renderDashboard();
+
+    expect(screen.queryByRole('button', { name: 'Clear search' })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'smith' } });
+    expect(screen.getByRole('button', { name: 'Clear search' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+    expect(screen.queryByRole('button', { name: 'Clear search' })).not.toBeInTheDocument();
+  });
+
+  it('clears owned search query and resets owned results', () => {
+    renderDashboard(
+      {},
+      {
+        boards: [
+          { id: 'owned-1', title: 'Smith v. Acme', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 3000 },
+          { id: 'owned-2', title: 'Johnson Intake', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 2000 },
+        ],
+      },
+    );
+
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'johnson' } });
+    expect(screen.getByText('Johnson Intake')).toBeInTheDocument();
+    expect(screen.queryByText('Smith v. Acme')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear search' }));
+
+    expect(screen.getByDisplayValue('')).toBeInTheDocument();
+    expect(screen.getByText('Johnson Intake')).toBeInTheDocument();
+    expect(screen.getByText('Smith v. Acme')).toBeInTheDocument();
+  });
+
+  it('clears only shared search query and preserves owned query', () => {
+    renderDashboard(
+      {},
+      {
+        boards: [
+          { id: 'owned-1', title: 'Smith v. Acme', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 3000 },
+          { id: 'owned-2', title: 'Johnson Intake', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 2000 },
+        ],
+      },
+      {
+        explicitBoards: [
+          {
+            id: 'shared-1',
+            title: 'Deposition Timeline',
+            ownerId: 'owner-1',
+            createdAtMs: 1000,
+            updatedAtMs: 3000,
+            role: 'viewer',
+            source: 'explicit',
+          },
+          {
+            id: 'shared-2',
+            title: 'Trial Strategy',
+            ownerId: 'owner-2',
+            createdAtMs: 1000,
+            updatedAtMs: 2200,
+            role: 'editor',
+            source: 'explicit',
+          },
+        ],
+      },
+    );
+
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'johnson' } });
+    expect(screen.queryByText('Smith v. Acme')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'deposition' } });
+    expect(screen.getByText('Deposition Timeline')).toBeInTheDocument();
+    expect(screen.queryByText('Trial Strategy')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear search' }));
+    expect(screen.getByDisplayValue('')).toBeInTheDocument();
+    expect(screen.getByText('Deposition Timeline')).toBeInTheDocument();
+    expect(screen.getByText('Trial Strategy')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'All cases' }));
+    expect(screen.getByDisplayValue('johnson')).toBeInTheDocument();
+    expect(screen.getByText('Johnson Intake')).toBeInTheDocument();
+    expect(screen.queryByText('Smith v. Acme')).not.toBeInTheDocument();
+  });
+
   it('renders board cards with Open, Rename, and Delete buttons', () => {
     renderDashboard({}, {
       boards: [
