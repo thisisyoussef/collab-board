@@ -4,6 +4,8 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { AuthContext, type AuthContextValue } from '../context/auth-context';
 import type { SharedBoardDashboardEntry } from '../types/sharing';
 
+const DASHBOARD_VIEW_CONTEXT_KEY = 'collab-board-dashboard-view-context';
+
 // Mock useBoards
 const mockCreateBoard = vi.fn();
 const mockCreateBoardFromTemplate = vi.fn();
@@ -97,6 +99,7 @@ function renderDashboard(
 describe('Dashboard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
   });
 
   it('renders the user display name and avatar', () => {
@@ -367,6 +370,115 @@ describe('Dashboard', () => {
     expect(screen.getByDisplayValue('deposition')).toBeInTheDocument();
     expect(screen.getByText('Deposition Notes')).toBeInTheDocument();
     expect(screen.queryByText('Trial Strategy')).not.toBeInTheDocument();
+  });
+
+  it('restores dashboard tab and search context from local storage on load', () => {
+    window.localStorage.setItem(
+      DASHBOARD_VIEW_CONTEXT_KEY,
+      JSON.stringify({
+        activeView: 'shared',
+        searchByView: {
+          owned: 'smith',
+          shared: 'deposition',
+        },
+      }),
+    );
+
+    renderDashboard(
+      {},
+      {
+        boards: [
+          { id: 'owned-1', title: 'Smith v. Acme', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 3000 },
+        ],
+      },
+      {
+        explicitBoards: [
+          {
+            id: 'shared-1',
+            title: 'Trial Strategy',
+            ownerId: 'owner-1',
+            createdAtMs: 1000,
+            updatedAtMs: 3000,
+            role: 'viewer',
+            source: 'explicit',
+          },
+        ],
+        recentBoards: [
+          {
+            id: 'recent-1',
+            title: 'Deposition Notes',
+            ownerId: 'owner-2',
+            createdAtMs: 1200,
+            updatedAtMs: 2200,
+            lastOpenedAtMs: 5000,
+            source: 'recent',
+          },
+        ],
+      },
+    );
+
+    expect(screen.getByRole('heading', { name: 'Shared with me' })).toBeInTheDocument();
+    expect(screen.getByDisplayValue('deposition')).toBeInTheDocument();
+    expect(screen.getByText('Deposition Notes')).toBeInTheDocument();
+    expect(screen.queryByText('Trial Strategy')).not.toBeInTheDocument();
+  });
+
+  it('persists dashboard tab and search context to local storage', async () => {
+    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
+
+    renderDashboard(
+      {},
+      {
+        boards: [
+          { id: 'owned-1', title: 'Smith v. Acme', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 3000 },
+        ],
+      },
+      {
+        explicitBoards: [
+          {
+            id: 'shared-1',
+            title: 'Trial Strategy',
+            ownerId: 'owner-1',
+            createdAtMs: 1000,
+            updatedAtMs: 3000,
+            role: 'viewer',
+            source: 'explicit',
+          },
+        ],
+      },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'trial' } });
+
+    await waitFor(() => {
+      expect(setItemSpy).toHaveBeenCalledWith(
+        DASHBOARD_VIEW_CONTEXT_KEY,
+        expect.any(String),
+      );
+    });
+
+    const persisted = setItemSpy.mock.calls
+      .filter(([key]) => key === DASHBOARD_VIEW_CONTEXT_KEY)
+      .map(([, value]) => JSON.parse(String(value)))
+      .at(-1);
+
+    expect(persisted).toEqual({
+      activeView: 'shared',
+      searchByView: {
+        owned: '',
+        shared: 'trial',
+      },
+    });
+  });
+
+  it('falls back to default dashboard context when local storage is malformed', () => {
+    window.localStorage.setItem(DASHBOARD_VIEW_CONTEXT_KEY, '{malformed');
+
+    renderDashboard();
+
+    expect(screen.getByRole('heading', { name: 'Cases' })).toBeInTheDocument();
+    expect(screen.getByDisplayValue('')).toBeInTheDocument();
   });
 
   it('renders board cards with Open, Rename, and Delete buttons', () => {
