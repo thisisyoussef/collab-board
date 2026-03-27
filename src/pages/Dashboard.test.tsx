@@ -51,6 +51,7 @@ const mockUser = {
   displayName: 'Test User',
   email: 'test@example.com',
 } as AuthContextValue['user'];
+const DASHBOARD_ACTIVE_VIEW_STORAGE_KEY = 'dashboard.activeView';
 
 const baseAuth: AuthContextValue = {
   user: mockUser,
@@ -97,6 +98,7 @@ function renderDashboard(
 describe('Dashboard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
   });
 
   it('renders the user display name and avatar', () => {
@@ -164,6 +166,39 @@ describe('Dashboard', () => {
     expect(screen.getByText('Recent case links')).toBeInTheDocument();
     expect(screen.getByText('Shared Planning')).toBeInTheDocument();
     expect(screen.getByText('Recent Retro')).toBeInTheDocument();
+  });
+
+  it('restores Shared with me as active view from local storage', () => {
+    window.localStorage.setItem(DASHBOARD_ACTIVE_VIEW_STORAGE_KEY, 'shared');
+
+    renderDashboard(
+      {},
+      {},
+      {
+        explicitBoards: [
+          {
+            id: 'shared-1',
+            title: 'Shared Planning',
+            ownerId: 'owner-1',
+            createdAtMs: 1000,
+            updatedAtMs: 3000,
+            role: 'viewer',
+            source: 'explicit',
+          },
+        ],
+      },
+    );
+
+    expect(screen.getByRole('heading', { name: 'Shared with me' })).toBeInTheDocument();
+    expect(screen.getByText('Shared Planning')).toBeInTheDocument();
+  });
+
+  it('persists active dashboard view when switching tabs', () => {
+    renderDashboard();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+
+    expect(window.localStorage.getItem(DASHBOARD_ACTIVE_VIEW_STORAGE_KEY)).toBe('shared');
   });
 
   it('opens shared board cards from Shared with me view', () => {

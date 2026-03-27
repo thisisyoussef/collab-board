@@ -2,7 +2,7 @@
 // Shows two tabs: "My Boards" (owned) and "Shared with me" (via boardMembers/boardRecents).
 // Supports create, rename, delete operations via useBoards hook.
 // Board cards link to /board/:id for the canvas editor.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useBoards } from '../hooks/useBoards';
@@ -13,6 +13,19 @@ import type { SharedBoardDashboardEntry } from '../types/sharing';
 import './Dashboard.css';
 
 type DashboardView = 'owned' | 'shared';
+const DASHBOARD_ACTIVE_VIEW_STORAGE_KEY = 'dashboard.activeView';
+
+function getStoredDashboardView(): DashboardView {
+  try {
+    const storedValue = window.localStorage.getItem(DASHBOARD_ACTIVE_VIEW_STORAGE_KEY);
+    if (storedValue === 'owned' || storedValue === 'shared') {
+      return storedValue;
+    }
+  } catch {
+    // Ignore storage read failures and use the default view.
+  }
+  return 'owned';
+}
 
 function formatDate(ms: number): string {
   if (!ms) return 'Just now';
@@ -102,7 +115,7 @@ export function Dashboard() {
     user?.uid,
   );
 
-  const [activeView, setActiveView] = useState<DashboardView>('owned');
+  const [activeView, setActiveView] = useState<DashboardView>(() => getStoredDashboardView());
   const [newBoardName, setNewBoardName] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
   const [editingBoardId, setEditingBoardId] = useState<string | null>(null);
@@ -117,6 +130,14 @@ export function Dashboard() {
     owned: '',
     shared: '',
   });
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(DASHBOARD_ACTIVE_VIEW_STORAGE_KEY, activeView);
+    } catch {
+      // Ignore storage write failures to avoid breaking dashboard rendering.
+    }
+  }, [activeView]);
 
   const searchQuery = searchByView[activeView];
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
