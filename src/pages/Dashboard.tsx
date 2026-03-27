@@ -2,7 +2,7 @@
 // Shows two tabs: "My Boards" (owned) and "Shared with me" (via boardMembers/boardRecents).
 // Supports create, rename, delete operations via useBoards hook.
 // Board cards link to /board/:id for the canvas editor.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useBoards } from '../hooks/useBoards';
@@ -13,6 +13,50 @@ import type { SharedBoardDashboardEntry } from '../types/sharing';
 import './Dashboard.css';
 
 type DashboardView = 'owned' | 'shared';
+const DASHBOARD_SEARCH_STATE_KEY = 'collabboard.dashboard.search_state';
+const DASHBOARD_VIEWS: DashboardView[] = ['owned', 'shared'];
+
+interface DashboardSearchState {
+  activeView: DashboardView;
+  searchByView: Record<DashboardView, string>;
+}
+
+function getDefaultDashboardSearchState(): DashboardSearchState {
+  return {
+    activeView: 'owned',
+    searchByView: {
+      owned: '',
+      shared: '',
+    },
+  };
+}
+
+function isDashboardView(value: unknown): value is DashboardView {
+  return typeof value === 'string' && DASHBOARD_VIEWS.includes(value as DashboardView);
+}
+
+function parseDashboardSearchState(rawValue: string | null): DashboardSearchState {
+  if (!rawValue) return getDefaultDashboardSearchState();
+
+  try {
+    const parsed = JSON.parse(rawValue) as Partial<DashboardSearchState>;
+    const defaultState = getDefaultDashboardSearchState();
+    const activeView = isDashboardView(parsed.activeView) ? parsed.activeView : defaultState.activeView;
+
+    const rawSearchByView = parsed.searchByView;
+    const searchByView: Record<DashboardView, string> = {
+      owned: typeof rawSearchByView?.owned === 'string' ? rawSearchByView.owned : defaultState.searchByView.owned,
+      shared: typeof rawSearchByView?.shared === 'string' ? rawSearchByView.shared : defaultState.searchByView.shared,
+    };
+
+    return {
+      activeView,
+      searchByView,
+    };
+  } catch {
+    return getDefaultDashboardSearchState();
+  }
+}
 
 function formatDate(ms: number): string {
   if (!ms) return 'Just now';
@@ -102,7 +146,13 @@ export function Dashboard() {
     user?.uid,
   );
 
-  const [activeView, setActiveView] = useState<DashboardView>('owned');
+  const [dashboardSearchState, setDashboardSearchState] = useState<DashboardSearchState>(() => {
+    if (typeof window === 'undefined') {
+      return getDefaultDashboardSearchState();
+    }
+    return parseDashboardSearchState(window.sessionStorage.getItem(DASHBOARD_SEARCH_STATE_KEY));
+  });
+  const { activeView, searchByView } = dashboardSearchState;
   const [newBoardName, setNewBoardName] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
   const [editingBoardId, setEditingBoardId] = useState<string | null>(null);
@@ -113,10 +163,10 @@ export function Dashboard() {
   const [renamingBoardId, setRenamingBoardId] = useState<string | null>(null);
   const [isRetryingOwned, setIsRetryingOwned] = useState(false);
   const [isRetryingShared, setIsRetryingShared] = useState(false);
-  const [searchByView, setSearchByView] = useState<Record<DashboardView, string>>({
-    owned: '',
-    shared: '',
-  });
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.sessionStorage.setItem(DASHBOARD_SEARCH_STATE_KEY, JSON.stringify(dashboardSearchState));
+  }, [dashboardSearchState]);
 
   const searchQuery = searchByView[activeView];
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
@@ -233,6 +283,23 @@ export function Dashboard() {
     }
   };
 
+  const handleActiveViewChange = (view: DashboardView) => {
+    setDashboardSearchState((prev) => ({
+      ...prev,
+      activeView: view,
+    }));
+  };
+
+  const handleSearchChange = (value: string) => {
+    setDashboardSearchState((prev) => ({
+      ...prev,
+      searchByView: {
+        ...prev.searchByView,
+        [prev.activeView]: value,
+      },
+    }));
+  };
+
   const ownedBoardCards = filteredOwnedBoards.map((board) => {
     const isEditing = editingBoardId === board.id;
 
@@ -334,17 +401,17 @@ export function Dashboard() {
           <div className="sidebar-list dashboard-sidebar-nav">
             <button
               className={`sidebar-item ${activeView === 'owned' ? 'active' : ''}`}
-              onClick={() => setActiveView('owned')}
+              onClick={() => handleActiveViewChange('owned')}
             >
               All cases
             </button>
             <button
               className={`sidebar-item ${activeView === 'shared' ? 'active' : ''}`}
-              onClick={() => setActiveView('shared')}
+              onClick={() => handleActiveViewChange('shared')}
             >
               Shared with me
             </button>
-            <button className="sidebar-item" onClick={() => setActiveView('owned')}>
+            <button className="sidebar-item" onClick={() => handleActiveViewChange('owned')}>
               Case templates
             </button>
           </div>
@@ -414,12 +481,7 @@ export function Dashboard() {
             className="board-input"
             placeholder={activeView === 'owned' ? 'Search my cases' : 'Search shared cases'}
             value={searchQuery}
-            onChange={(event) =>
-              setSearchByView((prev) => ({
-                ...prev,
-                [activeView]: event.target.value,
-              }))
-            }
+            onChange={(event) => handleSearchChange(event.target.value)}
           />
           <div className="dashboard-context-cards">
             <article className="dashboard-context-card">

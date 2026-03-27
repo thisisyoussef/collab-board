@@ -51,6 +51,7 @@ const mockUser = {
   displayName: 'Test User',
   email: 'test@example.com',
 } as AuthContextValue['user'];
+const DASHBOARD_SEARCH_STATE_KEY = 'collabboard.dashboard.search_state';
 
 const baseAuth: AuthContextValue = {
   user: mockUser,
@@ -97,6 +98,7 @@ function renderDashboard(
 describe('Dashboard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.sessionStorage.clear();
   });
 
   it('renders the user display name and avatar', () => {
@@ -367,6 +369,101 @@ describe('Dashboard', () => {
     expect(screen.getByDisplayValue('deposition')).toBeInTheDocument();
     expect(screen.getByText('Deposition Notes')).toBeInTheDocument();
     expect(screen.queryByText('Trial Strategy')).not.toBeInTheDocument();
+  });
+
+  it('restores active tab and search query from session storage after remount', () => {
+    const sharedData = {
+      explicitBoards: [
+        {
+          id: 'shared-1',
+          title: 'Trial Strategy',
+          ownerId: 'owner-1',
+          createdAtMs: 1000,
+          updatedAtMs: 3000,
+          role: 'viewer' as const,
+          source: 'explicit' as const,
+        },
+      ],
+      recentBoards: [
+        {
+          id: 'recent-1',
+          title: 'Deposition Notes',
+          ownerId: 'owner-2',
+          createdAtMs: 1200,
+          updatedAtMs: 2200,
+          lastOpenedAtMs: 5000,
+          source: 'recent' as const,
+        },
+      ],
+    };
+
+    const firstRender = renderDashboard({}, {}, sharedData);
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'deposition' } });
+    firstRender.unmount();
+
+    renderDashboard({}, {}, sharedData);
+
+    expect(screen.getByRole('heading', { name: 'Shared with me' })).toBeInTheDocument();
+    expect(screen.getByDisplayValue('deposition')).toBeInTheDocument();
+    expect(screen.getByText('Deposition Notes')).toBeInTheDocument();
+    expect(screen.queryByText('Trial Strategy')).not.toBeInTheDocument();
+  });
+
+  it('restores per-tab search queries from session storage after remount', () => {
+    const ownedBoards = {
+      boards: [
+        { id: 'owned-1', title: 'Smith v. Acme', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 3000 },
+        { id: 'owned-2', title: 'Johnson Intake', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 2000 },
+      ],
+    };
+    const sharedData = {
+      explicitBoards: [
+        {
+          id: 'shared-1',
+          title: 'Trial Strategy',
+          ownerId: 'owner-1',
+          createdAtMs: 1000,
+          updatedAtMs: 3000,
+          role: 'viewer' as const,
+          source: 'explicit' as const,
+        },
+      ],
+      recentBoards: [
+        {
+          id: 'recent-1',
+          title: 'Deposition Notes',
+          ownerId: 'owner-2',
+          createdAtMs: 1200,
+          updatedAtMs: 2200,
+          lastOpenedAtMs: 5000,
+          source: 'recent' as const,
+        },
+      ],
+    };
+
+    const firstRender = renderDashboard({}, ownedBoards, sharedData);
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'johnson' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'deposition' } });
+    firstRender.unmount();
+
+    renderDashboard({}, ownedBoards, sharedData);
+
+    expect(screen.getByDisplayValue('deposition')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'All cases' }));
+    expect(screen.getByDisplayValue('johnson')).toBeInTheDocument();
+    expect(screen.getByText('Johnson Intake')).toBeInTheDocument();
+    expect(screen.queryByText('Smith v. Acme')).not.toBeInTheDocument();
+  });
+
+  it('falls back to default dashboard search state when session storage is invalid', () => {
+    window.sessionStorage.setItem(DASHBOARD_SEARCH_STATE_KEY, '{invalid json');
+
+    renderDashboard();
+
+    expect(screen.getByRole('heading', { name: 'Cases' })).toBeInTheDocument();
+    expect(screen.getByDisplayValue('')).toBeInTheDocument();
   });
 
   it('renders board cards with Open, Rename, and Delete buttons', () => {
