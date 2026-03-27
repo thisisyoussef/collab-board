@@ -411,6 +411,50 @@ describe('Dashboard', () => {
     });
   });
 
+  it('disables Create Case when new title is empty or whitespace', () => {
+    renderDashboard();
+
+    const input = screen.getByPlaceholderText('New case name (e.g., Smith v. Acme)');
+    const createButton = screen.getByRole('button', { name: 'Create Case' });
+
+    expect(createButton).toBeDisabled();
+
+    fireEvent.change(input, { target: { value: '   ' } });
+    expect(createButton).toBeDisabled();
+
+    fireEvent.change(input, { target: { value: 'Valid title' } });
+    expect(createButton).toBeEnabled();
+  });
+
+  it('does not create a board when submit title is whitespace-only', () => {
+    renderDashboard();
+
+    const input = screen.getByPlaceholderText('New case name (e.g., Smith v. Acme)');
+    fireEvent.change(input, { target: { value: '   ' } });
+    fireEvent.submit(input.closest('form')!);
+
+    expect(mockCreateBoard).not.toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('trims new case title before createBoard is called', async () => {
+    mockCreateBoard.mockReturnValue({
+      id: 'trimmed-board-id',
+      committed: Promise.resolve(),
+    });
+
+    renderDashboard();
+
+    const input = screen.getByPlaceholderText('New case name (e.g., Smith v. Acme)');
+    fireEvent.change(input, { target: { value: '   My Trimmed Board   ' } });
+    fireEvent.submit(input.closest('form')!);
+
+    expect(mockCreateBoard).toHaveBeenCalledWith('My Trimmed Board');
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/board/trimmed-board-id');
+    });
+  });
+
   it('creates a board from selected template and navigates after commit resolves', async () => {
     mockCreateBoardFromTemplate.mockReturnValue({
       id: 'template-board-id',
@@ -494,6 +538,59 @@ describe('Dashboard', () => {
     const renameInput = screen.getByDisplayValue('Sprint Plan');
     fireEvent.change(renameInput, { target: { value: 'Sprint Plan V2' } });
     fireEvent.click(screen.getByText('Save'));
+
+    await waitFor(() => {
+      expect(mockRenameBoard).toHaveBeenCalledWith('b1', 'Sprint Plan V2');
+    });
+  });
+
+  it('disables Save when rename title is empty or whitespace', () => {
+    renderDashboard({}, {
+      boards: [
+        { id: 'b1', title: 'Sprint Plan', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 2000 },
+      ],
+    });
+
+    fireEvent.click(screen.getByText('Rename'));
+    const renameInput = screen.getByDisplayValue('Sprint Plan');
+
+    fireEvent.change(renameInput, { target: { value: '   ' } });
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+
+    fireEvent.change(renameInput, { target: { value: 'Sprint Plan Updated' } });
+    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
+  });
+
+  it('does not rename when Enter is pressed with whitespace-only input', async () => {
+    mockRenameBoard.mockResolvedValue(undefined);
+    renderDashboard({}, {
+      boards: [
+        { id: 'b1', title: 'Sprint Plan', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 2000 },
+      ],
+    });
+
+    fireEvent.click(screen.getByText('Rename'));
+    const renameInput = screen.getByDisplayValue('Sprint Plan');
+    fireEvent.change(renameInput, { target: { value: '   ' } });
+    fireEvent.keyDown(renameInput, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(mockRenameBoard).not.toHaveBeenCalled();
+    });
+  });
+
+  it('trims rename title before renameBoard is called', async () => {
+    mockRenameBoard.mockResolvedValue(undefined);
+    renderDashboard({}, {
+      boards: [
+        { id: 'b1', title: 'Sprint Plan', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 2000 },
+      ],
+    });
+
+    fireEvent.click(screen.getByText('Rename'));
+    const renameInput = screen.getByDisplayValue('Sprint Plan');
+    fireEvent.change(renameInput, { target: { value: '   Sprint Plan V2   ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
     await waitFor(() => {
       expect(mockRenameBoard).toHaveBeenCalledWith('b1', 'Sprint Plan V2');

@@ -143,6 +143,7 @@ export function Dashboard() {
       : `Tracking ${countLabel} shared via team access and recent links.`;
   const hasOwnedLoadError = activeView === 'owned' && Boolean(error);
   const hasSharedLoadError = activeView === 'shared' && Boolean(sharedError);
+  const canCreateBoard = newBoardName.trim().length > 0;
 
   const openBoard = (boardId: string) => {
     navigate(`/board/${boardId}`);
@@ -150,10 +151,12 @@ export function Dashboard() {
 
   const handleCreateBoard = async () => {
     if (isCreating) return;
+    const trimmedName = newBoardName.trim();
+    if (!trimmedName) return;
     setActionError(null);
     setIsCreating(true);
     try {
-      const { id: boardId, committed } = createBoard(newBoardName);
+      const { id: boardId, committed } = createBoard(trimmedName);
       await committed;
       setNewBoardName('');
       openBoard(boardId);
@@ -168,10 +171,12 @@ export function Dashboard() {
 
   const handleRenameBoard = async (boardId: string) => {
     if (renamingBoardId === boardId) return;
+    const trimmedName = editingName.trim();
+    if (!trimmedName) return;
     setActionError(null);
     setRenamingBoardId(boardId);
     try {
-      await renameBoard(boardId, editingName);
+      await renameBoard(boardId, trimmedName);
       setEditingBoardId(null);
       setEditingName('');
     } catch (err: unknown) {
@@ -247,6 +252,7 @@ export function Dashboard() {
               onKeyDown={(event) => {
                 if (event.key === 'Enter') {
                   event.preventDefault();
+                  if (!editingName.trim()) return;
                   void handleRenameBoard(board.id);
                 }
                 if (event.key === 'Escape') {
@@ -271,7 +277,7 @@ export function Dashboard() {
             <>
               <button
                 className="primary-btn"
-                disabled={renamingBoardId === board.id}
+                disabled={renamingBoardId === board.id || !editingName.trim()}
                 onClick={() => void handleRenameBoard(board.id)}
               >
                 {renamingBoardId === board.id ? 'Saving...' : 'Save'}
@@ -395,7 +401,7 @@ export function Dashboard() {
                     </option>
                   ))}
                 </select>
-                <button className="primary-btn" type="submit" disabled={isCreating}>
+                <button className="primary-btn" type="submit" disabled={isCreating || !canCreateBoard}>
                   {isCreating ? 'Creating...' : 'Create Case'}
                 </button>
                 <button
