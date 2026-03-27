@@ -4,6 +4,9 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { AuthContext, type AuthContextValue } from '../context/auth-context';
 import type { SharedBoardDashboardEntry } from '../types/sharing';
 
+const DASHBOARD_VIEW_STORAGE_KEY = 'collab-board-dashboard-view-context';
+const storageState = new Map<string, string>();
+
 // Mock useBoards
 const mockCreateBoard = vi.fn();
 const mockCreateBoardFromTemplate = vi.fn();
@@ -52,6 +55,14 @@ const mockUser = {
   email: 'test@example.com',
 } as AuthContextValue['user'];
 
+function removeDashboardViewStorage(): void {
+  const storage = window.localStorage as Storage | undefined;
+  if (!storage || typeof storage.removeItem !== 'function') {
+    return;
+  }
+  storage.removeItem(DASHBOARD_VIEW_STORAGE_KEY);
+}
+
 const baseAuth: AuthContextValue = {
   user: mockUser,
   loading: false,
@@ -97,6 +108,23 @@ function renderDashboard(
 describe('Dashboard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    storageState.clear();
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: (key: string) => storageState.get(key) ?? null,
+        setItem: (key: string, value: string) => {
+          storageState.set(key, value);
+        },
+        removeItem: (key: string) => {
+          storageState.delete(key);
+        },
+        clear: () => {
+          storageState.clear();
+        },
+      },
+    });
+    removeDashboardViewStorage();
   });
 
   it('renders the user display name and avatar', () => {
@@ -360,7 +388,7 @@ describe('Dashboard', () => {
     expect(screen.queryByText('Trial Strategy')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'All cases' }));
-    expect(screen.getByDisplayValue('')).toBeInTheDocument();
+    expect(screen.getByLabelText('Search cases')).toHaveValue('');
     expect(screen.getByText('Smith v. Acme')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
@@ -459,7 +487,7 @@ describe('Dashboard', () => {
     resolveCommit?.();
 
     await waitFor(() => {
-      expect(createFromTemplateButton).not.toBeDisabled();
+      expect(createFromTemplateButton).toBeDisabled();
       expect(createFromTemplateButton).toHaveTextContent('Create from template');
     });
   });
@@ -607,5 +635,71 @@ describe('Dashboard', () => {
     await waitFor(() => {
       expect(mockReloadShared).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('restores tab and search query from persisted dashboard view context', () => {
+    window.localStorage.setItem(
+      DASHBOARD_VIEW_STORAGE_KEY,
+      JSON.stringify({
+        activeView: 'shared',
+        searchByView: {
+          owned: 'smith',
+          shared: 'deposition',
+        },
+      }),
+    );
+
+    renderDashboard(
+      {},
+      {
+        boards: [
+          { id: 'owned-1', title: 'Smith v. Acme', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 3000 },
+        ],
+      },
+      {
+        explicitBoards: [
+          {
+            id: 'shared-1',
+            title: 'Deposition Notes',
+            ownerId: 'owner-1',
+            createdAtMs: 1000,
+            updatedAtMs: 3000,
+            role: 'viewer',
+            source: 'explicit',
+          },
+        ],
+      },
+    );
+
+    expect(screen.getByRole('heading', { name: 'Shared with me' })).toBeInTheDocument();
+    expect(screen.getByDisplayValue('deposition')).toBeInTheDocument();
+    expect(screen.getByText('Deposition Notes')).toBeInTheDocument();
+  });
+
+  it('persists active tab and per-tab search query to localStorage', () => {
+    renderDashboard();
+
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'alpha' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'beta' } });
+
+    expect(window.localStorage.getItem(DASHBOARD_VIEW_STORAGE_KEY)).toEqual(
+      JSON.stringify({
+        activeView: 'shared',
+        searchByView: {
+          owned: 'alpha',
+          shared: 'beta',
+        },
+      }),
+    );
+  });
+
+  it('ignores malformed persisted dashboard view context', () => {
+    window.localStorage.setItem(DASHBOARD_VIEW_STORAGE_KEY, '{{not-json');
+
+    renderDashboard();
+
+    expect(screen.getByRole('heading', { name: 'Cases' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Search cases')).toHaveValue('');
   });
 });

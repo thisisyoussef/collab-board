@@ -2,7 +2,7 @@
 // Shows two tabs: "My Boards" (owned) and "Shared with me" (via boardMembers/boardRecents).
 // Supports create, rename, delete operations via useBoards hook.
 // Board cards link to /board/:id for the canvas editor.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useBoards } from '../hooks/useBoards';
@@ -13,6 +13,9 @@ import type { SharedBoardDashboardEntry } from '../types/sharing';
 import './Dashboard.css';
 
 type DashboardView = 'owned' | 'shared';
+type DashboardSearchState = Record<DashboardView, string>;
+
+const DASHBOARD_VIEW_STORAGE_KEY = 'collab-board-dashboard-view-context';
 
 function formatDate(ms: number): string {
   if (!ms) return 'Just now';
@@ -30,6 +33,65 @@ function boardCountLabel(count: number): string {
     return '1 case';
   }
   return `${count} cases`;
+}
+
+interface PersistedDashboardViewPayload {
+  activeView: DashboardView;
+  searchByView: DashboardSearchState;
+}
+
+function getStorageApi(): Storage | null {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return null;
+  }
+  const storage = window.localStorage;
+  if (typeof storage.getItem !== 'function' || typeof storage.setItem !== 'function') {
+    return null;
+  }
+  return storage;
+}
+
+function parsePersistedDashboardView(): PersistedDashboardViewPayload | null {
+  const storage = getStorageApi();
+  if (!storage) {
+    return null;
+  }
+
+  try {
+    const raw = storage.getItem(DASHBOARD_VIEW_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw) as {
+      activeView?: unknown;
+      searchByView?: Partial<Record<DashboardView, unknown>>;
+    };
+    const activeView: DashboardView = parsed.activeView === 'shared' ? 'shared' : 'owned';
+
+    return {
+      activeView,
+      searchByView: {
+        owned: typeof parsed.searchByView?.owned === 'string' ? parsed.searchByView.owned : '',
+        shared: typeof parsed.searchByView?.shared === 'string' ? parsed.searchByView.shared : '',
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
+function persistDashboardView(payload: PersistedDashboardViewPayload): void {
+  const storage = getStorageApi();
+  if (!storage) {
+    return;
+  }
+
+  try {
+    storage.setItem(DASHBOARD_VIEW_STORAGE_KEY, JSON.stringify(payload));
+  } catch {
+    // Ignore storage failures (private mode, quota, blocked storage).
+  }
 }
 
 interface SharedSectionProps {
@@ -102,7 +164,9 @@ export function Dashboard() {
     user?.uid,
   );
 
-  const [activeView, setActiveView] = useState<DashboardView>('owned');
+  const [activeView, setActiveView] = useState<DashboardView>(
+    () => parsePersistedDashboardView()?.activeView ?? 'owned',
+  );
   const [newBoardName, setNewBoardName] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
   const [editingBoardId, setEditingBoardId] = useState<string | null>(null);
@@ -113,10 +177,20 @@ export function Dashboard() {
   const [renamingBoardId, setRenamingBoardId] = useState<string | null>(null);
   const [isRetryingOwned, setIsRetryingOwned] = useState(false);
   const [isRetryingShared, setIsRetryingShared] = useState(false);
-  const [searchByView, setSearchByView] = useState<Record<DashboardView, string>>({
-    owned: '',
-    shared: '',
-  });
+  const [searchByView, setSearchByView] = useState<DashboardSearchState>(
+    () =>
+      parsePersistedDashboardView()?.searchByView ?? {
+        owned: '',
+        shared: '',
+      },
+  );
+
+  useEffect(() => {
+    persistDashboardView({
+      activeView,
+      searchByView,
+    });
+  }, [activeView, searchByView]);
 
   const searchQuery = searchByView[activeView];
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
