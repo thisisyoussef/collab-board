@@ -435,6 +435,19 @@
   font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
 }
 
+.shared-role-chip {
+  width: fit-content;
+  border: 1px solid #c5b89e;
+  border-radius: 999px;
+  padding: 0.16rem 0.52rem;
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.64rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #5f4822;
+  background: linear-gradient(140deg, #f7e7c8, #f3dcc0);
+}
+
 .board-card-actions {
   display: flex;
   align-items: center;

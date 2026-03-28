@@ -39,6 +39,13 @@ interface SharedSectionProps {
   onOpenBoard: (boardId: string) => void;
 }
 
+function sharedRoleLabel(role: SharedBoardDashboardEntry['role']): string | null {
+  if (role === 'owner') return 'Owner';
+  if (role === 'editor') return 'Can edit';
+  if (role === 'viewer') return 'View only';
+  return null;
+}
+
 function SharedBoardsSection({ title, emptyText, boards, onOpenBoard }: SharedSectionProps) {
   return (
     <section className="shared-section">
@@ -54,6 +61,11 @@ function SharedBoardsSection({ title, emptyText, boards, onOpenBoard }: SharedSe
             <article key={`${board.source}-${board.id}`} className="board-card">
               <div className="board-card-main">
                 <h3>{board.title}</h3>
+                {board.source === 'explicit' ? (
+                  <span className="shared-role-chip">
+                    {sharedRoleLabel(board.role) ?? 'Shared'}
+                  </span>
+                ) : null}
                 <p>
                   Updated {formatDate(board.updatedAtMs)}
                   {board.source === 'recent' && board.lastOpenedAtMs

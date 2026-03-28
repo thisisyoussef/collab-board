@@ -166,6 +166,65 @@ describe('Dashboard', () => {
     expect(screen.getByText('Recent Retro')).toBeInTheDocument();
   });
 
+  it('shows role chips for explicitly shared boards', () => {
+    renderDashboard(
+      {},
+      {},
+      {
+        explicitBoards: [
+          {
+            id: 'shared-editor',
+            title: 'Editor Access Case',
+            ownerId: 'owner-1',
+            createdAtMs: 1000,
+            updatedAtMs: 3000,
+            role: 'editor',
+            source: 'explicit',
+          },
+          {
+            id: 'shared-viewer',
+            title: 'Viewer Access Case',
+            ownerId: 'owner-2',
+            createdAtMs: 1000,
+            updatedAtMs: 3200,
+            role: 'viewer',
+            source: 'explicit',
+          },
+        ],
+      },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+
+    expect(screen.getByText('Can edit')).toBeInTheDocument();
+    expect(screen.getByText('View only')).toBeInTheDocument();
+  });
+
+  it('does not show a role chip for recent-link shared boards', () => {
+    renderDashboard(
+      {},
+      {},
+      {
+        recentBoards: [
+          {
+            id: 'recent-1',
+            title: 'Recent Trial Notes',
+            ownerId: 'owner-2',
+            createdAtMs: 1200,
+            updatedAtMs: 2200,
+            lastOpenedAtMs: 5000,
+            source: 'recent',
+          },
+        ],
+      },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+
+    expect(screen.queryByText('Can edit')).not.toBeInTheDocument();
+    expect(screen.queryByText('View only')).not.toBeInTheDocument();
+  });
+
   it('opens shared board cards from Shared with me view', () => {
     renderDashboard(
       {},
