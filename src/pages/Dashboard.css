@@ -429,6 +429,19 @@
   color: #1e1c19;
 }
 
+.shared-role-chip {
+  align-self: flex-start;
+  border: 1px solid #cbb68f;
+  border-radius: 999px;
+  background: #f8efde;
+  color: #5d4522;
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.64rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 0.16rem 0.5rem;
+}
+
 .board-card-main p {
   font-size: 0.77rem;
   color: #6a6458;

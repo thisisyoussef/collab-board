@@ -281,6 +281,79 @@ describe('Dashboard', () => {
     expect(screen.queryByText('Trial Strategy')).not.toBeInTheDocument();
   });
 
+  it('shows View only chip for explicitly shared viewer boards', () => {
+    renderDashboard(
+      {},
+      {},
+      {
+        explicitBoards: [
+          {
+            id: 'shared-viewer-1',
+            title: 'Viewer Case',
+            ownerId: 'owner-1',
+            createdAtMs: 1000,
+            updatedAtMs: 3000,
+            role: 'viewer',
+            source: 'explicit',
+          },
+        ],
+      },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+
+    expect(screen.getByText('View only')).toBeInTheDocument();
+  });
+
+  it('shows Can edit chip for explicitly shared editor boards', () => {
+    renderDashboard(
+      {},
+      {},
+      {
+        explicitBoards: [
+          {
+            id: 'shared-editor-1',
+            title: 'Editor Case',
+            ownerId: 'owner-1',
+            createdAtMs: 1000,
+            updatedAtMs: 3000,
+            role: 'editor',
+            source: 'explicit',
+          },
+        ],
+      },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+
+    expect(screen.getByText('Can edit')).toBeInTheDocument();
+  });
+
+  it('does not show access chip for recent-link-only shared boards', () => {
+    renderDashboard(
+      {},
+      {},
+      {
+        recentBoards: [
+          {
+            id: 'recent-standalone-1',
+            title: 'Recent Only Case',
+            ownerId: 'owner-2',
+            createdAtMs: 1200,
+            updatedAtMs: 2200,
+            lastOpenedAtMs: 5000,
+            source: 'recent',
+          },
+        ],
+      },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+
+    expect(screen.queryByText('Can edit')).not.toBeInTheDocument();
+    expect(screen.queryByText('View only')).not.toBeInTheDocument();
+  });
+
   it('keeps owned-case search query when switching away and back', () => {
     renderDashboard(
       {},
