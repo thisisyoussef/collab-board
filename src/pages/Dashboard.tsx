@@ -386,6 +386,12 @@ export function Dashboard() {
                   className="board-template-select"
                   value={selectedTemplate}
                   onChange={(event) => setSelectedTemplate(event.target.value as DemoCasePackKey | '')}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter') return;
+                    event.preventDefault();
+                    if (!selectedTemplate || isCreatingTemplate) return;
+                    void handleCreateFromTemplate();
+                  }}
                   disabled={isCreatingTemplate}
                 >
                   <option value="">Template</option>

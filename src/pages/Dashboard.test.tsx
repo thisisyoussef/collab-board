@@ -428,6 +428,36 @@ describe('Dashboard', () => {
     });
   });
 
+  it('submits template creation with Enter from template selector', async () => {
+    mockCreateBoardFromTemplate.mockReturnValue({
+      id: 'template-enter-id',
+      committed: Promise.resolve(),
+    });
+
+    renderDashboard();
+
+    const templateSelect = screen.getByLabelText('Case template');
+    fireEvent.change(templateSelect, { target: { value: 'johnson' } });
+    fireEvent.keyDown(templateSelect, { key: 'Enter', code: 'Enter' });
+
+    expect(mockCreateBoardFromTemplate).toHaveBeenCalledWith('johnson');
+    expect(mockCreateBoard).not.toHaveBeenCalled();
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/board/template-enter-id');
+    });
+  });
+
+  it('does not create from template on Enter when no template is selected', () => {
+    renderDashboard();
+
+    const templateSelect = screen.getByLabelText('Case template');
+    fireEvent.keyDown(templateSelect, { key: 'Enter', code: 'Enter' });
+
+    expect(mockCreateBoardFromTemplate).not.toHaveBeenCalled();
+    expect(mockCreateBoard).not.toHaveBeenCalled();
+  });
+
   it('keeps create from template disabled until a template is selected', () => {
     renderDashboard();
 
