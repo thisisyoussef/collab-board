@@ -56,6 +56,7 @@ import { useBoardSharing } from '../hooks/useBoardSharing';
 import { useCursors } from '../hooks/useCursors';
 import { usePresence } from '../hooks/usePresence';
 import { useSocket, type SocketStatus } from '../hooks/useSocket';
+import { buildFollowCandidates, getActiveFollowCursor } from '../lib/presenter-follow';
 import {
   normalizeBoardRole,
   resolveBoardAccess,
@@ -429,6 +430,18 @@ export function Board() {
   const [isAdvancedToolsOpen, setIsAdvancedToolsOpen] = useState(false);
   const [shareState, setShareState] = useState<'idle' | 'copied' | 'error'>('idle');
   const [hoveredClaimIndicator, setHoveredClaimIndicator] = useState<HoveredClaimIndicator | null>(null);
+  const [selectedFollowUserId, setSelectedFollowUserId] = useState<string | null>(null);
+  const [activeFollowUserId, setActiveFollowUserId] = useState<string | null>(null);
+
+  const followCandidates = useMemo(
+    () => buildFollowCandidates(remoteCursors, user?.uid ?? null),
+    [remoteCursors, user?.uid],
+  );
+  const activeFollowCursor = useMemo(
+    () => getActiveFollowCursor(followCandidates, activeFollowUserId),
+    [activeFollowUserId, followCandidates],
+  );
+  const activeFollowDisplayName = activeFollowCursor?.displayName || null;
 
   const selectedObject =
     selectedIds.length === 1 ? objectsRef.current.get(selectedIds[0]) ?? null : null;
@@ -1808,6 +1821,41 @@ export function Board() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boardId, socketStatus, user]);
 
+  useEffect(() => {
+    if (followCandidates.length === 0) {
+      setSelectedFollowUserId(null);
+      setActiveFollowUserId(null);
+      return;
+    }
+
+    setSelectedFollowUserId((previous) => {
+      if (previous && followCandidates.some((candidate) => candidate.userId === previous)) {
+        return previous;
+      }
+      return followCandidates[0]?.userId ?? null;
+    });
+  }, [followCandidates]);
+
+  useEffect(() => {
+    if (!activeFollowCursor) {
+      return;
+    }
+
+    const stage = stageRef.current;
+    if (!stage) {
+      return;
+    }
+
+    const scale = stage.scaleX() || 1;
+    stage.position({
+      x: stage.width() / 2 - activeFollowCursor.x * scale,
+      y: stage.height() / 2 - activeFollowCursor.y * scale,
+    });
+    stage.batchDraw();
+    scheduleViewportSave();
+    setBoardRevision((value) => value + 1);
+  }, [activeFollowCursor]);
+
   // ── Global keyboard shortcuts for clipboard operations ──────────────
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -1822,6 +1870,12 @@ export function Board() {
       }
 
       const mod = event.metaKey || event.ctrlKey;
+
+      if (event.key === 'Escape' && activeFollowUserId) {
+        event.preventDefault();
+        setActiveFollowUserId(null);
+        return;
+      }
 
       // Delete / Backspace → Remove selected objects
       if (event.key === 'Delete' || event.key === 'Backspace') {
@@ -1857,7 +1911,7 @@ export function Board() {
       window.removeEventListener('keydown', onKeyDown);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editingText, canEditBoard, selectedIds]);
+  }, [editingText, canEditBoard, selectedIds, activeFollowUserId]);
 
   function isBackgroundTarget(target: Konva.Node | null, stage: Konva.Stage): boolean {
     return target === stage || Boolean(target?.hasName('board-background'));
@@ -6401,6 +6455,43 @@ export function Board() {
         <div className="topbar-cluster right">
           <span className={`presence-pill ${socketStatusClass}`}>{socketStatusLabel}</span>
           <PresenceAvatars members={members} currentUserId={user?.uid ?? null} />
+          {followCandidates.length > 0 ? (
+            <>
+              <select
+                id="presenter-follow-select"
+                aria-label="Presenter to follow"
+                className="follow-select"
+                value={selectedFollowUserId ?? ''}
+                onChange={(event) => setSelectedFollowUserId(event.target.value || null)}
+              >
+                {followCandidates.map((candidate) => (
+                  <option key={candidate.userId} value={candidate.userId}>
+                    {candidate.displayName}
+                  </option>
+                ))}
+              </select>
+              {activeFollowUserId ? (
+                <>
+                  <span className="follow-indicator">Following {activeFollowDisplayName ?? 'presenter'}</span>
+                  <button className="chip-btn" onClick={() => setActiveFollowUserId(null)}>
+                    Stop follow
+                  </button>
+                </>
+              ) : (
+                <button
+                  className="chip-btn"
+                  onClick={() => {
+                    if (selectedFollowUserId) {
+                      setActiveFollowUserId(selectedFollowUserId);
+                    }
+                  }}
+                  disabled={!selectedFollowUserId}
+                >
+                  Follow presenter
+                </button>
+              )}
+            </>
+          ) : null}
           <button className="secondary-btn" onClick={() => setIsSharePanelOpen(true)}>
             Share
           </button>

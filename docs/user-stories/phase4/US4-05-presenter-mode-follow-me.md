@@ -2,7 +2,7 @@
 
 ## Status
 
-- State: Pending
+- State: In Progress
 - Owner: Codex
 - Depends on: US4-04 approved
 
@@ -180,4 +180,4 @@ Red -> Green -> Refactor:
 - Production Frontend URL: Pending
 - Production Socket URL: Pending
 - User Validation: Pending
-- Notes: Pending implementation.
+- Notes: On March 29, 2026, follow opt-in/opt-out UI and viewport mirroring-to-cursor were implemented in `Board.tsx` with `Escape` exit handling. Socket presenter-broadcast protocol, disconnect handoff, and reconnect restoration remain pending for full US4-05 closure.

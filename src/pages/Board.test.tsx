@@ -5,6 +5,20 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { AuthContext, type AuthContextValue } from '../context/auth-context';
 
+const mockUseCursorsState = {
+  remoteCursors: [] as Array<{
+    socketId: string;
+    userId: string;
+    displayName: string;
+    color: string;
+    x: number;
+    y: number;
+  }>,
+  averageLatencyMs: 20,
+  publishCursor: vi.fn(),
+  publishCursorHide: vi.fn(),
+};
+
 // Mock useSocket
 vi.mock('../hooks/useSocket', () => ({
   useSocket: () => ({
@@ -17,11 +31,7 @@ vi.mock('../hooks/useSocket', () => ({
 }));
 
 vi.mock('../hooks/useCursors', () => ({
-  useCursors: () => ({
-    remoteCursors: [],
-    averageLatencyMs: 20,
-    publishCursor: vi.fn(),
-  }),
+  useCursors: () => mockUseCursorsState,
 }));
 
 vi.mock('../hooks/usePresence', () => ({
@@ -148,6 +158,9 @@ describe('Board', () => {
       data: () => ({ title: 'Test Board Title' }),
     } as never);
     vi.mocked(setDoc).mockResolvedValue(undefined as never);
+    mockUseCursorsState.remoteCursors = [];
+    mockUseCursorsState.publishCursor.mockReset();
+    mockUseCursorsState.publishCursorHide.mockReset();
     vi.stubGlobal('fetch', mockFetch);
     mockFetch.mockResolvedValue({
       ok: true,
@@ -317,6 +330,53 @@ describe('Board', () => {
     const avatar = screen.getByLabelText('Test User');
     expect(avatar).toBeInTheDocument();
     expect(avatar.textContent).toBe('TU');
+  });
+
+  it('starts and stops presenter follow mode from topbar controls', async () => {
+    mockUseCursorsState.remoteCursors = [
+      {
+        socketId: 'socket-2',
+        userId: 'user-456',
+        displayName: 'Presenter Paula',
+        color: '#22aa66',
+        x: 420,
+        y: 260,
+      },
+    ];
+    await renderBoardReady();
+
+    expect(screen.getByRole('combobox', { name: 'Presenter to follow' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Follow presenter' }));
+
+    expect(screen.getByText('Following Presenter Paula')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Stop follow' }));
+    expect(screen.queryByText('Following Presenter Paula')).not.toBeInTheDocument();
+  });
+
+  it('exits presenter follow mode when Escape is pressed', async () => {
+    mockUseCursorsState.remoteCursors = [
+      {
+        socketId: 'socket-2',
+        userId: 'user-456',
+        displayName: 'Presenter Paula',
+        color: '#22aa66',
+        x: 420,
+        y: 260,
+      },
+    ];
+    await renderBoardReady();
+    fireEvent.click(screen.getByRole('button', { name: 'Follow presenter' }));
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByText('Following Presenter Paula')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Follow presenter' })).toBeInTheDocument();
+  });
+
+  it('hides presenter follow controls when no teammate cursor is available', async () => {
+    await renderBoardReady();
+
+    expect(screen.queryByRole('combobox', { name: 'Presenter to follow' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Follow presenter' })).not.toBeInTheDocument();
   });
 
   it('navigates to dashboard when Cases button is clicked', async () => {

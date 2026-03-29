@@ -243,6 +243,28 @@
   background: rgba(196, 69, 62, 0.28);
 }
 
+.follow-select {
+  height: 32px;
+  border-radius: 9px;
+  border: 1px solid rgba(214, 209, 200, 0.32);
+  background: rgba(255, 255, 255, 0.1);
+  color: #f7f3eb;
+  padding: 0 0.5rem;
+  max-width: 180px;
+}
+
+.follow-select:focus {
+  outline: 2px solid rgba(212, 149, 43, 0.35);
+  outline-offset: 1px;
+}
+
+.follow-indicator {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #f5d08e;
+  white-space: nowrap;
+}
+
 .figma-board-workspace {
   flex: 1;
   min-height: 0;
