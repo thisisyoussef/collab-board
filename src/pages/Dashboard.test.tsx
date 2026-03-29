@@ -434,6 +434,70 @@ describe('Dashboard', () => {
     expect(screen.getByRole('button', { name: 'Create from template' })).toBeDisabled();
   });
 
+  it('shows a dedicated template library view when Case templates is selected', () => {
+    renderDashboard();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Case templates' }));
+
+    expect(screen.getByRole('heading', { name: 'Case templates' })).toBeInTheDocument();
+    expect(screen.getByText('Load PI pack')).toBeInTheDocument();
+    expect(screen.getByText('Load Contradiction Setup (DefectCo)')).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('New case name (e.g., Smith v. Acme)')).not.toBeInTheDocument();
+  });
+
+  it('creates a board from template library view and navigates after commit resolves', async () => {
+    mockCreateBoardFromTemplate.mockReturnValue({
+      id: 'template-library-board-id',
+      committed: Promise.resolve(),
+    });
+
+    renderDashboard();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Case templates' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Use template Load Contradiction Setup (DefectCo)' }));
+
+    expect(mockCreateBoardFromTemplate).toHaveBeenCalledWith('defectco');
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/board/template-library-board-id');
+    });
+  });
+
+  it('disables template library actions while template creation is pending', async () => {
+    let resolveCommit: (() => void) | null = null;
+    const pendingCommit = new Promise<void>((resolve) => {
+      resolveCommit = resolve;
+    });
+    mockCreateBoardFromTemplate.mockReturnValue({
+      id: 'template-library-board-id',
+      committed: pendingCommit,
+    });
+
+    renderDashboard();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Case templates' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Use template Load PI pack' }));
+
+    const useTemplateButtons = screen.getAllByRole('button', { name: /Use template /i });
+    useTemplateButtons.forEach((button) => {
+      expect(button).toBeDisabled();
+    });
+    expect(screen.getByRole('button', { name: 'Use template Load PI pack' })).toHaveTextContent(
+      'Creating...',
+    );
+
+    resolveCommit?.();
+
+    await waitFor(() => {
+      const enabledButtons = screen.getAllByRole('button', { name: /Use template /i });
+      enabledButtons.forEach((button) => {
+        expect(button).not.toBeDisabled();
+      });
+      expect(screen.getByRole('button', { name: 'Use template Load PI pack' })).toHaveTextContent(
+        'Use template',
+      );
+    });
+  });
+
   it('prevents duplicate template create requests while a template commit is pending', async () => {
     let resolveCommit: (() => void) | null = null;
     const pendingCommit = new Promise<void>((resolve) => {
