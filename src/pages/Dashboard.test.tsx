@@ -232,6 +232,20 @@ describe('Dashboard', () => {
     expect(screen.queryByText('Smith v. Acme')).not.toBeInTheDocument();
   });
 
+  it('opens the first owned case match when Enter is pressed in search', () => {
+    renderDashboard({}, {
+      boards: [
+        { id: 'b1', title: 'Smith v. Acme', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 2000 },
+        { id: 'b2', title: 'Johnson Intake', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 3000 },
+      ],
+    });
+
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'johnson' } });
+    fireEvent.keyDown(screen.getByLabelText('Search cases'), { key: 'Enter' });
+
+    expect(mockNavigate).toHaveBeenCalledWith('/board/b2');
+  });
+
   it('shows a no-match empty state when owned-case search has no results', () => {
     renderDashboard({}, {
       boards: [
@@ -279,6 +293,56 @@ describe('Dashboard', () => {
 
     expect(screen.getByText('Deposition Notes')).toBeInTheDocument();
     expect(screen.queryByText('Trial Strategy')).not.toBeInTheDocument();
+  });
+
+  it('opens the first shared case match when Enter is pressed in search', () => {
+    renderDashboard(
+      {},
+      {},
+      {
+        explicitBoards: [
+          {
+            id: 'shared-1',
+            title: 'Trial Strategy',
+            ownerId: 'owner-1',
+            createdAtMs: 1000,
+            updatedAtMs: 3000,
+            role: 'viewer',
+            source: 'explicit',
+          },
+        ],
+        recentBoards: [
+          {
+            id: 'recent-1',
+            title: 'Deposition Notes',
+            ownerId: 'owner-2',
+            createdAtMs: 1200,
+            updatedAtMs: 2200,
+            lastOpenedAtMs: 5000,
+            source: 'recent',
+          },
+        ],
+      },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'deposition' } });
+    fireEvent.keyDown(screen.getByLabelText('Search cases'), { key: 'Enter' });
+
+    expect(mockNavigate).toHaveBeenCalledWith('/board/recent-1');
+  });
+
+  it('does not navigate on Enter when search has no match', () => {
+    renderDashboard({}, {
+      boards: [
+        { id: 'b1', title: 'Smith v. Acme', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 2000 },
+      ],
+    });
+
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'missing' } });
+    fireEvent.keyDown(screen.getByLabelText('Search cases'), { key: 'Enter' });
+
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
   it('keeps owned-case search query when switching away and back', () => {
