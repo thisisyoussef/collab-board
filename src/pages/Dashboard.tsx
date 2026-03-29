@@ -32,6 +32,15 @@ function boardCountLabel(count: number): string {
   return `${count} cases`;
 }
 
+function normalizeSearchText(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
 interface SharedSectionProps {
   title: string;
   emptyText: string;
@@ -119,9 +128,21 @@ export function Dashboard() {
   });
 
   const searchQuery = searchByView[activeView];
-  const normalizedSearchQuery = searchQuery.trim().toLowerCase();
-  const boardMatchesSearch = (title: string) =>
-    !normalizedSearchQuery || title.toLowerCase().includes(normalizedSearchQuery);
+  const normalizedSearchQuery = normalizeSearchText(searchQuery);
+  const compactSearchQuery = normalizedSearchQuery.replace(/\s+/g, '');
+  const boardMatchesSearch = (title: string) => {
+    if (!normalizedSearchQuery) {
+      return true;
+    }
+
+    const normalizedTitle = normalizeSearchText(title);
+    if (normalizedTitle.includes(normalizedSearchQuery)) {
+      return true;
+    }
+
+    const compactTitle = normalizedTitle.replace(/\s+/g, '');
+    return compactTitle.includes(compactSearchQuery);
+  };
   const filteredOwnedBoards = boards.filter((board) => boardMatchesSearch(board.title));
   const filteredExplicitBoards = explicitBoards.filter((board) => boardMatchesSearch(board.title));
   const filteredRecentBoards = recentBoards.filter((board) => boardMatchesSearch(board.title));

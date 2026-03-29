@@ -281,6 +281,57 @@ describe('Dashboard', () => {
     expect(screen.queryByText('Trial Strategy')).not.toBeInTheDocument();
   });
 
+  it('matches owned-case search when punctuation differs from query', () => {
+    renderDashboard({}, {
+      boards: [
+        { id: 'b1', title: 'Smith v. Acme, Inc.', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 2000 },
+        { id: 'b2', title: 'Johnson Intake', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 3000 },
+      ],
+    });
+
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'smith acme inc' } });
+
+    expect(screen.getByText('Smith v. Acme, Inc.')).toBeInTheDocument();
+    expect(screen.queryByText('Johnson Intake')).not.toBeInTheDocument();
+  });
+
+  it('matches shared-case search when spacing and punctuation differ from title', () => {
+    renderDashboard(
+      {},
+      {},
+      {
+        explicitBoards: [
+          {
+            id: 'shared-1',
+            title: 'Case #24-CV-0192',
+            ownerId: 'owner-1',
+            createdAtMs: 1000,
+            updatedAtMs: 3000,
+            role: 'viewer',
+            source: 'explicit',
+          },
+        ],
+        recentBoards: [
+          {
+            id: 'recent-1',
+            title: 'Deposition Notes',
+            ownerId: 'owner-2',
+            createdAtMs: 1200,
+            updatedAtMs: 2200,
+            lastOpenedAtMs: 5000,
+            source: 'recent',
+          },
+        ],
+      },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: '24cv0192' } });
+
+    expect(screen.getByText('Case #24-CV-0192')).toBeInTheDocument();
+    expect(screen.queryByText('Deposition Notes')).not.toBeInTheDocument();
+  });
+
   it('keeps owned-case search query when switching away and back', () => {
     renderDashboard(
       {},
