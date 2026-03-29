@@ -56,6 +56,7 @@ Real-time collaborative whiteboard with AI-powered board manipulation and litiga
 - **Dashboard case templates** — create a prefilled starter board from a litigation template pack
 - **Dashboard case search** — quickly filter owned/shared case lists by title keyword
 - **Dashboard tab-scoped search memory** — preserve separate case search queries per dashboard tab
+- **Dashboard search quick-open** — press Enter in case search to open the first matching result
 - **Metrics overlay** — real-time FPS, latency, connection status with PRD threshold indicators
 
 ---

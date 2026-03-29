@@ -369,6 +369,73 @@ describe('Dashboard', () => {
     expect(screen.queryByText('Trial Strategy')).not.toBeInTheDocument();
   });
 
+  it('opens first matching owned case when pressing Enter in search', () => {
+    renderDashboard({}, {
+      boards: [
+        { id: 'owned-1', title: 'Smith v. Acme', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 3000 },
+        { id: 'owned-2', title: 'Johnson Intake', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 2000 },
+      ],
+    });
+
+    const searchInput = screen.getByLabelText('Search cases');
+    fireEvent.change(searchInput, { target: { value: 'johnson' } });
+    fireEvent.keyDown(searchInput, { key: 'Enter', code: 'Enter' });
+
+    expect(mockNavigate).toHaveBeenCalledWith('/board/owned-2');
+  });
+
+  it('opens first matching shared case when pressing Enter in search', () => {
+    renderDashboard(
+      {},
+      {},
+      {
+        explicitBoards: [
+          {
+            id: 'shared-1',
+            title: 'Trial Strategy',
+            ownerId: 'owner-1',
+            createdAtMs: 1000,
+            updatedAtMs: 3000,
+            role: 'viewer',
+            source: 'explicit',
+          },
+        ],
+        recentBoards: [
+          {
+            id: 'recent-1',
+            title: 'Deposition Notes',
+            ownerId: 'owner-2',
+            createdAtMs: 1200,
+            updatedAtMs: 2200,
+            lastOpenedAtMs: 5000,
+            source: 'recent',
+          },
+        ],
+      },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+    const searchInput = screen.getByLabelText('Search cases');
+    fireEvent.change(searchInput, { target: { value: 'deposition' } });
+    fireEvent.keyDown(searchInput, { key: 'Enter', code: 'Enter' });
+
+    expect(mockNavigate).toHaveBeenCalledWith('/board/recent-1');
+  });
+
+  it('does not navigate when pressing Enter in search with no matches', () => {
+    renderDashboard({}, {
+      boards: [
+        { id: 'owned-1', title: 'Smith v. Acme', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 3000 },
+      ],
+    });
+
+    const searchInput = screen.getByLabelText('Search cases');
+    fireEvent.change(searchInput, { target: { value: 'missing' } });
+    fireEvent.keyDown(searchInput, { key: 'Enter', code: 'Enter' });
+
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
   it('renders board cards with Open, Rename, and Delete buttons', () => {
     renderDashboard({}, {
       boards: [
