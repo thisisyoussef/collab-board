@@ -233,6 +233,13 @@ export function Dashboard() {
     }
   };
 
+  const handleClearSearch = () => {
+    setSearchByView((prev) => ({
+      ...prev,
+      [activeView]: '',
+    }));
+  };
+
   const ownedBoardCards = filteredOwnedBoards.map((board) => {
     const isEditing = editingBoardId === board.id;
 
@@ -409,18 +416,29 @@ export function Dashboard() {
               </form>
             ) : null}
           </div>
-          <input
-            aria-label="Search cases"
-            className="board-input"
-            placeholder={activeView === 'owned' ? 'Search my cases' : 'Search shared cases'}
-            value={searchQuery}
-            onChange={(event) =>
-              setSearchByView((prev) => ({
-                ...prev,
-                [activeView]: event.target.value,
-              }))
-            }
-          />
+          <div className="dashboard-search-row">
+            <input
+              aria-label="Search cases"
+              className="board-input"
+              placeholder={activeView === 'owned' ? 'Search my cases' : 'Search shared cases'}
+              value={searchQuery}
+              onChange={(event) =>
+                setSearchByView((prev) => ({
+                  ...prev,
+                  [activeView]: event.target.value,
+                }))
+              }
+            />
+            <button
+              type="button"
+              className="secondary-btn"
+              aria-label="Clear search"
+              disabled={searchQuery.length === 0}
+              onClick={handleClearSearch}
+            >
+              Clear search
+            </button>
+          </div>
           <div className="dashboard-context-cards">
             <article className="dashboard-context-card">
               <p className="dashboard-context-kicker">Focus</p>
