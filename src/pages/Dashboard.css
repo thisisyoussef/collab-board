@@ -269,6 +269,13 @@
   padding: 0.45rem;
 }
 
+.search-controls-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
 .board-input {
   border: 1px solid #c9c2b6;
   background: #fff;

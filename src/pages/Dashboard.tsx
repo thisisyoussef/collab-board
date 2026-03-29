@@ -119,6 +119,7 @@ export function Dashboard() {
   });
 
   const searchQuery = searchByView[activeView];
+  const hasSearchQuery = searchQuery.trim().length > 0;
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
   const boardMatchesSearch = (title: string) =>
     !normalizedSearchQuery || title.toLowerCase().includes(normalizedSearchQuery);
@@ -409,18 +410,35 @@ export function Dashboard() {
               </form>
             ) : null}
           </div>
-          <input
-            aria-label="Search cases"
-            className="board-input"
-            placeholder={activeView === 'owned' ? 'Search my cases' : 'Search shared cases'}
-            value={searchQuery}
-            onChange={(event) =>
-              setSearchByView((prev) => ({
-                ...prev,
-                [activeView]: event.target.value,
-              }))
-            }
-          />
+          <div className="search-controls-row">
+            <input
+              aria-label="Search cases"
+              className="board-input"
+              placeholder={activeView === 'owned' ? 'Search my cases' : 'Search shared cases'}
+              value={searchQuery}
+              onChange={(event) =>
+                setSearchByView((prev) => ({
+                  ...prev,
+                  [activeView]: event.target.value,
+                }))
+              }
+            />
+            {hasSearchQuery ? (
+              <button
+                className="secondary-btn"
+                type="button"
+                aria-label="Clear search"
+                onClick={() =>
+                  setSearchByView((prev) => ({
+                    ...prev,
+                    [activeView]: '',
+                  }))
+                }
+              >
+                Clear search
+              </button>
+            ) : null}
+          </div>
           <div className="dashboard-context-cards">
             <article className="dashboard-context-card">
               <p className="dashboard-context-kicker">Focus</p>
