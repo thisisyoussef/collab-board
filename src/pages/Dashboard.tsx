@@ -2,7 +2,7 @@
 // Shows two tabs: "My Boards" (owned) and "Shared with me" (via boardMembers/boardRecents).
 // Supports create, rename, delete operations via useBoards hook.
 // Board cards link to /board/:id for the canvas editor.
-import { useState } from 'react';
+import { useState, type KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useBoards } from '../hooks/useBoards';
@@ -125,6 +125,8 @@ export function Dashboard() {
   const filteredOwnedBoards = boards.filter((board) => boardMatchesSearch(board.title));
   const filteredExplicitBoards = explicitBoards.filter((board) => boardMatchesSearch(board.title));
   const filteredRecentBoards = recentBoards.filter((board) => boardMatchesSearch(board.title));
+  const topOwnedMatchId = filteredOwnedBoards[0]?.id ?? null;
+  const topSharedMatchId = filteredExplicitBoards[0]?.id ?? filteredRecentBoards[0]?.id ?? null;
 
   const displayName = user?.displayName || user?.email || 'Unknown';
   const userInitial = displayName.charAt(0).toUpperCase();
@@ -146,6 +148,20 @@ export function Dashboard() {
 
   const openBoard = (boardId: string) => {
     navigate(`/board/${boardId}`);
+  };
+
+  const handleSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+
+    if (activeView === 'owned' && topOwnedMatchId) {
+      openBoard(topOwnedMatchId);
+      return;
+    }
+
+    if (activeView === 'shared' && topSharedMatchId) {
+      openBoard(topSharedMatchId);
+    }
   };
 
   const handleCreateBoard = async () => {
@@ -414,6 +430,7 @@ export function Dashboard() {
             className="board-input"
             placeholder={activeView === 'owned' ? 'Search my cases' : 'Search shared cases'}
             value={searchQuery}
+            onKeyDown={handleSearchKeyDown}
             onChange={(event) =>
               setSearchByView((prev) => ({
                 ...prev,

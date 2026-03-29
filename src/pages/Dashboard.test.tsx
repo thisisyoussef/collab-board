@@ -281,6 +281,73 @@ describe('Dashboard', () => {
     expect(screen.queryByText('Trial Strategy')).not.toBeInTheDocument();
   });
 
+  it('opens the top owned-case match when Enter is pressed in search', () => {
+    renderDashboard({}, {
+      boards: [
+        { id: 'owned-1', title: 'Alpha Filing', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 4000 },
+        { id: 'owned-2', title: 'Alpha Discovery', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 3000 },
+      ],
+    });
+
+    const searchInput = screen.getByLabelText('Search cases');
+    fireEvent.change(searchInput, { target: { value: 'alpha' } });
+    fireEvent.keyDown(searchInput, { key: 'Enter' });
+
+    expect(mockNavigate).toHaveBeenCalledWith('/board/owned-1');
+  });
+
+  it('opens the top shared-case match when Enter is pressed in shared view search', () => {
+    renderDashboard(
+      {},
+      {},
+      {
+        explicitBoards: [
+          {
+            id: 'shared-1',
+            title: 'Alpha Shared Plan',
+            ownerId: 'owner-1',
+            createdAtMs: 1000,
+            updatedAtMs: 4000,
+            role: 'viewer',
+            source: 'explicit',
+          },
+        ],
+        recentBoards: [
+          {
+            id: 'recent-1',
+            title: 'Alpha Recent Notes',
+            ownerId: 'owner-2',
+            createdAtMs: 1200,
+            updatedAtMs: 2200,
+            lastOpenedAtMs: 5000,
+            source: 'recent',
+          },
+        ],
+      },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+    const searchInput = screen.getByLabelText('Search cases');
+    fireEvent.change(searchInput, { target: { value: 'alpha' } });
+    fireEvent.keyDown(searchInput, { key: 'Enter' });
+
+    expect(mockNavigate).toHaveBeenCalledWith('/board/shared-1');
+  });
+
+  it('does not navigate when Enter is pressed with no search matches', () => {
+    renderDashboard({}, {
+      boards: [
+        { id: 'owned-1', title: 'Alpha Filing', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 4000 },
+      ],
+    });
+
+    const searchInput = screen.getByLabelText('Search cases');
+    fireEvent.change(searchInput, { target: { value: 'zzz' } });
+    fireEvent.keyDown(searchInput, { key: 'Enter' });
+
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
   it('keeps owned-case search query when switching away and back', () => {
     renderDashboard(
       {},
