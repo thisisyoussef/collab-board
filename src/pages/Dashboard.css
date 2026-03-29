@@ -259,6 +259,12 @@
   text-transform: uppercase;
 }
 
+.dashboard-search-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
 .create-board-row {
   display: flex;
   align-items: center;
@@ -521,6 +527,10 @@
   .board-input {
     min-width: 0;
     flex: 1;
+  }
+
+  .dashboard-search-row {
+    flex-wrap: wrap;
   }
 
   .board-template-select {
