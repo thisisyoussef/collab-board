@@ -428,6 +428,60 @@ describe('Dashboard', () => {
     });
   });
 
+  it('submits selected template from keyboard Enter on template picker', async () => {
+    mockCreateBoardFromTemplate.mockReturnValue({
+      id: 'keyboard-template-board-id',
+      committed: Promise.resolve(),
+    });
+
+    renderDashboard();
+
+    const templateSelect = screen.getByLabelText('Case template');
+    fireEvent.change(templateSelect, { target: { value: 'johnson' } });
+    fireEvent.keyDown(templateSelect, { key: 'Enter' });
+
+    expect(mockCreateBoardFromTemplate).toHaveBeenCalledWith('johnson');
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/board/keyboard-template-board-id');
+    });
+  });
+
+  it('does not submit template from Enter when no template is selected', () => {
+    renderDashboard();
+
+    const templateSelect = screen.getByLabelText('Case template');
+    fireEvent.keyDown(templateSelect, { key: 'Enter' });
+
+    expect(mockCreateBoardFromTemplate).not.toHaveBeenCalled();
+    expect(mockCreateBoard).not.toHaveBeenCalled();
+  });
+
+  it('prevents duplicate Enter submissions while template creation is pending', async () => {
+    let resolveCommit: (() => void) | null = null;
+    const pendingCommit = new Promise<void>((resolve) => {
+      resolveCommit = resolve;
+    });
+    mockCreateBoardFromTemplate.mockReturnValue({
+      id: 'pending-keyboard-template-board-id',
+      committed: pendingCommit,
+    });
+
+    renderDashboard();
+
+    const templateSelect = screen.getByLabelText('Case template');
+    fireEvent.change(templateSelect, { target: { value: 'defectco' } });
+    fireEvent.keyDown(templateSelect, { key: 'Enter' });
+    fireEvent.keyDown(templateSelect, { key: 'Enter' });
+
+    expect(mockCreateBoardFromTemplate).toHaveBeenCalledTimes(1);
+
+    resolveCommit?.();
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/board/pending-keyboard-template-board-id');
+    });
+  });
+
   it('keeps create from template disabled until a template is selected', () => {
     renderDashboard();
 
