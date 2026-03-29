@@ -12,7 +12,7 @@ import type { DemoCasePackKey } from '../types/claim-strength-tools';
 import type { SharedBoardDashboardEntry } from '../types/sharing';
 import './Dashboard.css';
 
-type DashboardView = 'owned' | 'shared';
+type DashboardView = 'owned' | 'shared' | 'templates';
 
 function formatDate(ms: number): string {
   if (!ms) return 'Just now';
@@ -30,6 +30,13 @@ function boardCountLabel(count: number): string {
     return '1 case';
   }
   return `${count} cases`;
+}
+
+function templateCountLabel(count: number): string {
+  if (count === 1) {
+    return '1 template';
+  }
+  return `${count} templates`;
 }
 
 interface SharedSectionProps {
@@ -110,6 +117,7 @@ export function Dashboard() {
   const [isCreating, setIsCreating] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<DemoCasePackKey | ''>('');
   const [isCreatingTemplate, setIsCreatingTemplate] = useState(false);
+  const [creatingTemplateKey, setCreatingTemplateKey] = useState<DemoCasePackKey | null>(null);
   const [renamingBoardId, setRenamingBoardId] = useState<string | null>(null);
   const [isRetryingOwned, setIsRetryingOwned] = useState(false);
   const [isRetryingShared, setIsRetryingShared] = useState(false);
@@ -125,22 +133,36 @@ export function Dashboard() {
   const filteredOwnedBoards = boards.filter((board) => boardMatchesSearch(board.title));
   const filteredExplicitBoards = explicitBoards.filter((board) => boardMatchesSearch(board.title));
   const filteredRecentBoards = recentBoards.filter((board) => boardMatchesSearch(board.title));
+  const filteredTemplates = DEMO_CASE_PACK_OPTIONS.filter((option) =>
+    option.menuLabel.toLowerCase().includes(normalizedSearchQuery),
+  );
 
   const displayName = user?.displayName || user?.email || 'Unknown';
   const userInitial = displayName.charAt(0).toUpperCase();
   const sharedCount = explicitBoards.length + recentBoards.length;
   const filteredSharedCount = filteredExplicitBoards.length + filteredRecentBoards.length;
-  const heading = activeView === 'owned' ? 'Cases' : 'Shared with me';
+  const heading =
+    activeView === 'owned'
+      ? 'Cases'
+      : activeView === 'shared'
+        ? 'Shared with me'
+        : 'Case templates';
   const countLabel =
     activeView === 'owned'
       ? boardCountLabel(filteredOwnedBoards.length)
-      : boardCountLabel(filteredSharedCount);
-  const visibleError = activeView === 'owned' ? error || actionError : sharedError;
-  const coverageLabel = activeView === 'owned' ? 'Active caseload' : 'Shared cases';
+      : activeView === 'shared'
+        ? boardCountLabel(filteredSharedCount)
+        : templateCountLabel(filteredTemplates.length);
+  const visibleError =
+    activeView === 'owned' ? error || actionError : activeView === 'shared' ? sharedError : null;
+  const coverageLabel =
+    activeView === 'owned' ? 'Active caseload' : activeView === 'shared' ? 'Shared cases' : 'Template library';
   const coverageSummary =
     activeView === 'owned'
       ? `Tracking ${countLabel} in your direct caseload.`
-      : `Tracking ${countLabel} shared via team access and recent links.`;
+      : activeView === 'shared'
+        ? `Tracking ${countLabel} shared via team access and recent links.`
+        : `Browse ${countLabel} to start litigation mapping with prefilled structures.`;
   const hasOwnedLoadError = activeView === 'owned' && Boolean(error);
   const hasSharedLoadError = activeView === 'shared' && Boolean(sharedError);
 
@@ -182,13 +204,13 @@ export function Dashboard() {
     }
   };
 
-  const handleCreateFromTemplate = async () => {
-    if (!selectedTemplate || isCreatingTemplate) return;
-
+  const createFromTemplate = async (template: DemoCasePackKey) => {
+    if (isCreatingTemplate) return;
     setActionError(null);
     setIsCreatingTemplate(true);
+    setCreatingTemplateKey(template);
     try {
-      const { id: boardId, committed } = createBoardFromTemplate(selectedTemplate);
+      const { id: boardId, committed } = createBoardFromTemplate(template);
       await committed;
       setSelectedTemplate('');
       openBoard(boardId);
@@ -197,7 +219,13 @@ export function Dashboard() {
       setActionError(message);
     } finally {
       setIsCreatingTemplate(false);
+      setCreatingTemplateKey(null);
     }
+  };
+
+  const handleCreateFromTemplate = async () => {
+    if (!selectedTemplate) return;
+    await createFromTemplate(selectedTemplate);
   };
 
   const handleDeleteBoard = async (boardId: string, title: string) => {
@@ -344,7 +372,10 @@ export function Dashboard() {
             >
               Shared with me
             </button>
-            <button className="sidebar-item" onClick={() => setActiveView('owned')}>
+            <button
+              className={`sidebar-item ${activeView === 'templates' ? 'active' : ''}`}
+              onClick={() => setActiveView('templates')}
+            >
               Case templates
             </button>
           </div>
@@ -412,7 +443,13 @@ export function Dashboard() {
           <input
             aria-label="Search cases"
             className="board-input"
-            placeholder={activeView === 'owned' ? 'Search my cases' : 'Search shared cases'}
+            placeholder={
+              activeView === 'owned'
+                ? 'Search my cases'
+                : activeView === 'shared'
+                  ? 'Search shared cases'
+                  : 'Search templates'
+            }
             value={searchQuery}
             onChange={(event) =>
               setSearchByView((prev) => ({
@@ -424,8 +461,20 @@ export function Dashboard() {
           <div className="dashboard-context-cards">
             <article className="dashboard-context-card">
               <p className="dashboard-context-kicker">Focus</p>
-              <h2>{activeView === 'owned' ? 'Build and refine your case strategy' : 'Review co-counsel case boards'}</h2>
-              <p>{activeView === 'owned' ? 'Map claims, evidence, and witnesses. Score argument strength with AI.' : 'Open shared case boards and track the latest updates from your team.'}</p>
+              <h2>
+                {activeView === 'owned'
+                  ? 'Build and refine your case strategy'
+                  : activeView === 'shared'
+                    ? 'Review co-counsel case boards'
+                    : 'Start from proven litigation templates'}
+              </h2>
+              <p>
+                {activeView === 'owned'
+                  ? 'Map claims, evidence, and witnesses. Score argument strength with AI.'
+                  : activeView === 'shared'
+                    ? 'Open shared case boards and track the latest updates from your team.'
+                    : 'Launch a starter pack with claims, evidence, witness, and timeline structure already connected.'}
+              </p>
             </article>
             <article className="dashboard-context-card">
               <p className="dashboard-context-kicker">Coverage</p>
@@ -468,28 +517,53 @@ export function Dashboard() {
             ) : (
               <div className="board-list">{ownedBoardCards}</div>
             )
-          ) : sharedLoading ? (
-            <div className="dashboard-empty">Loading shared cases...</div>
-          ) : explicitBoards.length === 0 && recentBoards.length === 0 ? (
-            <div className="dashboard-empty">
-              No shared cases yet. Open a shared case link or ask lead counsel to add you.
-            </div>
-          ) : filteredExplicitBoards.length === 0 && filteredRecentBoards.length === 0 ? (
-            <div className="dashboard-empty">No shared cases match your search.</div>
+          ) : activeView === 'shared' ? (
+            sharedLoading ? (
+              <div className="dashboard-empty">Loading shared cases...</div>
+            ) : explicitBoards.length === 0 && recentBoards.length === 0 ? (
+              <div className="dashboard-empty">
+                No shared cases yet. Open a shared case link or ask lead counsel to add you.
+              </div>
+            ) : filteredExplicitBoards.length === 0 && filteredRecentBoards.length === 0 ? (
+              <div className="dashboard-empty">No shared cases match your search.</div>
+            ) : (
+              <div className="shared-boards-list">
+                <SharedBoardsSection
+                  title="Shared by co-counsel"
+                  boards={filteredExplicitBoards}
+                  emptyText="No directly shared cases yet."
+                  onOpenBoard={openBoard}
+                />
+                <SharedBoardsSection
+                  title="Recent case links"
+                  boards={filteredRecentBoards}
+                  emptyText="No recent case links yet."
+                  onOpenBoard={openBoard}
+                />
+              </div>
+            )
+          ) : filteredTemplates.length === 0 ? (
+            <div className="dashboard-empty">No templates match your search.</div>
           ) : (
-            <div className="shared-boards-list">
-              <SharedBoardsSection
-                title="Shared by co-counsel"
-                boards={filteredExplicitBoards}
-                emptyText="No directly shared cases yet."
-                onOpenBoard={openBoard}
-              />
-              <SharedBoardsSection
-                title="Recent case links"
-                boards={filteredRecentBoards}
-                emptyText="No recent case links yet."
-                onOpenBoard={openBoard}
-              />
+            <div className="template-grid">
+              {filteredTemplates.map((option) => {
+                const isTemplatePending = creatingTemplateKey === option.pack;
+                return (
+                  <article key={option.pack} className="template-card">
+                    <p className="template-pack-key">{option.pack.toUpperCase()}</p>
+                    <h3>{option.menuLabel}</h3>
+                    <button
+                      className="primary-btn"
+                      type="button"
+                      aria-label={`Use template ${option.menuLabel}`}
+                      disabled={isCreatingTemplate}
+                      onClick={() => void createFromTemplate(option.pack)}
+                    >
+                      {isTemplatePending ? 'Creating...' : 'Use template'}
+                    </button>
+                  </article>
+                );
+              })}
             </div>
           )}
         </section>

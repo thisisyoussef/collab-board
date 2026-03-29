@@ -357,6 +357,43 @@
   gap: 0.72rem;
 }
 
+.template-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.75rem;
+}
+
+.template-card {
+  border: 1px solid #d6d1c8;
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 95% 8%, rgba(232, 179, 90, 0.2), rgba(232, 179, 90, 0)),
+    #fffefb;
+  padding: 0.88rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  box-shadow: 0 10px 18px rgba(24, 31, 42, 0.06);
+}
+
+.template-card h3 {
+  font-size: 0.95rem;
+  color: #1e1c19;
+  line-height: 1.4;
+}
+
+.template-pack-key {
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #7a705f;
+}
+
+.template-card .primary-btn {
+  width: fit-content;
+}
+
 .shared-boards-list {
   display: flex;
   flex-direction: column;

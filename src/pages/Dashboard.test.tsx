@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { AuthContext, type AuthContextValue } from '../context/auth-context';
+import { DEMO_CASE_PACK_OPTIONS } from '../lib/demo-case-packs';
 import type { SharedBoardDashboardEntry } from '../types/sharing';
 
 // Mock useBoards
@@ -367,6 +368,77 @@ describe('Dashboard', () => {
     expect(screen.getByDisplayValue('deposition')).toBeInTheDocument();
     expect(screen.getByText('Deposition Notes')).toBeInTheDocument();
     expect(screen.queryByText('Trial Strategy')).not.toBeInTheDocument();
+  });
+
+  it('renders a dedicated templates view from the sidebar', () => {
+    renderDashboard();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Case templates' }));
+
+    expect(screen.getByRole('heading', { name: 'Case templates' })).toBeInTheDocument();
+    expect(screen.getByText('Template library')).toBeInTheDocument();
+    expect(screen.getByText(DEMO_CASE_PACK_OPTIONS[0].menuLabel)).toBeInTheDocument();
+  });
+
+  it('filters template cards by search query in templates view', () => {
+    renderDashboard();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Case templates' }));
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'defectco' } });
+
+    expect(screen.getByText('Load Contradiction Setup (DefectCo)')).toBeInTheDocument();
+    expect(screen.queryByText('Load PI pack')).not.toBeInTheDocument();
+  });
+
+  it('creates a board from template cards in templates view', async () => {
+    mockCreateBoardFromTemplate.mockReturnValue({
+      id: 'template-from-card-id',
+      committed: Promise.resolve(),
+    });
+
+    renderDashboard();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Case templates' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Use template Load PI pack' }));
+
+    expect(mockCreateBoardFromTemplate).toHaveBeenCalledWith('pi');
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/board/template-from-card-id');
+    });
+  });
+
+  it('disables template-card actions while a template launch is pending', async () => {
+    let resolveCommit: (() => void) | null = null;
+    const pendingCommit = new Promise<void>((resolve) => {
+      resolveCommit = resolve;
+    });
+    mockCreateBoardFromTemplate.mockReturnValue({
+      id: 'pending-template-id',
+      committed: pendingCommit,
+    });
+
+    renderDashboard();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Case templates' }));
+
+    const firstTemplateButton = screen.getByRole('button', { name: 'Use template Load PI pack' });
+    const secondTemplateButton = screen.getByRole('button', { name: 'Use template Load Employment pack' });
+
+    fireEvent.click(firstTemplateButton);
+    fireEvent.click(secondTemplateButton);
+
+    expect(mockCreateBoardFromTemplate).toHaveBeenCalledTimes(1);
+    expect(firstTemplateButton).toBeDisabled();
+    expect(secondTemplateButton).toBeDisabled();
+    expect(firstTemplateButton).toHaveTextContent('Creating...');
+
+    resolveCommit?.();
+
+    await waitFor(() => {
+      expect(firstTemplateButton).not.toBeDisabled();
+      expect(secondTemplateButton).not.toBeDisabled();
+      expect(firstTemplateButton).toHaveTextContent('Use template');
+    });
   });
 
   it('renders board cards with Open, Rename, and Delete buttons', () => {
