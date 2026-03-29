@@ -428,6 +428,25 @@ describe('Dashboard', () => {
     });
   });
 
+  it('submits selected template on Enter from the create-case form', async () => {
+    mockCreateBoardFromTemplate.mockReturnValue({
+      id: 'template-enter-id',
+      committed: Promise.resolve(),
+    });
+
+    renderDashboard();
+
+    fireEvent.change(screen.getByLabelText('Case template'), { target: { value: 'swot' } });
+    const input = screen.getByPlaceholderText('New case name (e.g., Smith v. Acme)');
+    fireEvent.submit(input.closest('form')!);
+
+    expect(mockCreateBoard).not.toHaveBeenCalled();
+    expect(mockCreateBoardFromTemplate).toHaveBeenCalledWith('swot');
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/board/template-enter-id');
+    });
+  });
+
   it('keeps create from template disabled until a template is selected', () => {
     renderDashboard();
 

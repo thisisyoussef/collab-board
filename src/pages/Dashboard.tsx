@@ -372,6 +372,10 @@ export function Dashboard() {
                 className="create-board-row"
                 onSubmit={(event) => {
                   event.preventDefault();
+                  if (selectedTemplate) {
+                    void handleCreateFromTemplate();
+                    return;
+                  }
                   void handleCreateBoard();
                 }}
               >
