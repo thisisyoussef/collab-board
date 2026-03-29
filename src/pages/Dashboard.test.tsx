@@ -97,6 +97,7 @@ function renderDashboard(
 describe('Dashboard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.sessionStorage.clear();
   });
 
   it('renders the user display name and avatar', () => {
@@ -367,6 +368,103 @@ describe('Dashboard', () => {
     expect(screen.getByDisplayValue('deposition')).toBeInTheDocument();
     expect(screen.getByText('Deposition Notes')).toBeInTheDocument();
     expect(screen.queryByText('Trial Strategy')).not.toBeInTheDocument();
+  });
+
+  it('persists owned-case search query across remounts in the same session', () => {
+    const boards = [
+      { id: 'owned-1', title: 'Smith v. Acme', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 3000 },
+      { id: 'owned-2', title: 'Johnson Intake', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 2000 },
+    ];
+
+    const firstRender = renderDashboard({}, { boards });
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'johnson' } });
+    expect(screen.getByDisplayValue('johnson')).toBeInTheDocument();
+
+    firstRender.unmount();
+    renderDashboard({}, { boards });
+
+    expect(screen.getByDisplayValue('johnson')).toBeInTheDocument();
+    expect(screen.getByText('Johnson Intake')).toBeInTheDocument();
+    expect(screen.queryByText('Smith v. Acme')).not.toBeInTheDocument();
+  });
+
+  it('persists tab-scoped search queries across remounts', () => {
+    const boards = [
+      { id: 'owned-1', title: 'Smith v. Acme', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 3000 },
+      { id: 'owned-2', title: 'Johnson Intake', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 2000 },
+    ];
+    const sharedBoards = {
+      explicitBoards: [
+        {
+          id: 'shared-1',
+          title: 'Deposition Timeline',
+          ownerId: 'owner-1',
+          createdAtMs: 1000,
+          updatedAtMs: 3000,
+          role: 'viewer' as const,
+          source: 'explicit' as const,
+        },
+      ],
+      recentBoards: [
+        {
+          id: 'recent-1',
+          title: 'Trial Notes',
+          ownerId: 'owner-2',
+          createdAtMs: 1200,
+          updatedAtMs: 2200,
+          source: 'recent' as const,
+        },
+      ],
+    };
+
+    const firstRender = renderDashboard({}, { boards }, sharedBoards);
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'johnson' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'deposition' } });
+
+    firstRender.unmount();
+    renderDashboard({}, { boards }, sharedBoards);
+
+    expect(screen.getByDisplayValue('johnson')).toBeInTheDocument();
+    expect(screen.getByText('Johnson Intake')).toBeInTheDocument();
+    expect(screen.queryByText('Smith v. Acme')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+    expect(screen.getByDisplayValue('deposition')).toBeInTheDocument();
+    expect(screen.getByText('Deposition Timeline')).toBeInTheDocument();
+    expect(screen.queryByText('Trial Notes')).not.toBeInTheDocument();
+  });
+
+  it('falls back to empty search values when stored dashboard search state is invalid', () => {
+    window.sessionStorage.setItem('collab-board-dashboard-search-by-view', '{invalid-json');
+
+    renderDashboard(
+      {},
+      {
+        boards: [
+          { id: 'owned-1', title: 'Smith v. Acme', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 3000 },
+        ],
+      },
+      {
+        explicitBoards: [
+          {
+            id: 'shared-1',
+            title: 'Deposition Timeline',
+            ownerId: 'owner-1',
+            createdAtMs: 1000,
+            updatedAtMs: 3000,
+            role: 'viewer',
+            source: 'explicit',
+          },
+        ],
+      },
+    );
+
+    expect(screen.getByDisplayValue('')).toBeInTheDocument();
+    expect(screen.getByText('Smith v. Acme')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+    expect(screen.getByDisplayValue('')).toBeInTheDocument();
+    expect(screen.getByText('Deposition Timeline')).toBeInTheDocument();
   });
 
   it('renders board cards with Open, Rename, and Delete buttons', () => {

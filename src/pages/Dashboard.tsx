@@ -2,7 +2,7 @@
 // Shows two tabs: "My Boards" (owned) and "Shared with me" (via boardMembers/boardRecents).
 // Supports create, rename, delete operations via useBoards hook.
 // Board cards link to /board/:id for the canvas editor.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useBoards } from '../hooks/useBoards';
@@ -13,6 +13,45 @@ import type { SharedBoardDashboardEntry } from '../types/sharing';
 import './Dashboard.css';
 
 type DashboardView = 'owned' | 'shared';
+type SearchByView = Record<DashboardView, string>;
+const DASHBOARD_SEARCH_STORAGE_KEY = 'collab-board-dashboard-search-by-view';
+const DEFAULT_SEARCH_BY_VIEW: SearchByView = {
+  owned: '',
+  shared: '',
+};
+
+function readStoredSearchByView(): SearchByView {
+  if (typeof window === 'undefined') {
+    return DEFAULT_SEARCH_BY_VIEW;
+  }
+
+  const raw = window.sessionStorage.getItem(DASHBOARD_SEARCH_STORAGE_KEY);
+  if (!raw) {
+    return DEFAULT_SEARCH_BY_VIEW;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<SearchByView>;
+    return {
+      owned: typeof parsed.owned === 'string' ? parsed.owned : '',
+      shared: typeof parsed.shared === 'string' ? parsed.shared : '',
+    };
+  } catch {
+    return DEFAULT_SEARCH_BY_VIEW;
+  }
+}
+
+function persistSearchByView(searchByView: SearchByView) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.sessionStorage.setItem(DASHBOARD_SEARCH_STORAGE_KEY, JSON.stringify(searchByView));
+  } catch {
+    // Ignore storage failures.
+  }
+}
 
 function formatDate(ms: number): string {
   if (!ms) return 'Just now';
@@ -113,10 +152,11 @@ export function Dashboard() {
   const [renamingBoardId, setRenamingBoardId] = useState<string | null>(null);
   const [isRetryingOwned, setIsRetryingOwned] = useState(false);
   const [isRetryingShared, setIsRetryingShared] = useState(false);
-  const [searchByView, setSearchByView] = useState<Record<DashboardView, string>>({
-    owned: '',
-    shared: '',
-  });
+  const [searchByView, setSearchByView] = useState<SearchByView>(() => readStoredSearchByView());
+
+  useEffect(() => {
+    persistSearchByView(searchByView);
+  }, [searchByView]);
 
   const searchQuery = searchByView[activeView];
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
