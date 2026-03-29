@@ -357,6 +357,16 @@
   gap: 0.72rem;
 }
 
+.template-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.72rem;
+}
+
+.template-card {
+  min-height: 132px;
+}
+
 .shared-boards-list {
   display: flex;
   flex-direction: column;
@@ -507,6 +517,10 @@
   }
 
   .dashboard-context-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .template-grid {
     grid-template-columns: 1fr;
   }
 
