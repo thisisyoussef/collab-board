@@ -1,5 +1,6 @@
 // Dashboard page — the user's board management hub at /dashboard (auth required).
-// Shows two tabs: "My Boards" (owned) and "Shared with me" (via boardMembers/boardRecents).
+// Shows three views: "All cases" (owned), "Shared with me" (boardMembers/boardRecents),
+// and "Case templates" (starter pack catalog with one-click launch).
 // Supports create, rename, delete operations via useBoards hook.
 // Board cards link to /board/:id for the canvas editor.
 import { useState } from 'react';
@@ -12,7 +13,7 @@ import type { DemoCasePackKey } from '../types/claim-strength-tools';
 import type { SharedBoardDashboardEntry } from '../types/sharing';
 import './Dashboard.css';
 
-type DashboardView = 'owned' | 'shared';
+type DashboardView = 'owned' | 'shared' | 'templates';
 
 function formatDate(ms: number): string {
   if (!ms) return 'Just now';
@@ -30,6 +31,13 @@ function boardCountLabel(count: number): string {
     return '1 case';
   }
   return `${count} cases`;
+}
+
+function templateCountLabel(count: number): string {
+  if (count === 1) {
+    return '1 template';
+  }
+  return `${count} templates`;
 }
 
 interface SharedSectionProps {
@@ -110,12 +118,14 @@ export function Dashboard() {
   const [isCreating, setIsCreating] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<DemoCasePackKey | ''>('');
   const [isCreatingTemplate, setIsCreatingTemplate] = useState(false);
+  const [creatingTemplatePack, setCreatingTemplatePack] = useState<DemoCasePackKey | null>(null);
   const [renamingBoardId, setRenamingBoardId] = useState<string | null>(null);
   const [isRetryingOwned, setIsRetryingOwned] = useState(false);
   const [isRetryingShared, setIsRetryingShared] = useState(false);
   const [searchByView, setSearchByView] = useState<Record<DashboardView, string>>({
     owned: '',
     shared: '',
+    templates: '',
   });
 
   const searchQuery = searchByView[activeView];
@@ -125,22 +135,32 @@ export function Dashboard() {
   const filteredOwnedBoards = boards.filter((board) => boardMatchesSearch(board.title));
   const filteredExplicitBoards = explicitBoards.filter((board) => boardMatchesSearch(board.title));
   const filteredRecentBoards = recentBoards.filter((board) => boardMatchesSearch(board.title));
+  const filteredTemplateOptions = DEMO_CASE_PACK_OPTIONS.filter((option) => boardMatchesSearch(option.menuLabel));
 
   const displayName = user?.displayName || user?.email || 'Unknown';
   const userInitial = displayName.charAt(0).toUpperCase();
   const sharedCount = explicitBoards.length + recentBoards.length;
   const filteredSharedCount = filteredExplicitBoards.length + filteredRecentBoards.length;
-  const heading = activeView === 'owned' ? 'Cases' : 'Shared with me';
+  const heading = activeView === 'owned' ? 'Cases' : activeView === 'shared' ? 'Shared with me' : 'Case templates';
   const countLabel =
     activeView === 'owned'
       ? boardCountLabel(filteredOwnedBoards.length)
-      : boardCountLabel(filteredSharedCount);
-  const visibleError = activeView === 'owned' ? error || actionError : sharedError;
-  const coverageLabel = activeView === 'owned' ? 'Active caseload' : 'Shared cases';
+      : activeView === 'shared'
+        ? boardCountLabel(filteredSharedCount)
+        : templateCountLabel(filteredTemplateOptions.length);
+  const visibleError =
+    activeView === 'owned'
+      ? error || actionError
+      : activeView === 'shared'
+        ? sharedError
+        : actionError;
+  const coverageLabel = activeView === 'owned' ? 'Active caseload' : activeView === 'shared' ? 'Shared cases' : 'Template packs';
   const coverageSummary =
     activeView === 'owned'
       ? `Tracking ${countLabel} in your direct caseload.`
-      : `Tracking ${countLabel} shared via team access and recent links.`;
+      : activeView === 'shared'
+        ? `Tracking ${countLabel} shared via team access and recent links.`
+        : `Showing ${countLabel} you can launch into a new litigation board.`;
   const hasOwnedLoadError = activeView === 'owned' && Boolean(error);
   const hasSharedLoadError = activeView === 'shared' && Boolean(sharedError);
 
@@ -182,21 +202,25 @@ export function Dashboard() {
     }
   };
 
-  const handleCreateFromTemplate = async () => {
-    if (!selectedTemplate || isCreatingTemplate) return;
+  const handleCreateFromTemplate = async (pack: DemoCasePackKey, resetSelectionOnSuccess = false) => {
+    if (isCreatingTemplate) return;
 
     setActionError(null);
     setIsCreatingTemplate(true);
+    setCreatingTemplatePack(pack);
     try {
-      const { id: boardId, committed } = createBoardFromTemplate(selectedTemplate);
+      const { id: boardId, committed } = createBoardFromTemplate(pack);
       await committed;
-      setSelectedTemplate('');
+      if (resetSelectionOnSuccess) {
+        setSelectedTemplate('');
+      }
       openBoard(boardId);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to create case from template. Please try again.';
       setActionError(message);
     } finally {
       setIsCreatingTemplate(false);
+      setCreatingTemplatePack(null);
     }
   };
 
@@ -344,7 +368,10 @@ export function Dashboard() {
             >
               Shared with me
             </button>
-            <button className="sidebar-item" onClick={() => setActiveView('owned')}>
+            <button
+              className={`sidebar-item ${activeView === 'templates' ? 'active' : ''}`}
+              onClick={() => setActiveView('templates')}
+            >
               Case templates
             </button>
           </div>
@@ -402,7 +429,11 @@ export function Dashboard() {
                   className="secondary-btn"
                   type="button"
                   disabled={!selectedTemplate || isCreatingTemplate}
-                  onClick={() => void handleCreateFromTemplate()}
+                  onClick={() =>
+                    selectedTemplate
+                      ? void handleCreateFromTemplate(selectedTemplate, true)
+                      : undefined
+                  }
                 >
                   {isCreatingTemplate ? 'Creating...' : 'Create from template'}
                 </button>
@@ -412,7 +443,13 @@ export function Dashboard() {
           <input
             aria-label="Search cases"
             className="board-input"
-            placeholder={activeView === 'owned' ? 'Search my cases' : 'Search shared cases'}
+            placeholder={
+              activeView === 'owned'
+                ? 'Search my cases'
+                : activeView === 'shared'
+                  ? 'Search shared cases'
+                  : 'Search case templates'
+            }
             value={searchQuery}
             onChange={(event) =>
               setSearchByView((prev) => ({
@@ -424,8 +461,20 @@ export function Dashboard() {
           <div className="dashboard-context-cards">
             <article className="dashboard-context-card">
               <p className="dashboard-context-kicker">Focus</p>
-              <h2>{activeView === 'owned' ? 'Build and refine your case strategy' : 'Review co-counsel case boards'}</h2>
-              <p>{activeView === 'owned' ? 'Map claims, evidence, and witnesses. Score argument strength with AI.' : 'Open shared case boards and track the latest updates from your team.'}</p>
+              <h2>
+                {activeView === 'owned'
+                  ? 'Build and refine your case strategy'
+                  : activeView === 'shared'
+                    ? 'Review co-counsel case boards'
+                    : 'Launch a proven starter layout'}
+              </h2>
+              <p>
+                {activeView === 'owned'
+                  ? 'Map claims, evidence, and witnesses. Score argument strength with AI.'
+                  : activeView === 'shared'
+                    ? 'Open shared case boards and track the latest updates from your team.'
+                    : 'Browse curated template packs and create a board with one click.'}
+              </p>
             </article>
             <article className="dashboard-context-card">
               <p className="dashboard-context-kicker">Coverage</p>
@@ -468,29 +517,54 @@ export function Dashboard() {
             ) : (
               <div className="board-list">{ownedBoardCards}</div>
             )
-          ) : sharedLoading ? (
-            <div className="dashboard-empty">Loading shared cases...</div>
-          ) : explicitBoards.length === 0 && recentBoards.length === 0 ? (
-            <div className="dashboard-empty">
-              No shared cases yet. Open a shared case link or ask lead counsel to add you.
-            </div>
-          ) : filteredExplicitBoards.length === 0 && filteredRecentBoards.length === 0 ? (
-            <div className="dashboard-empty">No shared cases match your search.</div>
           ) : (
-            <div className="shared-boards-list">
-              <SharedBoardsSection
-                title="Shared by co-counsel"
-                boards={filteredExplicitBoards}
-                emptyText="No directly shared cases yet."
-                onOpenBoard={openBoard}
-              />
-              <SharedBoardsSection
-                title="Recent case links"
-                boards={filteredRecentBoards}
-                emptyText="No recent case links yet."
-                onOpenBoard={openBoard}
-              />
-            </div>
+            activeView === 'shared' ? (
+              sharedLoading ? (
+                <div className="dashboard-empty">Loading shared cases...</div>
+              ) : explicitBoards.length === 0 && recentBoards.length === 0 ? (
+                <div className="dashboard-empty">
+                  No shared cases yet. Open a shared case link or ask lead counsel to add you.
+                </div>
+              ) : filteredExplicitBoards.length === 0 && filteredRecentBoards.length === 0 ? (
+                <div className="dashboard-empty">No shared cases match your search.</div>
+              ) : (
+                <div className="shared-boards-list">
+                  <SharedBoardsSection
+                    title="Shared by co-counsel"
+                    boards={filteredExplicitBoards}
+                    emptyText="No directly shared cases yet."
+                    onOpenBoard={openBoard}
+                  />
+                  <SharedBoardsSection
+                    title="Recent case links"
+                    boards={filteredRecentBoards}
+                    emptyText="No recent case links yet."
+                    onOpenBoard={openBoard}
+                  />
+                </div>
+              )
+            ) : filteredTemplateOptions.length === 0 ? (
+              <div className="dashboard-empty">No case templates match your search.</div>
+            ) : (
+              <section className="template-catalog" aria-label="Case template catalog">
+                {filteredTemplateOptions.map((option) => (
+                  <article key={option.pack} className="template-card">
+                    <div className="template-card-main">
+                      <h3>{option.menuLabel}</h3>
+                    </div>
+                    <button
+                      className="primary-btn"
+                      type="button"
+                      aria-label={`Create case board from ${option.menuLabel}`}
+                      disabled={isCreatingTemplate}
+                      onClick={() => void handleCreateFromTemplate(option.pack)}
+                    >
+                      {isCreatingTemplate && creatingTemplatePack === option.pack ? 'Creating...' : 'Create case board'}
+                    </button>
+                  </article>
+                ))}
+              </section>
+            )
           )}
         </section>
       </section>

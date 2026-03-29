@@ -434,6 +434,79 @@ describe('Dashboard', () => {
     expect(screen.getByRole('button', { name: 'Create from template' })).toBeDisabled();
   });
 
+  it('shows template catalog cards when Case templates is selected', () => {
+    renderDashboard({}, {
+      boards: [
+        { id: 'b1', title: 'Sprint Plan', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 2000 },
+      ],
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Case templates' }));
+
+    expect(screen.getByRole('heading', { name: 'Case templates' })).toBeInTheDocument();
+    expect(screen.getByText('Load PI pack')).toBeInTheDocument();
+    expect(screen.getByText('Load Strong Case (Johnson v. TechCorp)')).toBeInTheDocument();
+    expect(screen.queryByText('Sprint Plan')).not.toBeInTheDocument();
+  });
+
+  it('shows an empty state when template search has no matches', () => {
+    renderDashboard();
+    fireEvent.click(screen.getByRole('button', { name: 'Case templates' }));
+
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'does-not-exist' } });
+
+    expect(screen.getByText('No case templates match your search.')).toBeInTheDocument();
+  });
+
+  it('creates a board from a template card and navigates after commit resolves', async () => {
+    mockCreateBoardFromTemplate.mockReturnValue({
+      id: 'template-card-board-id',
+      committed: Promise.resolve(),
+    });
+
+    renderDashboard();
+    fireEvent.click(screen.getByRole('button', { name: 'Case templates' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create case board from Load PI pack' }));
+
+    expect(mockCreateBoardFromTemplate).toHaveBeenCalledWith('pi');
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/board/template-card-board-id');
+    });
+  });
+
+  it('disables all template card actions while template board creation is pending', async () => {
+    let resolveCommit: (() => void) | null = null;
+    const pendingCommit = new Promise<void>((resolve) => {
+      resolveCommit = resolve;
+    });
+    mockCreateBoardFromTemplate.mockReturnValue({
+      id: 'template-card-board-id',
+      committed: pendingCommit,
+    });
+
+    renderDashboard();
+    fireEvent.click(screen.getByRole('button', { name: 'Case templates' }));
+
+    const piButton = screen.getByRole('button', { name: 'Create case board from Load PI pack' });
+    const employmentButton = screen.getByRole('button', { name: 'Create case board from Load Employment pack' });
+
+    fireEvent.click(piButton);
+    fireEvent.click(employmentButton);
+
+    expect(mockCreateBoardFromTemplate).toHaveBeenCalledTimes(1);
+    expect(piButton).toBeDisabled();
+    expect(piButton).toHaveTextContent('Creating...');
+    expect(employmentButton).toBeDisabled();
+
+    resolveCommit?.();
+
+    await waitFor(() => {
+      expect(piButton).not.toBeDisabled();
+      expect(employmentButton).not.toBeDisabled();
+      expect(piButton).toHaveTextContent('Create case board');
+    });
+  });
+
   it('prevents duplicate template create requests while a template commit is pending', async () => {
     let resolveCommit: (() => void) | null = null;
     const pendingCommit = new Promise<void>((resolve) => {
