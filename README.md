@@ -51,6 +51,7 @@ Real-time collaborative whiteboard with AI-powered board manipulation and litiga
 - **AI agent** — natural language commands across 4 command categories (creation, manipulation, layout, complex templates) with 9 tool types
 - **Multi-model AI routing** — automatic complexity classification routes simple prompts to fast/cheap models (Haiku, gpt-4o-mini) and complex prompts to capable models (Sonnet, gpt-4.1)
 - **Litigation workflow** — case intake dialog, claim-evidence graph with strength heatmap, contradiction radar, session replay
+- **Presenter follow mode** — opt in to follow a teammate cursor during live case walkthroughs
 - **Share links** — UUID-based URLs for instant collaboration
 - **Dashboard recovery actions** — retry owned/shared case loading directly from error states
 - **Dashboard case templates** — create a prefilled starter board from a litigation template pack

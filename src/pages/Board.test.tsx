@@ -16,25 +16,30 @@ vi.mock('../hooks/useSocket', () => ({
   }),
 }));
 
+let mockCursorsReturn = {
+  remoteCursors: [] as { socketId: string; userId: string; displayName: string; color: string; x: number; y: number }[],
+  averageLatencyMs: 20,
+  publishCursor: vi.fn(),
+  publishCursorHide: vi.fn(),
+};
+
 vi.mock('../hooks/useCursors', () => ({
-  useCursors: () => ({
-    remoteCursors: [],
-    averageLatencyMs: 20,
-    publishCursor: vi.fn(),
-  }),
+  useCursors: () => mockCursorsReturn,
 }));
 
+let mockPresenceReturn = {
+  members: [
+    {
+      socketId: 'socket-1',
+      userId: 'user-123',
+      displayName: 'Test User',
+      color: 'hsl(210, 65%, 55%)',
+    },
+  ],
+};
+
 vi.mock('../hooks/usePresence', () => ({
-  usePresence: () => ({
-    members: [
-      {
-        socketId: 'socket-1',
-        userId: 'user-123',
-        displayName: 'Test User',
-        color: 'hsl(210, 65%, 55%)',
-      },
-    ],
-  }),
+  usePresence: () => mockPresenceReturn,
 }));
 
 vi.mock('konva', () => ({
@@ -163,6 +168,31 @@ describe('Board', () => {
       },
       configurable: true,
     });
+    Object.defineProperty(window, 'localStorage', {
+      value: {
+        getItem: vi.fn(() => null),
+        setItem: vi.fn(),
+        removeItem: vi.fn(),
+        clear: vi.fn(),
+      },
+      configurable: true,
+    });
+    mockCursorsReturn = {
+      remoteCursors: [],
+      averageLatencyMs: 20,
+      publishCursor: vi.fn(),
+      publishCursorHide: vi.fn(),
+    };
+    mockPresenceReturn = {
+      members: [
+        {
+          socketId: 'socket-1',
+          userId: 'user-123',
+          displayName: 'Test User',
+          color: 'hsl(210, 65%, 55%)',
+        },
+      ],
+    };
   });
 
   it('renders the Figma-like layout structure', async () => {
@@ -317,6 +347,56 @@ describe('Board', () => {
     const avatar = screen.getByLabelText('Test User');
     expect(avatar).toBeInTheDocument();
     expect(avatar.textContent).toBe('TU');
+  });
+
+  it('disables presenter follow when no teammate is connected', async () => {
+    await renderBoardReady();
+
+    const followButton = screen.getByRole('button', { name: 'Follow presenter' });
+    expect(followButton).toBeDisabled();
+    expect(screen.getByText('No teammate cursors available')).toBeInTheDocument();
+  });
+
+  it('allows selecting and starting presenter follow for a teammate', async () => {
+    mockPresenceReturn = {
+      members: [
+        {
+          socketId: 'socket-1',
+          userId: 'user-123',
+          displayName: 'Test User',
+          color: 'hsl(210, 65%, 55%)',
+        },
+        {
+          socketId: 'socket-2',
+          userId: 'user-456',
+          displayName: 'Alex Presenter',
+          color: 'hsl(20, 65%, 55%)',
+        },
+      ],
+    };
+    mockCursorsReturn = {
+      ...mockCursorsReturn,
+      remoteCursors: [
+        {
+          socketId: 'socket-2',
+          userId: 'user-456',
+          displayName: 'Alex Presenter',
+          color: 'hsl(20, 65%, 55%)',
+          x: 420,
+          y: 260,
+        },
+      ],
+    };
+
+    await renderBoardReady();
+
+    fireEvent.change(screen.getByLabelText('Presenter to follow'), {
+      target: { value: 'user-456' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Follow presenter' }));
+
+    expect(screen.getByText('Following Alex Presenter')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Stop follow' })).toBeEnabled();
   });
 
   it('navigates to dashboard when Cases button is clicked', async () => {

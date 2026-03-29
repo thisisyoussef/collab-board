@@ -179,6 +179,26 @@
   background: rgba(255, 255, 255, 0.15);
 }
 
+.presenter-follow-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.presenter-follow-select {
+  min-width: 150px;
+}
+
+.presenter-follow-status {
+  font-size: 0.73rem;
+  color: rgba(247, 243, 235, 0.86);
+  max-width: 190px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .chip-btn:disabled {
   opacity: 0.56;
   cursor: not-allowed;

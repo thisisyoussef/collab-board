@@ -125,6 +125,7 @@ import {
   buildRealtimeEventSignature,
   createRealtimeDedupeCache,
 } from '../lib/realtime-dedupe';
+import { computeFollowStagePosition } from '../lib/presenter-follow';
 import { buildDemoCasePack, DEMO_CASE_PACK_OPTIONS } from '../lib/demo-case-packs';
 import { buildBoardActionsFromLitigationDraft } from '../lib/litigation-intake-layout';
 import { claimStrengthColor, evaluateClaimStrength, type ClaimStrengthResult } from '../lib/litigation-graph';
@@ -427,8 +428,16 @@ export function Board() {
   const [isLitigationIntakeOpen, setIsLitigationIntakeOpen] = useState(false);
   const [isDemoLauncherOpen, setIsDemoLauncherOpen] = useState(false);
   const [isAdvancedToolsOpen, setIsAdvancedToolsOpen] = useState(false);
+  const [followTargetUserId, setFollowTargetUserId] = useState('');
+  const [isFollowingPresenter, setIsFollowingPresenter] = useState(false);
   const [shareState, setShareState] = useState<'idle' | 'copied' | 'error'>('idle');
   const [hoveredClaimIndicator, setHoveredClaimIndicator] = useState<HoveredClaimIndicator | null>(null);
+  const currentUserId = user?.uid ?? null;
+  const followableMembers = useMemo(
+    () => members.filter((member) => !currentUserId || member.userId !== currentUserId),
+    [currentUserId, members],
+  );
+  const followedMember = followableMembers.find((member) => member.userId === followTargetUserId) ?? null;
 
   const selectedObject =
     selectedIds.length === 1 ? objectsRef.current.get(selectedIds[0]) ?? null : null;
@@ -464,6 +473,58 @@ export function Board() {
         .map((entry) => entry.claimId),
     [claimStrengthResults],
   );
+
+  useEffect(() => {
+    if (!followTargetUserId) {
+      return;
+    }
+
+    const targetStillOnline = followableMembers.some((member) => member.userId === followTargetUserId);
+    if (targetStillOnline) {
+      return;
+    }
+
+    setFollowTargetUserId('');
+    setIsFollowingPresenter(false);
+  }, [followTargetUserId, followableMembers]);
+
+  useEffect(() => {
+    if (!isFollowingPresenter || !followTargetUserId) {
+      return;
+    }
+
+    const stage = stageRef.current;
+    if (!stage) {
+      return;
+    }
+
+    const targetCursor = [...remoteCursors].reverse().find((cursor) => cursor.userId === followTargetUserId);
+    if (!targetCursor) {
+      return;
+    }
+
+    const nextPosition = computeFollowStagePosition({
+      cursorWorldX: targetCursor.x,
+      cursorWorldY: targetCursor.y,
+      viewportWidth: stage.width(),
+      viewportHeight: stage.height(),
+      scale: stage.scaleX() || 1,
+    });
+    if (!nextPosition) {
+      return;
+    }
+
+    const moved = Math.abs(stage.x() - nextPosition.x) > 0.5 || Math.abs(stage.y() - nextPosition.y) > 0.5;
+    if (!moved) {
+      return;
+    }
+
+    stage.position(nextPosition);
+    stage.batchDraw();
+    scheduleViewportSave();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [followTargetUserId, isFollowingPresenter, remoteCursors]);
+
   const claimStrengthIndicators = useMemo(() => {
     const selectedSet = new Set(selectedIds);
     const indicators: Array<{
@@ -6401,6 +6462,45 @@ export function Board() {
         <div className="topbar-cluster right">
           <span className={`presence-pill ${socketStatusClass}`}>{socketStatusLabel}</span>
           <PresenceAvatars members={members} currentUserId={user?.uid ?? null} />
+          <div className="presenter-follow-controls">
+            <select
+              className="chip-btn presenter-follow-select"
+              aria-label="Presenter to follow"
+              value={followTargetUserId}
+              onChange={(event) => {
+                setFollowTargetUserId(event.target.value);
+                setIsFollowingPresenter(false);
+              }}
+            >
+              <option value="">Select presenter</option>
+              {followableMembers.map((member) => (
+                <option key={member.socketId} value={member.userId}>
+                  {member.displayName}
+                </option>
+              ))}
+            </select>
+            <button
+              className="chip-btn"
+              onClick={() => setIsFollowingPresenter(true)}
+              disabled={!followTargetUserId}
+            >
+              Follow presenter
+            </button>
+            {isFollowingPresenter ? (
+              <>
+                <button className="chip-btn" onClick={() => setIsFollowingPresenter(false)}>
+                  Stop follow
+                </button>
+                <span className="presenter-follow-status">
+                  Following {followedMember?.displayName || 'presenter'}
+                </span>
+              </>
+            ) : (
+              <span className="presenter-follow-status">
+                {followableMembers.length > 0 ? 'Select a presenter to follow' : 'No teammate cursors available'}
+              </span>
+            )}
+          </div>
           <button className="secondary-btn" onClick={() => setIsSharePanelOpen(true)}>
             Share
           </button>
