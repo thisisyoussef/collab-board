@@ -9,7 +9,7 @@ import { useBoards } from '../hooks/useBoards';
 import { useSharedBoards } from '../hooks/useSharedBoards';
 import { DEMO_CASE_PACK_OPTIONS } from '../lib/demo-case-packs';
 import type { DemoCasePackKey } from '../types/claim-strength-tools';
-import type { SharedBoardDashboardEntry } from '../types/sharing';
+import type { BoardRole, SharedBoardDashboardEntry } from '../types/sharing';
 import './Dashboard.css';
 
 type DashboardView = 'owned' | 'shared';
@@ -30,6 +30,12 @@ function boardCountLabel(count: number): string {
     return '1 case';
   }
   return `${count} cases`;
+}
+
+function sharedRoleLabel(role: Exclude<BoardRole, 'none'>): string {
+  if (role === 'owner') return 'Owner access';
+  if (role === 'editor') return 'Editor access';
+  return 'Viewer access';
 }
 
 interface SharedSectionProps {
@@ -54,12 +60,15 @@ function SharedBoardsSection({ title, emptyText, boards, onOpenBoard }: SharedSe
             <article key={`${board.source}-${board.id}`} className="board-card">
               <div className="board-card-main">
                 <h3>{board.title}</h3>
-                <p>
-                  Updated {formatDate(board.updatedAtMs)}
-                  {board.source === 'recent' && board.lastOpenedAtMs
-                    ? ` • Opened ${formatDate(board.lastOpenedAtMs)}`
-                    : ''}
-                </p>
+                <div className="shared-board-meta">
+                  <p>
+                    Updated {formatDate(board.updatedAtMs)}
+                    {board.source === 'recent' && board.lastOpenedAtMs
+                      ? ` • Opened ${formatDate(board.lastOpenedAtMs)}`
+                      : ''}
+                  </p>
+                  {board.role ? <span className="shared-role-chip">{sharedRoleLabel(board.role)}</span> : null}
+                </div>
               </div>
 
               <div className="board-card-actions">

@@ -166,6 +166,56 @@ describe('Dashboard', () => {
     expect(screen.getByText('Recent Retro')).toBeInTheDocument();
   });
 
+  it('shows access role badges for explicitly shared boards', () => {
+    renderDashboard(
+      {},
+      {},
+      {
+        explicitBoards: [
+          {
+            id: 'shared-2',
+            title: 'Shared Execution',
+            ownerId: 'owner-3',
+            createdAtMs: 1000,
+            updatedAtMs: 3000,
+            role: 'editor',
+            source: 'explicit',
+          },
+        ],
+      },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+
+    expect(screen.getByText('Editor access')).toBeInTheDocument();
+  });
+
+  it('does not show access role badges for recent link boards', () => {
+    renderDashboard(
+      {},
+      {},
+      {
+        recentBoards: [
+          {
+            id: 'recent-1',
+            title: 'Recent Retro',
+            ownerId: 'owner-2',
+            createdAtMs: 1200,
+            updatedAtMs: 2200,
+            lastOpenedAtMs: 5000,
+            source: 'recent',
+          },
+        ],
+      },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+
+    expect(screen.queryByText('Viewer access')).not.toBeInTheDocument();
+    expect(screen.queryByText('Editor access')).not.toBeInTheDocument();
+    expect(screen.queryByText('Owner access')).not.toBeInTheDocument();
+  });
+
   it('opens shared board cards from Shared with me view', () => {
     renderDashboard(
       {},
