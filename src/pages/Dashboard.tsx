@@ -32,6 +32,13 @@ function boardCountLabel(count: number): string {
   return `${count} cases`;
 }
 
+function sharedAccessLabel(role: SharedBoardDashboardEntry['role']): string | null {
+  if (role === 'owner') return 'Owner access';
+  if (role === 'editor') return 'Editor access';
+  if (role === 'viewer') return 'Viewer access';
+  return null;
+}
+
 interface SharedSectionProps {
   title: string;
   emptyText: string;
@@ -50,29 +57,39 @@ function SharedBoardsSection({ title, emptyText, boards, onOpenBoard }: SharedSe
         <div className="shared-section-empty">{emptyText}</div>
       ) : (
         <div className="board-list">
-          {boards.map((board) => (
-            <article key={`${board.source}-${board.id}`} className="board-card">
-              <div className="board-card-main">
-                <h3>{board.title}</h3>
-                <p>
-                  Updated {formatDate(board.updatedAtMs)}
-                  {board.source === 'recent' && board.lastOpenedAtMs
-                    ? ` • Opened ${formatDate(board.lastOpenedAtMs)}`
-                    : ''}
-                </p>
-              </div>
+          {boards.map((board) => {
+            const accessLabel = board.source === 'explicit' ? sharedAccessLabel(board.role) : null;
 
-              <div className="board-card-actions">
-                <button
-                  className="secondary-btn"
-                  aria-label={`Open shared board ${board.title}`}
-                  onClick={() => onOpenBoard(board.id)}
-                >
-                  Open
-                </button>
-              </div>
-            </article>
-          ))}
+            return (
+              <article key={`${board.source}-${board.id}`} className="board-card">
+                <div className="board-card-main">
+                  <h3>{board.title}</h3>
+                  <div className="board-card-meta">
+                    {board.source === 'recent' ? (
+                      <span className="board-card-badge board-card-badge-source">Recent link</span>
+                    ) : null}
+                    {accessLabel ? <span className="board-card-badge board-card-badge-role">{accessLabel}</span> : null}
+                  </div>
+                  <p>
+                    Updated {formatDate(board.updatedAtMs)}
+                    {board.source === 'recent' && board.lastOpenedAtMs
+                      ? ` • Opened ${formatDate(board.lastOpenedAtMs)}`
+                      : ''}
+                  </p>
+                </div>
+
+                <div className="board-card-actions">
+                  <button
+                    className="secondary-btn"
+                    aria-label={`Open shared board ${board.title}`}
+                    onClick={() => onOpenBoard(board.id)}
+                  >
+                    Open
+                  </button>
+                </div>
+              </article>
+            );
+          })}
         </div>
       )}
     </section>

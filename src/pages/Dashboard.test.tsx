@@ -166,6 +166,66 @@ describe('Dashboard', () => {
     expect(screen.getByText('Recent Retro')).toBeInTheDocument();
   });
 
+  it('shows explicit access-level badges on directly shared cases', () => {
+    renderDashboard(
+      {},
+      {},
+      {
+        explicitBoards: [
+          {
+            id: 'shared-viewer',
+            title: 'Viewer Case',
+            ownerId: 'owner-1',
+            createdAtMs: 1000,
+            updatedAtMs: 3000,
+            role: 'viewer',
+            source: 'explicit',
+          },
+          {
+            id: 'shared-editor',
+            title: 'Editor Case',
+            ownerId: 'owner-2',
+            createdAtMs: 1200,
+            updatedAtMs: 3200,
+            role: 'editor',
+            source: 'explicit',
+          },
+        ],
+      },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+
+    expect(screen.getByText('Viewer access')).toBeInTheDocument();
+    expect(screen.getByText('Editor access')).toBeInTheDocument();
+  });
+
+  it('shows recent-link badge for recents without explicit membership role', () => {
+    renderDashboard(
+      {},
+      {},
+      {
+        recentBoards: [
+          {
+            id: 'recent-1',
+            title: 'Recent Discovery',
+            ownerId: 'owner-2',
+            createdAtMs: 1200,
+            updatedAtMs: 2200,
+            lastOpenedAtMs: 5000,
+            source: 'recent',
+          },
+        ],
+      },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+
+    expect(screen.getByText('Recent link')).toBeInTheDocument();
+    expect(screen.queryByText('Viewer access')).not.toBeInTheDocument();
+    expect(screen.queryByText('Editor access')).not.toBeInTheDocument();
+  });
+
   it('opens shared board cards from Shared with me view', () => {
     renderDashboard(
       {},

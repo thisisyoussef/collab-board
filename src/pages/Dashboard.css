@@ -435,6 +435,35 @@
   font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
 }
 
+.board-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.board-card-badge {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 0.12rem 0.5rem;
+  font-size: 0.67rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+}
+
+.board-card-badge-role {
+  background: #eef3ff;
+  border-color: #c2d1f6;
+  color: #214174;
+}
+
+.board-card-badge-source {
+  background: #f4efe4;
+  border-color: #d5c8af;
+  color: #5c4a27;
+}
+
 .board-card-actions {
   display: flex;
   align-items: center;
