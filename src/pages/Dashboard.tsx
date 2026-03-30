@@ -125,6 +125,13 @@ export function Dashboard() {
   const filteredOwnedBoards = boards.filter((board) => boardMatchesSearch(board.title));
   const filteredExplicitBoards = explicitBoards.filter((board) => boardMatchesSearch(board.title));
   const filteredRecentBoards = recentBoards.filter((board) => boardMatchesSearch(board.title));
+  const hasActiveSearchQuery = normalizedSearchQuery.length > 0;
+  const topSearchMatchId =
+    !hasActiveSearchQuery
+      ? null
+      : activeView === 'owned'
+        ? filteredOwnedBoards[0]?.id ?? null
+        : filteredExplicitBoards[0]?.id ?? filteredRecentBoards[0]?.id ?? null;
 
   const displayName = user?.displayName || user?.email || 'Unknown';
   const userInitial = displayName.charAt(0).toUpperCase();
@@ -414,6 +421,11 @@ export function Dashboard() {
             className="board-input"
             placeholder={activeView === 'owned' ? 'Search my cases' : 'Search shared cases'}
             value={searchQuery}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter' || !topSearchMatchId) return;
+              event.preventDefault();
+              openBoard(topSearchMatchId);
+            }}
             onChange={(event) =>
               setSearchByView((prev) => ({
                 ...prev,

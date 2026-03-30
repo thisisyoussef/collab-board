@@ -281,6 +281,73 @@ describe('Dashboard', () => {
     expect(screen.queryByText('Trial Strategy')).not.toBeInTheDocument();
   });
 
+  it('opens the top owned case search match when Enter is pressed', () => {
+    renderDashboard({}, {
+      boards: [
+        { id: 'owned-1', title: 'Smith v. Acme', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 3000 },
+        { id: 'owned-2', title: 'Johnson Intake', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 2000 },
+      ],
+    });
+
+    const searchInput = screen.getByLabelText('Search cases');
+    fireEvent.change(searchInput, { target: { value: 'johnson' } });
+    fireEvent.keyDown(searchInput, { key: 'Enter' });
+
+    expect(mockNavigate).toHaveBeenCalledWith('/board/owned-2');
+  });
+
+  it('opens the top shared case search match when Enter is pressed', () => {
+    renderDashboard(
+      {},
+      {},
+      {
+        explicitBoards: [
+          {
+            id: 'shared-1',
+            title: 'Trial Strategy',
+            ownerId: 'owner-1',
+            createdAtMs: 1000,
+            updatedAtMs: 3000,
+            role: 'viewer',
+            source: 'explicit',
+          },
+        ],
+        recentBoards: [
+          {
+            id: 'recent-1',
+            title: 'Deposition Notes',
+            ownerId: 'owner-2',
+            createdAtMs: 1200,
+            updatedAtMs: 2200,
+            lastOpenedAtMs: 5000,
+            source: 'recent',
+          },
+        ],
+      },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+    const searchInput = screen.getByLabelText('Search cases');
+    fireEvent.change(searchInput, { target: { value: 'deposition' } });
+    fireEvent.keyDown(searchInput, { key: 'Enter' });
+
+    expect(mockNavigate).toHaveBeenCalledWith('/board/recent-1');
+  });
+
+  it('does not navigate when Enter is pressed with no search matches', () => {
+    renderDashboard({}, {
+      boards: [
+        { id: 'owned-1', title: 'Smith v. Acme', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 3000 },
+      ],
+    });
+
+    const searchInput = screen.getByLabelText('Search cases');
+    fireEvent.change(searchInput, { target: { value: 'nope' } });
+    fireEvent.keyDown(searchInput, { key: 'Enter' });
+
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
   it('keeps owned-case search query when switching away and back', () => {
     renderDashboard(
       {},
