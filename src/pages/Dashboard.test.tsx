@@ -244,6 +244,21 @@ describe('Dashboard', () => {
     expect(screen.getByText('No cases match your search.')).toBeInTheDocument();
   });
 
+  it('opens the top owned case match when Enter is pressed in search', () => {
+    renderDashboard({}, {
+      boards: [
+        { id: 'owned-1', title: 'Alpha Litigation', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 2000 },
+        { id: 'owned-2', title: 'Bravo Litigation', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 3000 },
+      ],
+    });
+
+    const searchInput = screen.getByLabelText('Search cases');
+    fireEvent.change(searchInput, { target: { value: 'litigation' } });
+    fireEvent.keyDown(searchInput, { key: 'Enter' });
+
+    expect(mockNavigate).toHaveBeenCalledWith('/board/owned-1');
+  });
+
   it('filters shared sections by search query', () => {
     renderDashboard(
       {},
@@ -279,6 +294,58 @@ describe('Dashboard', () => {
 
     expect(screen.getByText('Deposition Notes')).toBeInTheDocument();
     expect(screen.queryByText('Trial Strategy')).not.toBeInTheDocument();
+  });
+
+  it('opens the top shared case match when Enter is pressed in shared search', () => {
+    renderDashboard(
+      {},
+      {},
+      {
+        explicitBoards: [
+          {
+            id: 'shared-1',
+            title: 'Alpha Shared Case',
+            ownerId: 'owner-1',
+            createdAtMs: 1000,
+            updatedAtMs: 3000,
+            role: 'viewer',
+            source: 'explicit',
+          },
+        ],
+        recentBoards: [
+          {
+            id: 'recent-1',
+            title: 'Bravo Shared Case',
+            ownerId: 'owner-2',
+            createdAtMs: 1200,
+            updatedAtMs: 2200,
+            lastOpenedAtMs: 5000,
+            source: 'recent',
+          },
+        ],
+      },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+    const searchInput = screen.getByLabelText('Search cases');
+    fireEvent.change(searchInput, { target: { value: 'shared case' } });
+    fireEvent.keyDown(searchInput, { key: 'Enter' });
+
+    expect(mockNavigate).toHaveBeenCalledWith('/board/shared-1');
+  });
+
+  it('does not navigate when Enter is pressed with no matching cases', () => {
+    renderDashboard({}, {
+      boards: [
+        { id: 'owned-1', title: 'Alpha Litigation', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 2000 },
+      ],
+    });
+
+    const searchInput = screen.getByLabelText('Search cases');
+    fireEvent.change(searchInput, { target: { value: 'does-not-exist' } });
+    fireEvent.keyDown(searchInput, { key: 'Enter' });
+
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
   it('keeps owned-case search query when switching away and back', () => {

@@ -125,6 +125,10 @@ export function Dashboard() {
   const filteredOwnedBoards = boards.filter((board) => boardMatchesSearch(board.title));
   const filteredExplicitBoards = explicitBoards.filter((board) => boardMatchesSearch(board.title));
   const filteredRecentBoards = recentBoards.filter((board) => boardMatchesSearch(board.title));
+  const topSearchMatchId =
+    activeView === 'owned'
+      ? filteredOwnedBoards[0]?.id
+      : filteredExplicitBoards[0]?.id ?? filteredRecentBoards[0]?.id;
 
   const displayName = user?.displayName || user?.email || 'Unknown';
   const userInitial = displayName.charAt(0).toUpperCase();
@@ -420,6 +424,13 @@ export function Dashboard() {
                 [activeView]: event.target.value,
               }))
             }
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter' || !topSearchMatchId) {
+                return;
+              }
+              event.preventDefault();
+              openBoard(topSearchMatchId);
+            }}
           />
           <div className="dashboard-context-cards">
             <article className="dashboard-context-card">
