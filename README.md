@@ -44,6 +44,7 @@ Real-time collaborative whiteboard with AI-powered board manipulation and litiga
 - **Transforms** — move, resize, rotate objects with Transformer handles
 - **Selection** — single click, shift-click multi-select, drag-to-select rubber band
 - **Operations** — delete, duplicate, copy/paste
+- **Keyboard zoom shortcuts** — `Ctrl/Cmd + +` (zoom in), `Ctrl/Cmd + -` (zoom out), `Ctrl/Cmd + 0` (reset)
 - **Conflict resolution** — last-write-wins with `updatedAt` timestamps (documented below)
 - **Resilience** — graceful disconnect/reconnect with automatic state reconciliation from Firestore
 - **Persistence** — board state survives all users leaving and returning

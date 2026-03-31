@@ -295,6 +295,74 @@ describe('Board', () => {
     expect(preventDefault).toHaveBeenCalled();
   });
 
+  it('treats Ctrl/Cmd + plus/minus/zero as zoom shortcuts when not typing', async () => {
+    const addEventListenerSpy = vi.spyOn(window, 'addEventListener');
+    await renderBoardReady();
+
+    const keydownRegistration = addEventListenerSpy.mock.calls.find(([eventName]) => eventName === 'keydown');
+    expect(keydownRegistration).toBeDefined();
+    if (!keydownRegistration) {
+      throw new Error('Expected keydown listener registration');
+    }
+
+    const onKeyDown = keydownRegistration[1] as (event: KeyboardEvent) => void;
+
+    const preventZoomIn = vi.fn();
+    onKeyDown({
+      key: '=',
+      ctrlKey: true,
+      metaKey: false,
+      target: document.body,
+      preventDefault: preventZoomIn,
+    } as unknown as KeyboardEvent);
+    expect(preventZoomIn).toHaveBeenCalled();
+
+    const preventZoomOut = vi.fn();
+    onKeyDown({
+      key: '-',
+      ctrlKey: true,
+      metaKey: false,
+      target: document.body,
+      preventDefault: preventZoomOut,
+    } as unknown as KeyboardEvent);
+    expect(preventZoomOut).toHaveBeenCalled();
+
+    const preventReset = vi.fn();
+    onKeyDown({
+      key: '0',
+      ctrlKey: true,
+      metaKey: false,
+      target: document.body,
+      preventDefault: preventReset,
+    } as unknown as KeyboardEvent);
+    expect(preventReset).toHaveBeenCalled();
+  });
+
+  it('does not treat zoom shortcuts as global commands while typing in inputs', async () => {
+    const addEventListenerSpy = vi.spyOn(window, 'addEventListener');
+    await renderBoardReady();
+
+    const keydownRegistration = addEventListenerSpy.mock.calls.find(([eventName]) => eventName === 'keydown');
+    expect(keydownRegistration).toBeDefined();
+    if (!keydownRegistration) {
+      throw new Error('Expected keydown listener registration');
+    }
+
+    const onKeyDown = keydownRegistration[1] as (event: KeyboardEvent) => void;
+    const preventDefault = vi.fn();
+    const input = document.createElement('input');
+
+    onKeyDown({
+      key: '=',
+      ctrlKey: true,
+      metaKey: false,
+      target: input,
+      preventDefault,
+    } as unknown as KeyboardEvent);
+
+    expect(preventDefault).not.toHaveBeenCalled();
+  });
+
   it('renders the right inspector panel', async () => {
     await renderBoardReady();
 

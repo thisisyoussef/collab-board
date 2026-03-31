@@ -1808,7 +1808,7 @@ export function Board() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boardId, socketStatus, user]);
 
-  // ── Global keyboard shortcuts for clipboard operations ──────────────
+  // ── Global keyboard shortcuts for board operations ─────────────────
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       // Skip when user is typing in an input, textarea, or contenteditable
@@ -1822,30 +1822,52 @@ export function Board() {
       }
 
       const mod = event.metaKey || event.ctrlKey;
+      const key = event.key;
+
+      // Ctrl/Cmd + (+/=) → Zoom in
+      if (mod && (key === '+' || key === '=' || key === 'Add')) {
+        event.preventDefault();
+        handleZoomIn();
+        return;
+      }
+
+      // Ctrl/Cmd + (-) → Zoom out
+      if (mod && (key === '-' || key === '_' || key === 'Subtract')) {
+        event.preventDefault();
+        handleZoomOut();
+        return;
+      }
+
+      // Ctrl/Cmd + 0 → Reset zoom
+      if (mod && (key === '0' || key === 'Numpad0')) {
+        event.preventDefault();
+        handleZoomReset();
+        return;
+      }
 
       // Delete / Backspace → Remove selected objects
-      if (event.key === 'Delete' || event.key === 'Backspace') {
+      if (key === 'Delete' || key === 'Backspace') {
         event.preventDefault();
         removeObjects(selectedIds, true);
         return;
       }
 
       // Ctrl/Cmd + D → Duplicate
-      if (mod && event.key === 'd') {
+      if (mod && key === 'd') {
         event.preventDefault();
         handleDuplicate();
         return;
       }
 
       // Ctrl/Cmd + C → Copy
-      if (mod && event.key === 'c') {
+      if (mod && key === 'c') {
         event.preventDefault();
         handleCopy();
         return;
       }
 
       // Ctrl/Cmd + V → Paste
-      if (mod && event.key === 'v') {
+      if (mod && key === 'v') {
         event.preventDefault();
         handlePaste();
         return;
