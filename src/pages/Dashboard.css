@@ -357,6 +357,27 @@
   gap: 0.72rem;
 }
 
+.template-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.72rem;
+}
+
+.template-card {
+  border: 1px solid #d6d1c8;
+  border-radius: 12px;
+  background: linear-gradient(165deg, #fff, #fbf8f1);
+  padding: 0.92rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.78rem;
+  box-shadow: 0 10px 18px rgba(24, 31, 42, 0.06);
+}
+
+.template-card .board-card-actions {
+  justify-content: flex-end;
+}
+
 .shared-boards-list {
   display: flex;
   flex-direction: column;

@@ -127,6 +127,43 @@ describe('Dashboard', () => {
     expect(sharedButton).toBeEnabled();
   });
 
+  it('shows a dedicated Case templates view from the sidebar', () => {
+    renderDashboard();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Case templates' }));
+
+    expect(screen.getByRole('heading', { name: 'Case templates' })).toBeInTheDocument();
+    expect(screen.getByText('Load Strong Case (Johnson v. TechCorp)')).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('New case name (e.g., Smith v. Acme)')).not.toBeInTheDocument();
+  });
+
+  it('filters templates by search query in Case templates view', () => {
+    renderDashboard();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Case templates' }));
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'defectco' } });
+
+    expect(screen.getByText('Load Contradiction Setup (DefectCo)')).toBeInTheDocument();
+    expect(screen.queryByText('Load Strong Case (Johnson v. TechCorp)')).not.toBeInTheDocument();
+  });
+
+  it('creates a board from a template card in Case templates view', async () => {
+    mockCreateBoardFromTemplate.mockReturnValue({
+      id: 'template-card-board-id',
+      committed: Promise.resolve(),
+    });
+
+    renderDashboard();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Case templates' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Use template Load Contradiction Setup (DefectCo)' }));
+
+    expect(mockCreateBoardFromTemplate).toHaveBeenCalledWith('defectco');
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/board/template-card-board-id');
+    });
+  });
+
   it('renders shared dashboard sections when Shared with me is selected', () => {
     renderDashboard(
       {},
