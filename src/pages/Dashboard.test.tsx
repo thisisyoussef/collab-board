@@ -411,6 +411,35 @@ describe('Dashboard', () => {
     });
   });
 
+  it('keeps Create Case disabled until the case name has non-whitespace text', () => {
+    renderDashboard();
+
+    const createButton = screen.getByRole('button', { name: 'Create Case' });
+    const input = screen.getByPlaceholderText('New case name (e.g., Smith v. Acme)');
+
+    expect(createButton).toBeDisabled();
+
+    fireEvent.change(input, { target: { value: '   ' } });
+    expect(createButton).toBeDisabled();
+
+    fireEvent.change(input, { target: { value: 'Smith v. Acme' } });
+    expect(createButton).not.toBeDisabled();
+  });
+
+  it('shows a validation error and skips createBoard when submitting a blank case name', async () => {
+    renderDashboard();
+
+    const input = screen.getByPlaceholderText('New case name (e.g., Smith v. Acme)');
+    fireEvent.change(input, { target: { value: '   ' } });
+    fireEvent.submit(input.closest('form')!);
+
+    expect(mockCreateBoard).not.toHaveBeenCalled();
+    expect(screen.getByText('Case name cannot be empty.')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(mockNavigate).not.toHaveBeenCalled();
+    });
+  });
+
   it('creates a board from selected template and navigates after commit resolves', async () => {
     mockCreateBoardFromTemplate.mockReturnValue({
       id: 'template-board-id',

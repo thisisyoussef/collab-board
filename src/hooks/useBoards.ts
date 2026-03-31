@@ -222,7 +222,14 @@ export function useBoards(userId: string | undefined) {
   );
 
   const createBoard = useCallback(
-    (title: string): CreateBoardResult => persistBoard(title, {}),
+    (title: string): CreateBoardResult => {
+      const cleanedTitle = title.trim();
+      if (!cleanedTitle) {
+        throw new Error('Case name cannot be empty');
+      }
+
+      return persistBoard(cleanedTitle, {});
+    },
     [persistBoard],
   );
 

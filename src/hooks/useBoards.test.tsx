@@ -275,6 +275,17 @@ describe('useBoards', () => {
     expect(() => result.current.createBoard('Board')).toThrow('Not authenticated');
   });
 
+  it('rejects blank createBoard values before touching Firestore', async () => {
+    const { result } = renderHook(() => useBoards('user-1'));
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    expect(() => result.current.createBoard('   ')).toThrow('Case name cannot be empty');
+    expect(mockSetDoc).not.toHaveBeenCalled();
+  });
+
   it('creates a board from a template pack and persists template objects', async () => {
     const { result } = renderHook(() => useBoards('user-1'));
 

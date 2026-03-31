@@ -120,6 +120,8 @@ export function Dashboard() {
 
   const searchQuery = searchByView[activeView];
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+  const trimmedNewBoardName = newBoardName.trim();
+  const canCreateBoard = !isCreating && trimmedNewBoardName.length > 0;
   const boardMatchesSearch = (title: string) =>
     !normalizedSearchQuery || title.toLowerCase().includes(normalizedSearchQuery);
   const filteredOwnedBoards = boards.filter((board) => boardMatchesSearch(board.title));
@@ -150,10 +152,15 @@ export function Dashboard() {
 
   const handleCreateBoard = async () => {
     if (isCreating) return;
+    if (!trimmedNewBoardName) {
+      setActionError('Case name cannot be empty.');
+      return;
+    }
+
     setActionError(null);
     setIsCreating(true);
     try {
-      const { id: boardId, committed } = createBoard(newBoardName);
+      const { id: boardId, committed } = createBoard(trimmedNewBoardName);
       await committed;
       setNewBoardName('');
       openBoard(boardId);
@@ -395,7 +402,7 @@ export function Dashboard() {
                     </option>
                   ))}
                 </select>
-                <button className="primary-btn" type="submit" disabled={isCreating}>
+                <button className="primary-btn" type="submit" disabled={!canCreateBoard}>
                   {isCreating ? 'Creating...' : 'Create Case'}
                 </button>
                 <button
