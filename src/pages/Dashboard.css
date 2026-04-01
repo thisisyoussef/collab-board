@@ -301,6 +301,17 @@
   border-color: #d4952b;
 }
 
+.dashboard-search-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.dashboard-search-row .board-input {
+  flex: 1;
+  min-width: 0;
+}
+
 .dashboard-context-cards {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
