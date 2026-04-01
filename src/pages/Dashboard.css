@@ -429,6 +429,20 @@
   color: #1e1c19;
 }
 
+.shared-board-role-badge {
+  width: fit-content;
+  border: 1px solid #d9cebc;
+  border-radius: 999px;
+  background: #f7f2e8;
+  color: #4e4638;
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.66rem;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  padding: 0.3rem 0.5rem;
+  text-transform: uppercase;
+}
+
 .board-card-main p {
   font-size: 0.77rem;
   color: #6a6458;
