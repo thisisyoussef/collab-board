@@ -166,6 +166,78 @@ describe('Dashboard', () => {
     expect(screen.getByText('Recent Retro')).toBeInTheDocument();
   });
 
+  it('shows Can edit badge for explicit shared boards with editor role', () => {
+    renderDashboard(
+      {},
+      {},
+      {
+        explicitBoards: [
+          {
+            id: 'shared-editor-1',
+            title: 'Expert Memo Review',
+            ownerId: 'owner-1',
+            createdAtMs: 1000,
+            updatedAtMs: 3000,
+            role: 'editor',
+            source: 'explicit',
+          },
+        ],
+      },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+
+    expect(screen.getByText('Can edit')).toBeInTheDocument();
+  });
+
+  it('shows View only badge for explicit shared boards with viewer role', () => {
+    renderDashboard(
+      {},
+      {},
+      {
+        explicitBoards: [
+          {
+            id: 'shared-viewer-1',
+            title: 'Witness Timeline',
+            ownerId: 'owner-2',
+            createdAtMs: 1200,
+            updatedAtMs: 3200,
+            role: 'viewer',
+            source: 'explicit',
+          },
+        ],
+      },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+
+    expect(screen.getByText('View only')).toBeInTheDocument();
+  });
+
+  it('shows Opened via link badge for recent shared boards without explicit role', () => {
+    renderDashboard(
+      {},
+      {},
+      {
+        recentBoards: [
+          {
+            id: 'recent-1',
+            title: 'Hearing Prep Notes',
+            ownerId: 'owner-3',
+            createdAtMs: 1200,
+            updatedAtMs: 2200,
+            lastOpenedAtMs: 5000,
+            source: 'recent',
+          },
+        ],
+      },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+
+    expect(screen.getByText('Opened via link')).toBeInTheDocument();
+  });
+
   it('opens shared board cards from Shared with me view', () => {
     renderDashboard(
       {},
