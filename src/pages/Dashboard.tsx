@@ -167,11 +167,13 @@ export function Dashboard() {
   };
 
   const handleRenameBoard = async (boardId: string) => {
+    const trimmedName = editingName.trim();
+    if (!trimmedName) return;
     if (renamingBoardId === boardId) return;
     setActionError(null);
     setRenamingBoardId(boardId);
     try {
-      await renameBoard(boardId, editingName);
+      await renameBoard(boardId, trimmedName);
       setEditingBoardId(null);
       setEditingName('');
     } catch (err: unknown) {
@@ -235,6 +237,7 @@ export function Dashboard() {
 
   const ownedBoardCards = filteredOwnedBoards.map((board) => {
     const isEditing = editingBoardId === board.id;
+    const canSaveRename = editingName.trim().length > 0;
 
     return (
       <article key={board.id} className="board-card">
@@ -271,7 +274,7 @@ export function Dashboard() {
             <>
               <button
                 className="primary-btn"
-                disabled={renamingBoardId === board.id}
+                disabled={renamingBoardId === board.id || !canSaveRename}
                 onClick={() => void handleRenameBoard(board.id)}
               >
                 {renamingBoardId === board.id ? 'Saving...' : 'Save'}

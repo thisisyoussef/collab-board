@@ -500,6 +500,63 @@ describe('Dashboard', () => {
     });
   });
 
+  it('keeps rename save disabled for empty or whitespace-only case names', () => {
+    renderDashboard({}, {
+      boards: [
+        { id: 'b1', title: 'Sprint Plan', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 2000 },
+      ],
+    });
+
+    fireEvent.click(screen.getByText('Rename'));
+
+    const renameInput = screen.getByDisplayValue('Sprint Plan');
+    const saveButton = screen.getByRole('button', { name: 'Save' });
+
+    expect(saveButton).toBeEnabled();
+
+    fireEvent.change(renameInput, { target: { value: '   ' } });
+    expect(saveButton).toBeDisabled();
+
+    fireEvent.change(renameInput, { target: { value: '' } });
+    expect(saveButton).toBeDisabled();
+  });
+
+  it('does not call renameBoard when Enter is pressed with whitespace-only case name', () => {
+    renderDashboard({}, {
+      boards: [
+        { id: 'b1', title: 'Sprint Plan', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 2000 },
+      ],
+    });
+
+    fireEvent.click(screen.getByText('Rename'));
+
+    const renameInput = screen.getByDisplayValue('Sprint Plan');
+    fireEvent.change(renameInput, { target: { value: '   ' } });
+    fireEvent.keyDown(renameInput, { key: 'Enter' });
+
+    expect(mockRenameBoard).not.toHaveBeenCalled();
+  });
+
+  it('trims rename input before saving', async () => {
+    mockRenameBoard.mockResolvedValue(undefined);
+
+    renderDashboard({}, {
+      boards: [
+        { id: 'b1', title: 'Sprint Plan', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 2000 },
+      ],
+    });
+
+    fireEvent.click(screen.getByText('Rename'));
+
+    const renameInput = screen.getByDisplayValue('Sprint Plan');
+    fireEvent.change(renameInput, { target: { value: '   Sprint Plan V2   ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(mockRenameBoard).toHaveBeenCalledWith('b1', 'Sprint Plan V2');
+    });
+  });
+
   it('cancels rename when Cancel is clicked', () => {
     renderDashboard({}, {
       boards: [
