@@ -232,6 +232,20 @@ describe('Dashboard', () => {
     expect(screen.queryByText('Smith v. Acme')).not.toBeInTheDocument();
   });
 
+  it('matches owned cases by case id fragment in search query', () => {
+    renderDashboard({}, {
+      boards: [
+        { id: 'case-smith-2026', title: 'Smith v. Acme', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 2000 },
+        { id: 'case-johnson-2026', title: 'Johnson Intake', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 3000 },
+      ],
+    });
+
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'johnson-2026' } });
+
+    expect(screen.getByText('Johnson Intake')).toBeInTheDocument();
+    expect(screen.queryByText('Smith v. Acme')).not.toBeInTheDocument();
+  });
+
   it('shows a no-match empty state when owned-case search has no results', () => {
     renderDashboard({}, {
       boards: [
@@ -279,6 +293,57 @@ describe('Dashboard', () => {
 
     expect(screen.getByText('Deposition Notes')).toBeInTheDocument();
     expect(screen.queryByText('Trial Strategy')).not.toBeInTheDocument();
+  });
+
+  it('matches shared cases by case id fragment in search query', () => {
+    renderDashboard(
+      {},
+      {},
+      {
+        explicitBoards: [
+          {
+            id: 'shared-trial-501',
+            title: 'Trial Strategy',
+            ownerId: 'owner-1',
+            createdAtMs: 1000,
+            updatedAtMs: 3000,
+            role: 'viewer',
+            source: 'explicit',
+          },
+        ],
+        recentBoards: [
+          {
+            id: 'recent-depo-777',
+            title: 'Deposition Notes',
+            ownerId: 'owner-2',
+            createdAtMs: 1200,
+            updatedAtMs: 2200,
+            lastOpenedAtMs: 5000,
+            source: 'recent',
+          },
+        ],
+      },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'depo-777' } });
+
+    expect(screen.getByText('Deposition Notes')).toBeInTheDocument();
+    expect(screen.queryByText('Trial Strategy')).not.toBeInTheDocument();
+  });
+
+  it('matches case ids case-insensitively in owned view', () => {
+    renderDashboard({}, {
+      boards: [
+        { id: 'CASE-Alpha-001', title: 'Alpha Matter', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 2000 },
+        { id: 'case-beta-002', title: 'Beta Matter', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 3000 },
+      ],
+    });
+
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'alpha-001' } });
+
+    expect(screen.getByText('Alpha Matter')).toBeInTheDocument();
+    expect(screen.queryByText('Beta Matter')).not.toBeInTheDocument();
   });
 
   it('keeps owned-case search query when switching away and back', () => {
