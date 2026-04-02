@@ -48,6 +48,7 @@ import { useAICommandCenter } from '../hooks/useAICommandCenter';
 import { useAIExecutor, type AICommitMeta } from '../hooks/useAIExecutor';
 import { useBoardRecents } from '../hooks/useBoardRecents';
 import { useBoardHistory } from '../hooks/useBoardHistory';
+import { usePresenterMode } from '../hooks/usePresenterMode';
 import { useSessionReplay } from '../hooks/useSessionReplay';
 import { useContradictionRadar } from '../hooks/useContradictionRadar';
 import { useLitigationIntake } from '../hooks/useLitigationIntake';
@@ -158,6 +159,7 @@ import type { DemoCasePackKey } from '../types/claim-strength-tools';
 import type {
   ObjectCreatePayload,
   ObjectDeletePayload,
+  PresenterViewportState,
   RealtimeObjectEventMeta,
   ObjectUpdatePayload,
 } from '../types/realtime';
@@ -401,6 +403,8 @@ export function Board() {
   const connectorHoverLockRef = useRef<ConnectorHoverLockState | null>(null);
   const connectorHoverLockTimerRef = useRef<number | null>(null);
   const manualHistoryBaselineRef = useRef<BoardObjectsRecord | null>(null);
+  const presenterViewportEmitAtRef = useRef(0);
+  const wasFollowingPresenterRef = useRef(false);
 
   const [canvasSize, setCanvasSize] = useState({ width: 960, height: 560 });
   const [boardTitle, setBoardTitle] = useState('Untitled board');
@@ -647,6 +651,50 @@ export function Board() {
   const sessionReplay = useSessionReplay({ getEntries: boardHistory.getEntries });
   canEditBoard = canEditBoardRaw && !sessionReplay.active;
   const liveStateBeforeReplayRef = useRef<BoardObjectsRecord | null>(null);
+  const getLocalPresenterViewport = useCallback<() => PresenterViewportState | null>(() => {
+    const stage = stageRef.current;
+    if (!stage) {
+      return null;
+    }
+
+    const scale = stage.scaleX() || 1;
+    return {
+      x: stage.x(),
+      y: stage.y(),
+      scale,
+      viewportWidth: stage.width() || canvasSize.width,
+      viewportHeight: stage.height() || canvasSize.height,
+    };
+  }, [canvasSize.height, canvasSize.width]);
+  const applyRemotePresenterViewport = useCallback(
+    (viewport: PresenterViewportState) => {
+      const stage = stageRef.current;
+      if (!stage) {
+        return;
+      }
+
+      stage.scale({ x: viewport.scale, y: viewport.scale });
+      stage.position({ x: viewport.x, y: viewport.y });
+      stage.batchDraw();
+      setZoomPercent(Math.round(viewport.scale * 100));
+      scheduleViewportSave();
+      setBoardRevision((value) => value + 1);
+      setHoveredClaimIndicator(null);
+    },
+    // scheduleViewportSave is a function declaration below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+  const presenterMode = usePresenterMode({
+    boardId,
+    currentUserId: user?.uid || 'guest',
+    currentUserDisplayName: displayName,
+    canStartPresenting: canEditBoard,
+    socketRef,
+    socketStatus,
+    getLocalViewport: getLocalPresenterViewport,
+    applyRemoteViewport: applyRemotePresenterViewport,
+  });
 
   const getActorUserId = () => user?.uid || 'guest';
 
@@ -1151,6 +1199,8 @@ export function Board() {
     frameTransformContextRef.current = null;
     highlightedFrameIdRef.current = null;
     viewportRestoredRef.current = false;
+    presenterViewportEmitAtRef.current = 0;
+    wasFollowingPresenterRef.current = false;
     setBoardTitle('Untitled board');
     setTitleDraft('Untitled board');
     setEditingTitle(false);
@@ -1562,6 +1612,39 @@ export function Board() {
   }, [activeTool, editingText, isDraggingConnectorHandle, boardRevision, canEditBoard]);
 
   useEffect(() => {
+    if (!presenterMode.isFollowing) {
+      return;
+    }
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') {
+        return;
+      }
+      event.preventDefault();
+      presenterMode.stopFollowing();
+      setCanvasNotice('Stopped following presenter.');
+    };
+
+    window.addEventListener('keydown', handleEscape);
+    return () => {
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [presenterMode.isFollowing, presenterMode.stopFollowing]);
+
+  useEffect(() => {
+    if (wasFollowingPresenterRef.current && !presenterMode.isFollowing && !presenterMode.isPresenting) {
+      if (!presenterMode.activePresenterUserId) {
+        setCanvasNotice('Presenter session ended.');
+      }
+    }
+    wasFollowingPresenterRef.current = presenterMode.isFollowing;
+  }, [
+    presenterMode.activePresenterUserId,
+    presenterMode.isFollowing,
+    presenterMode.isPresenting,
+  ]);
+
+  useEffect(() => {
     if (!boardId) {
       return;
     }
@@ -1904,6 +1987,20 @@ export function Board() {
       saveViewportNow();
       viewportSaveTimeoutRef.current = null;
     }, VIEWPORT_SAVE_DEBOUNCE_MS);
+  }
+
+  function maybeBroadcastPresenterViewport(force = false) {
+    if (!presenterMode.isPresenting) {
+      return;
+    }
+
+    const now = Date.now();
+    if (!force && now - presenterViewportEmitAtRef.current < 80) {
+      return;
+    }
+
+    presenterViewportEmitAtRef.current = now;
+    presenterMode.publishViewport();
   }
 
   function clearPersistenceTimer() {
@@ -5688,12 +5785,18 @@ export function Board() {
     stage.batchDraw();
     setZoomPercent(Math.round(newScale * 100));
     scheduleViewportSave();
+    maybeBroadcastPresenterViewport(true);
     setBoardRevision((value) => value + 1);
     setHoveredClaimIndicator(null);
   }
 
+  function handleStageDragMove() {
+    maybeBroadcastPresenterViewport();
+  }
+
   function handleStageDragEnd() {
     scheduleViewportSave();
+    maybeBroadcastPresenterViewport(true);
     setHoveredClaimIndicator(null);
   }
 
@@ -5722,6 +5825,7 @@ export function Board() {
     stage.batchDraw();
     setZoomPercent(Math.round(clampedScale * 100));
     scheduleViewportSave();
+    maybeBroadcastPresenterViewport(true);
     setBoardRevision((value) => value + 1);
   }
 
@@ -6094,6 +6198,29 @@ export function Board() {
     });
     stage.batchDraw();
     scheduleViewportSave();
+    maybeBroadcastPresenterViewport(true);
+  };
+
+  const handleStartPresenting = () => {
+    presenterMode.startPresenting();
+    presenterViewportEmitAtRef.current = 0;
+    maybeBroadcastPresenterViewport(true);
+    setCanvasNotice('Presenter mode started.');
+  };
+
+  const handleStopPresenting = () => {
+    presenterMode.stopPresenting();
+    setCanvasNotice('Presenter mode stopped.');
+  };
+
+  const handleStartFollowingPresenter = () => {
+    presenterMode.startFollowing();
+    setCanvasNotice('Following presenter viewport. Press Escape to exit.');
+  };
+
+  const handleStopFollowingPresenter = () => {
+    presenterMode.stopFollowing();
+    setCanvasNotice('Stopped following presenter.');
   };
 
   if (!boardId) {
@@ -6396,10 +6523,53 @@ export function Board() {
           >
             Time Machine
           </button>
+          {canEditBoard ? (
+            presenterMode.isPresenting ? (
+              <button
+                className="chip-btn"
+                onClick={handleStopPresenting}
+                title="Stop presenter mode"
+              >
+                Stop Presenter
+              </button>
+            ) : (
+              <button
+                className="chip-btn"
+                onClick={handleStartPresenting}
+                title="Broadcast your viewport to followers"
+              >
+                Start Presenter
+              </button>
+            )
+          ) : null}
+          {presenterMode.canFollow ? (
+            presenterMode.isFollowing ? (
+              <button
+                className="chip-btn"
+                onClick={handleStopFollowingPresenter}
+                title="Stop following presenter viewport"
+              >
+                Stop Following
+              </button>
+            ) : (
+              <button
+                className="chip-btn"
+                onClick={handleStartFollowingPresenter}
+                title="Follow active presenter viewport"
+              >
+                Follow Presenter
+              </button>
+            )
+          ) : null}
         </div>
 
         <div className="topbar-cluster right">
           <span className={`presence-pill ${socketStatusClass}`}>{socketStatusLabel}</span>
+          {presenterMode.activePresenterUserId ? (
+            <span className="chip-btn" aria-label="Active presenter">
+              Presenter: {presenterMode.activePresenterDisplayName || 'Active'}
+            </span>
+          ) : null}
           <PresenceAvatars members={members} currentUserId={user?.uid ?? null} />
           <button className="secondary-btn" onClick={() => setIsSharePanelOpen(true)}>
             Share
@@ -6449,7 +6619,8 @@ export function Board() {
                 !isDrawingRect &&
                 !isDrawingConnector &&
                 !isSelecting &&
-                !isDraggingConnectorHandle
+                !isDraggingConnectorHandle &&
+                !presenterMode.isFollowing
               }
               onMouseDown={handleStageMouseDown}
               onTouchStart={handleStageMouseDown}
@@ -6461,6 +6632,7 @@ export function Board() {
               onTouchCancel={handleStageMouseLeave}
               onClick={handleStageClick}
               onTap={handleStageClick}
+              onDragMove={handleStageDragMove}
               onDragEnd={handleStageDragEnd}
               onWheel={handleStageWheel}
             >

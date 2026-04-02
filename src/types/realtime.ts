@@ -77,6 +77,30 @@ export interface ServerErrorPayload {
   message: string;
 }
 
+export interface PresenterViewportState {
+  x: number;
+  y: number;
+  scale: number;
+  viewportWidth: number;
+  viewportHeight: number;
+}
+
+export interface PresenterStatePayload {
+  boardId: string;
+  presenterUserId: string;
+  presenterDisplayName: string;
+}
+
+export interface PresenterStopPayload {
+  boardId: string;
+  presenterUserId: string;
+}
+
+export interface PresenterViewportPayload extends PresenterStatePayload {
+  viewport: PresenterViewportState;
+  _ts?: number;
+}
+
 export interface ClientToServerEvents {
   'join-board': (payload: JoinBoardPayload) => void;
   'cursor:move': (payload: CursorData) => void;
@@ -85,6 +109,9 @@ export interface ClientToServerEvents {
   'object:create': (payload: ObjectCreatePayload) => void;
   'object:update': (payload: ObjectUpdatePayload) => void;
   'object:delete': (payload: ObjectDeletePayload) => void;
+  'presenter:start': (payload: PresenterStatePayload & { viewport?: PresenterViewportState }) => void;
+  'presenter:stop': (payload: { boardId: string }) => void;
+  'presenter:viewport': (payload: PresenterViewportPayload) => void;
 }
 
 export interface ServerToClientEvents {
@@ -97,5 +124,8 @@ export interface ServerToClientEvents {
   'object:create': (payload: ObjectCreatePayload) => void;
   'object:update': (payload: ObjectUpdatePayload) => void;
   'object:delete': (payload: ObjectDeletePayload) => void;
+  'presenter:state': (payload: PresenterStatePayload) => void;
+  'presenter:stopped': (payload: PresenterStopPayload) => void;
+  'presenter:viewport': (payload: PresenterViewportPayload) => void;
   'server:error': (payload: ServerErrorPayload) => void;
 }

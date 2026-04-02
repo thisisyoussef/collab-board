@@ -220,6 +220,7 @@ describe('Board', () => {
     expect(screen.getByRole('button', { name: 'Redo' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Start Demo' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Legal quick start' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Start Presenter' })).toBeEnabled();
   });
 
   it('shows all demo pack templates in Start Demo launcher', async () => {
@@ -527,6 +528,7 @@ describe('Board', () => {
     expect(screen.getByLabelText('Contradicts link tool')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Open AI assistant' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Legal quick start' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Start Presenter' })).not.toBeInTheDocument();
     expect(screen.getByText(/Read-only mode/i)).toBeInTheDocument();
   });
 

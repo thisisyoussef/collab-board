@@ -64,6 +64,29 @@ const io = new Server(server, {
   transports: ['polling', 'websocket'],
 });
 
+const activePresenterByBoard = new Map();
+
+function getActivePresenter(boardId) {
+  return activePresenterByBoard.get(boardId) || null;
+}
+
+function clearActivePresenter(boardId, presenterUserId) {
+  const current = activePresenterByBoard.get(boardId);
+  if (!current) {
+    return;
+  }
+  activePresenterByBoard.delete(boardId);
+  io.to(boardRoom(boardId)).emit('presenter:stopped', {
+    boardId,
+    presenterUserId,
+  });
+}
+
+function toFiniteNumber(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
 function applyGuestIdentity(socket) {
   const requestedGuestId = normalizeNonEmptyString(socket.handshake.auth?.guestId);
   const requestedGuestName = normalizeNonEmptyString(socket.handshake.auth?.guestName);
@@ -155,6 +178,24 @@ io.on('connection', (socket) => {
     });
     socket.emit('presence:snapshot', snapshot);
     socket.to(room).emit('user:joined', buildPresenceMember(socket));
+
+    const activePresenter = getActivePresenter(boardId);
+    if (activePresenter) {
+      socket.emit('presenter:state', {
+        boardId,
+        presenterUserId: activePresenter.presenterUserId,
+        presenterDisplayName: activePresenter.presenterDisplayName,
+      });
+      if (activePresenter.viewport) {
+        socket.emit('presenter:viewport', {
+          boardId,
+          presenterUserId: activePresenter.presenterUserId,
+          presenterDisplayName: activePresenter.presenterDisplayName,
+          viewport: activePresenter.viewport,
+          _ts: Date.now(),
+        });
+      }
+    }
   });
 
   socket.on('disconnecting', () => {
@@ -169,9 +210,152 @@ io.on('connection', (socket) => {
       userId: socket.data.userId,
     });
 
+    const activePresenter = getActivePresenter(boardId);
+    if (activePresenter && activePresenter.presenterSocketId === socket.id) {
+      clearActivePresenter(boardId, activePresenter.presenterUserId);
+    }
+
     socket.to(boardRoom(boardId)).emit('user:left', {
       socketId: socket.id,
       userId: socket.data.userId,
+    });
+  });
+
+  socket.on('presenter:start', (payload) => {
+    const boardId = resolveBoardIdFromPayload(socket, payload);
+    if (!boardId) {
+      return;
+    }
+
+    const presenterUserId = normalizeNonEmptyString(payload?.presenterUserId) || socket.data.userId;
+    const presenterDisplayName =
+      normalizeNonEmptyString(payload?.presenterDisplayName) || socket.data.displayName || 'Presenter';
+
+    const viewport = payload?.viewport && typeof payload.viewport === 'object'
+      ? {
+          x: toFiniteNumber(payload.viewport.x),
+          y: toFiniteNumber(payload.viewport.y),
+          scale: toFiniteNumber(payload.viewport.scale),
+          viewportWidth: toFiniteNumber(payload.viewport.viewportWidth),
+          viewportHeight: toFiniteNumber(payload.viewport.viewportHeight),
+        }
+      : null;
+
+    const safeViewport =
+      viewport &&
+      viewport.x !== null &&
+      viewport.y !== null &&
+      viewport.scale !== null &&
+      viewport.viewportWidth !== null &&
+      viewport.viewportHeight !== null
+        ? {
+            x: viewport.x,
+            y: viewport.y,
+            scale: Math.max(0.1, Math.min(5, viewport.scale)),
+            viewportWidth: Math.max(1, viewport.viewportWidth),
+            viewportHeight: Math.max(1, viewport.viewportHeight),
+          }
+        : null;
+
+    activePresenterByBoard.set(boardId, {
+      presenterUserId,
+      presenterDisplayName,
+      presenterSocketId: socket.id,
+      viewport: safeViewport,
+    });
+
+    logger.info('PRESENCE', `Presenter started by '${presenterDisplayName}'`, {
+      boardId,
+      presenterUserId,
+      socketId: socket.id,
+    });
+    io.to(boardRoom(boardId)).emit('presenter:state', {
+      boardId,
+      presenterUserId,
+      presenterDisplayName,
+    });
+    if (safeViewport) {
+      io.to(boardRoom(boardId)).emit('presenter:viewport', {
+        boardId,
+        presenterUserId,
+        presenterDisplayName,
+        viewport: safeViewport,
+        _ts: Date.now(),
+      });
+    }
+  });
+
+  socket.on('presenter:stop', (payload) => {
+    const boardId = resolveBoardIdFromPayload(socket, payload);
+    if (!boardId) {
+      return;
+    }
+
+    const activePresenter = getActivePresenter(boardId);
+    if (!activePresenter) {
+      return;
+    }
+    if (activePresenter.presenterSocketId !== socket.id) {
+      return;
+    }
+
+    logger.info('PRESENCE', `Presenter stopped by '${activePresenter.presenterDisplayName}'`, {
+      boardId,
+      presenterUserId: activePresenter.presenterUserId,
+      socketId: socket.id,
+    });
+    clearActivePresenter(boardId, activePresenter.presenterUserId);
+  });
+
+  socket.on('presenter:viewport', (payload) => {
+    const boardId = resolveBoardIdFromPayload(socket, payload);
+    if (!boardId) {
+      return;
+    }
+
+    const activePresenter = getActivePresenter(boardId);
+    if (!activePresenter || activePresenter.presenterSocketId !== socket.id) {
+      return;
+    }
+
+    const viewport = payload?.viewport;
+    if (!viewport || typeof viewport !== 'object') {
+      return;
+    }
+
+    const x = toFiniteNumber(viewport.x);
+    const y = toFiniteNumber(viewport.y);
+    const scale = toFiniteNumber(viewport.scale);
+    const viewportWidth = toFiniteNumber(viewport.viewportWidth);
+    const viewportHeight = toFiniteNumber(viewport.viewportHeight);
+    if (
+      x === null ||
+      y === null ||
+      scale === null ||
+      viewportWidth === null ||
+      viewportHeight === null
+    ) {
+      return;
+    }
+
+    const safeViewport = {
+      x,
+      y,
+      scale: Math.max(0.1, Math.min(5, scale)),
+      viewportWidth: Math.max(1, viewportWidth),
+      viewportHeight: Math.max(1, viewportHeight),
+    };
+
+    activePresenterByBoard.set(boardId, {
+      ...activePresenter,
+      viewport: safeViewport,
+    });
+    socket.to(boardRoom(boardId)).emit('presenter:viewport', {
+      boardId,
+      presenterUserId: activePresenter.presenterUserId,
+      presenterDisplayName: activePresenter.presenterDisplayName,
+      viewport: safeViewport,
+      _ts: Date.now(),
     });
   });
 
