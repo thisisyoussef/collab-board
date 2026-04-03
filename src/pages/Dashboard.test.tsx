@@ -232,6 +232,20 @@ describe('Dashboard', () => {
     expect(screen.queryByText('Smith v. Acme')).not.toBeInTheDocument();
   });
 
+  it('matches owned cases by case-id fragment search query', () => {
+    renderDashboard({}, {
+      boards: [
+        { id: 'case-abc-123', title: 'Smith v. Acme', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 2000 },
+        { id: 'case-xyz-789', title: 'Johnson Intake', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 3000 },
+      ],
+    });
+
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'abc-123' } });
+
+    expect(screen.getByText('Smith v. Acme')).toBeInTheDocument();
+    expect(screen.queryByText('Johnson Intake')).not.toBeInTheDocument();
+  });
+
   it('shows a no-match empty state when owned-case search has no results', () => {
     renderDashboard({}, {
       boards: [
@@ -276,6 +290,43 @@ describe('Dashboard', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
     fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'deposition' } });
+
+    expect(screen.getByText('Deposition Notes')).toBeInTheDocument();
+    expect(screen.queryByText('Trial Strategy')).not.toBeInTheDocument();
+  });
+
+  it('matches shared cases by case-id fragment search query across shared sections', () => {
+    renderDashboard(
+      {},
+      {},
+      {
+        explicitBoards: [
+          {
+            id: 'shared-case-123',
+            title: 'Trial Strategy',
+            ownerId: 'owner-1',
+            createdAtMs: 1000,
+            updatedAtMs: 3000,
+            role: 'viewer',
+            source: 'explicit',
+          },
+        ],
+        recentBoards: [
+          {
+            id: 'recent-case-777',
+            title: 'Deposition Notes',
+            ownerId: 'owner-2',
+            createdAtMs: 1200,
+            updatedAtMs: 2200,
+            lastOpenedAtMs: 5000,
+            source: 'recent',
+          },
+        ],
+      },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+    fireEvent.change(screen.getByLabelText('Search cases'), { target: { value: 'case-777' } });
 
     expect(screen.getByText('Deposition Notes')).toBeInTheDocument();
     expect(screen.queryByText('Trial Strategy')).not.toBeInTheDocument();

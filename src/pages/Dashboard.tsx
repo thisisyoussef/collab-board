@@ -120,11 +120,15 @@ export function Dashboard() {
 
   const searchQuery = searchByView[activeView];
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
-  const boardMatchesSearch = (title: string) =>
-    !normalizedSearchQuery || title.toLowerCase().includes(normalizedSearchQuery);
-  const filteredOwnedBoards = boards.filter((board) => boardMatchesSearch(board.title));
-  const filteredExplicitBoards = explicitBoards.filter((board) => boardMatchesSearch(board.title));
-  const filteredRecentBoards = recentBoards.filter((board) => boardMatchesSearch(board.title));
+  const boardMatchesSearch = (title: string, boardId: string) =>
+    !normalizedSearchQuery ||
+    title.toLowerCase().includes(normalizedSearchQuery) ||
+    boardId.toLowerCase().includes(normalizedSearchQuery);
+  const filteredOwnedBoards = boards.filter((board) => boardMatchesSearch(board.title, board.id));
+  const filteredExplicitBoards = explicitBoards.filter((board) =>
+    boardMatchesSearch(board.title, board.id),
+  );
+  const filteredRecentBoards = recentBoards.filter((board) => boardMatchesSearch(board.title, board.id));
 
   const displayName = user?.displayName || user?.email || 'Unknown';
   const userInitial = displayName.charAt(0).toUpperCase();
