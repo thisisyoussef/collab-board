@@ -2,7 +2,7 @@
 // Shows two tabs: "My Boards" (owned) and "Shared with me" (via boardMembers/boardRecents).
 // Supports create, rename, delete operations via useBoards hook.
 // Board cards link to /board/:id for the canvas editor.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useBoards } from '../hooks/useBoards';
@@ -13,6 +13,29 @@ import type { SharedBoardDashboardEntry } from '../types/sharing';
 import './Dashboard.css';
 
 type DashboardView = 'owned' | 'shared';
+const DASHBOARD_SEARCH_STORAGE_PREFIX = 'collabboard:dashboardSearchByView:';
+const DEFAULT_SEARCH_BY_VIEW: Record<DashboardView, string> = {
+  owned: '',
+  shared: '',
+};
+
+function getDashboardSearchStorageKey(userId: string): string {
+  return `${DASHBOARD_SEARCH_STORAGE_PREFIX}${userId}`;
+}
+
+function parseStoredSearchByView(rawValue: string | null): Record<DashboardView, string> {
+  if (!rawValue) return { ...DEFAULT_SEARCH_BY_VIEW };
+
+  try {
+    const parsed = JSON.parse(rawValue) as Partial<Record<DashboardView, unknown>>;
+    return {
+      owned: typeof parsed.owned === 'string' ? parsed.owned : '',
+      shared: typeof parsed.shared === 'string' ? parsed.shared : '',
+    };
+  } catch {
+    return { ...DEFAULT_SEARCH_BY_VIEW };
+  }
+}
 
 function formatDate(ms: number): string {
   if (!ms) return 'Just now';
@@ -113,10 +136,24 @@ export function Dashboard() {
   const [renamingBoardId, setRenamingBoardId] = useState<string | null>(null);
   const [isRetryingOwned, setIsRetryingOwned] = useState(false);
   const [isRetryingShared, setIsRetryingShared] = useState(false);
-  const [searchByView, setSearchByView] = useState<Record<DashboardView, string>>({
-    owned: '',
-    shared: '',
-  });
+  const [searchByView, setSearchByView] = useState<Record<DashboardView, string>>(DEFAULT_SEARCH_BY_VIEW);
+
+  useEffect(() => {
+    if (!user?.uid) {
+      setSearchByView({ ...DEFAULT_SEARCH_BY_VIEW });
+      return;
+    }
+
+    const storageKey = getDashboardSearchStorageKey(user.uid);
+    setSearchByView(parseStoredSearchByView(window.localStorage.getItem(storageKey)));
+  }, [user?.uid]);
+
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    const storageKey = getDashboardSearchStorageKey(user.uid);
+    window.localStorage.setItem(storageKey, JSON.stringify(searchByView));
+  }, [searchByView, user?.uid]);
 
   const searchQuery = searchByView[activeView];
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
