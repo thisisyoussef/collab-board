@@ -118,6 +118,8 @@ export function Dashboard() {
     shared: '',
   });
 
+  const trimmedNewBoardName = newBoardName.trim();
+  const trimmedEditingName = editingName.trim();
   const searchQuery = searchByView[activeView];
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
   const boardMatchesSearch = (title: string) =>
@@ -150,10 +152,11 @@ export function Dashboard() {
 
   const handleCreateBoard = async () => {
     if (isCreating) return;
+    if (!trimmedNewBoardName) return;
     setActionError(null);
     setIsCreating(true);
     try {
-      const { id: boardId, committed } = createBoard(newBoardName);
+      const { id: boardId, committed } = createBoard(trimmedNewBoardName);
       await committed;
       setNewBoardName('');
       openBoard(boardId);
@@ -168,10 +171,11 @@ export function Dashboard() {
 
   const handleRenameBoard = async (boardId: string) => {
     if (renamingBoardId === boardId) return;
+    if (!trimmedEditingName) return;
     setActionError(null);
     setRenamingBoardId(boardId);
     try {
-      await renameBoard(boardId, editingName);
+      await renameBoard(boardId, trimmedEditingName);
       setEditingBoardId(null);
       setEditingName('');
     } catch (err: unknown) {
@@ -271,7 +275,7 @@ export function Dashboard() {
             <>
               <button
                 className="primary-btn"
-                disabled={renamingBoardId === board.id}
+                disabled={renamingBoardId === board.id || !trimmedEditingName}
                 onClick={() => void handleRenameBoard(board.id)}
               >
                 {renamingBoardId === board.id ? 'Saving...' : 'Save'}
@@ -395,7 +399,7 @@ export function Dashboard() {
                     </option>
                   ))}
                 </select>
-                <button className="primary-btn" type="submit" disabled={isCreating}>
+                <button className="primary-btn" type="submit" disabled={isCreating || !trimmedNewBoardName}>
                   {isCreating ? 'Creating...' : 'Create Case'}
                 </button>
                 <button

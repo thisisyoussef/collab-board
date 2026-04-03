@@ -411,6 +411,49 @@ describe('Dashboard', () => {
     });
   });
 
+  it('keeps Create Case disabled for empty or whitespace-only names', () => {
+    renderDashboard();
+
+    const createButton = screen.getByRole('button', { name: 'Create Case' });
+    const input = screen.getByPlaceholderText('New case name (e.g., Smith v. Acme)');
+
+    expect(createButton).toBeDisabled();
+
+    fireEvent.change(input, { target: { value: '   ' } });
+    expect(createButton).toBeDisabled();
+
+    fireEvent.change(input, { target: { value: 'Case A' } });
+    expect(createButton).toBeEnabled();
+  });
+
+  it('does not submit case creation for whitespace-only names', () => {
+    renderDashboard();
+
+    const input = screen.getByPlaceholderText('New case name (e.g., Smith v. Acme)');
+    fireEvent.change(input, { target: { value: '   ' } });
+    fireEvent.submit(input.closest('form')!);
+
+    expect(mockCreateBoard).not.toHaveBeenCalled();
+  });
+
+  it('trims case name before create submission', async () => {
+    mockCreateBoard.mockReturnValue({
+      id: 'trimmed-board-id',
+      committed: Promise.resolve(),
+    });
+
+    renderDashboard();
+
+    const input = screen.getByPlaceholderText('New case name (e.g., Smith v. Acme)');
+    fireEvent.change(input, { target: { value: '  My New Board  ' } });
+    fireEvent.submit(input.closest('form')!);
+
+    await waitFor(() => {
+      expect(mockCreateBoard).toHaveBeenCalledWith('My New Board');
+      expect(mockNavigate).toHaveBeenCalledWith('/board/trimmed-board-id');
+    });
+  });
+
   it('creates a board from selected template and navigates after commit resolves', async () => {
     mockCreateBoardFromTemplate.mockReturnValue({
       id: 'template-board-id',
@@ -493,6 +536,48 @@ describe('Dashboard', () => {
 
     const renameInput = screen.getByDisplayValue('Sprint Plan');
     fireEvent.change(renameInput, { target: { value: 'Sprint Plan V2' } });
+    fireEvent.click(screen.getByText('Save'));
+
+    await waitFor(() => {
+      expect(mockRenameBoard).toHaveBeenCalledWith('b1', 'Sprint Plan V2');
+    });
+  });
+
+  it('keeps rename Save disabled for whitespace-only values and blocks Enter submit', async () => {
+    renderDashboard({}, {
+      boards: [
+        { id: 'b1', title: 'Sprint Plan', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 2000 },
+      ],
+    });
+
+    fireEvent.click(screen.getByText('Rename'));
+
+    const renameInput = screen.getByDisplayValue('Sprint Plan');
+    fireEvent.change(renameInput, { target: { value: '   ' } });
+    const saveButton = screen.getByText('Save');
+
+    expect(saveButton).toBeDisabled();
+
+    fireEvent.keyDown(renameInput, { key: 'Enter', code: 'Enter' });
+
+    await waitFor(() => {
+      expect(mockRenameBoard).not.toHaveBeenCalled();
+    });
+  });
+
+  it('trims rename value before save submission', async () => {
+    mockRenameBoard.mockResolvedValue(undefined);
+
+    renderDashboard({}, {
+      boards: [
+        { id: 'b1', title: 'Sprint Plan', ownerId: 'user-123', createdAtMs: 1000, updatedAtMs: 2000 },
+      ],
+    });
+
+    fireEvent.click(screen.getByText('Rename'));
+
+    const renameInput = screen.getByDisplayValue('Sprint Plan');
+    fireEvent.change(renameInput, { target: { value: '  Sprint Plan V2  ' } });
     fireEvent.click(screen.getByText('Save'));
 
     await waitFor(() => {
