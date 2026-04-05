@@ -189,6 +189,7 @@ export function useSharedBoards(userId: string | undefined) {
       const summaryByBoardId = new Map(
         summaries
           .filter((entry): entry is SharedBoardDashboardEntry => Boolean(entry))
+          .filter((entry) => entry.ownerId !== userId)
           .map((entry) => [entry.id, entry]),
       );
 

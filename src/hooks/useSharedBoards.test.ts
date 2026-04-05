@@ -198,4 +198,157 @@ describe('useSharedBoards', () => {
       failure,
     );
   });
+
+  it('excludes owned boards from recents while preserving shared recents', async () => {
+    const recentSnapshot = snapshotFromDocs([
+      {
+        id: 'user-1_board-owned',
+        data: () => ({ boardId: 'board-owned', userId: 'user-1', lastOpenedAt: timestamp(7000) }),
+      },
+      {
+        id: 'user-1_board-shared',
+        data: () => ({ boardId: 'board-shared', userId: 'user-1', lastOpenedAt: timestamp(6500) }),
+      },
+    ]);
+
+    mockGetDocs.mockImplementation((queryRef: { collectionRef: { name: string } }) => {
+      if (queryRef.collectionRef.name === 'boardMembers') {
+        return Promise.resolve(snapshotFromDocs([]));
+      }
+      return Promise.resolve(recentSnapshot);
+    });
+
+    mockGetDoc.mockImplementation((ref: { path: string }) => {
+      const boardId = ref.path.split('/')[1];
+      if (boardId === 'board-owned') {
+        return Promise.resolve({
+          exists: () => true,
+          data: () => ({
+            title: 'Owned Board',
+            ownerId: 'user-1',
+            createdAt: timestamp(1000),
+            updatedAt: timestamp(5000),
+          }),
+        });
+      }
+
+      return Promise.resolve({
+        exists: () => true,
+        data: () => ({
+          title: 'Shared Board',
+          ownerId: 'owner-2',
+          createdAt: timestamp(1000),
+          updatedAt: timestamp(4000),
+        }),
+      });
+    });
+
+    const { result } = renderHook(() => useSharedBoards('user-1'));
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    expect(result.current.error).toBeNull();
+    expect(result.current.explicitBoards).toEqual([]);
+    expect(result.current.recentBoards.map((board) => board.id)).toEqual(['board-shared']);
+  });
+
+  it('excludes owned boards from explicit memberships', async () => {
+    const memberSnapshot = snapshotFromDocs([
+      {
+        id: 'board-owned_user-1',
+        data: () => ({ boardId: 'board-owned', userId: 'user-1', role: 'owner' }),
+      },
+      {
+        id: 'board-shared_user-1',
+        data: () => ({ boardId: 'board-shared', userId: 'user-1', role: 'editor' }),
+      },
+    ]);
+
+    mockGetDocs.mockImplementation((queryRef: { collectionRef: { name: string } }) => {
+      if (queryRef.collectionRef.name === 'boardMembers') {
+        return Promise.resolve(memberSnapshot);
+      }
+      return Promise.resolve(snapshotFromDocs([]));
+    });
+
+    mockGetDoc.mockImplementation((ref: { path: string }) => {
+      const boardId = ref.path.split('/')[1];
+      if (boardId === 'board-owned') {
+        return Promise.resolve({
+          exists: () => true,
+          data: () => ({
+            title: 'Owned Board',
+            ownerId: 'user-1',
+            createdAt: timestamp(1000),
+            updatedAt: timestamp(5000),
+          }),
+        });
+      }
+
+      return Promise.resolve({
+        exists: () => true,
+        data: () => ({
+          title: 'Shared Board',
+          ownerId: 'owner-2',
+          createdAt: timestamp(1000),
+          updatedAt: timestamp(4000),
+        }),
+      });
+    });
+
+    const { result } = renderHook(() => useSharedBoards('user-1'));
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    expect(result.current.error).toBeNull();
+    expect(result.current.explicitBoards.map((board) => board.id)).toEqual(['board-shared']);
+    expect(result.current.recentBoards).toEqual([]);
+  });
+
+  it('returns empty shared lists when every candidate board is owned by the current user', async () => {
+    const memberSnapshot = snapshotFromDocs([
+      {
+        id: 'board-owned_user-1',
+        data: () => ({ boardId: 'board-owned', userId: 'user-1', role: 'owner' }),
+      },
+    ]);
+
+    const recentSnapshot = snapshotFromDocs([
+      {
+        id: 'user-1_board-owned',
+        data: () => ({ boardId: 'board-owned', userId: 'user-1', lastOpenedAt: timestamp(7500) }),
+      },
+    ]);
+
+    mockGetDocs.mockImplementation((queryRef: { collectionRef: { name: string } }) => {
+      if (queryRef.collectionRef.name === 'boardMembers') {
+        return Promise.resolve(memberSnapshot);
+      }
+      return Promise.resolve(recentSnapshot);
+    });
+
+    mockGetDoc.mockResolvedValue({
+      exists: () => true,
+      data: () => ({
+        title: 'Owned Board',
+        ownerId: 'user-1',
+        createdAt: timestamp(1000),
+        updatedAt: timestamp(5000),
+      }),
+    });
+
+    const { result } = renderHook(() => useSharedBoards('user-1'));
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    expect(result.current.error).toBeNull();
+    expect(result.current.explicitBoards).toEqual([]);
+    expect(result.current.recentBoards).toEqual([]);
+  });
 });
