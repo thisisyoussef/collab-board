@@ -435,6 +435,19 @@
   font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
 }
 
+.board-card-meta {
+  display: inline-flex;
+  width: fit-content;
+  border: 1px solid #d7ccb9;
+  border-radius: 999px;
+  padding: 0.1rem 0.45rem;
+  background: #f8f3e9;
+  color: #5d503a;
+  font-size: 0.68rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
 .board-card-actions {
   display: flex;
   align-items: center;

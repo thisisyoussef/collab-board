@@ -166,6 +166,78 @@ describe('Dashboard', () => {
     expect(screen.getByText('Recent Retro')).toBeInTheDocument();
   });
 
+  it('shows editor access label on explicitly shared editor boards', () => {
+    renderDashboard(
+      {},
+      {},
+      {
+        explicitBoards: [
+          {
+            id: 'shared-editor',
+            title: 'Editor Board',
+            ownerId: 'owner-1',
+            createdAtMs: 1000,
+            updatedAtMs: 3000,
+            role: 'editor',
+            source: 'explicit',
+          },
+        ],
+      },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+
+    expect(screen.getByText('Editor access')).toBeInTheDocument();
+  });
+
+  it('shows viewer access label on explicitly shared viewer boards', () => {
+    renderDashboard(
+      {},
+      {},
+      {
+        explicitBoards: [
+          {
+            id: 'shared-viewer',
+            title: 'Viewer Board',
+            ownerId: 'owner-1',
+            createdAtMs: 1000,
+            updatedAtMs: 3000,
+            role: 'viewer',
+            source: 'explicit',
+          },
+        ],
+      },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+
+    expect(screen.getByText('Viewer access')).toBeInTheDocument();
+  });
+
+  it('shows link access label on recent shared-link boards', () => {
+    renderDashboard(
+      {},
+      {},
+      {
+        recentBoards: [
+          {
+            id: 'recent-link',
+            title: 'Recent Link Board',
+            ownerId: 'owner-2',
+            createdAtMs: 1200,
+            updatedAtMs: 2200,
+            lastOpenedAtMs: 5000,
+            source: 'recent',
+          },
+        ],
+      },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shared with me' }));
+
+    expect(screen.getByText('Link access')).toBeInTheDocument();
+  });
+
   it('opens shared board cards from Shared with me view', () => {
     renderDashboard(
       {},
